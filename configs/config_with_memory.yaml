@@ -1,0 +1,58 @@
+# KAG配置文件 - 包含记忆和反思功能
+
+# LLM配置
+llm:
+  provider: openai
+  model_name: gpt-3.5-turbo
+  api_key: sk-your-api-key
+  temperature: 0.1
+  max_tokens: 2000
+  timeout: 60
+
+# 信息抽取配置
+extraction:
+  chunk_size: 1000
+  chunk_overlap: 200
+  max_entities_per_chunk: 20
+  max_relations_per_chunk: 30
+  enable_script_parsing: true
+  enable_character_analysis: true
+  enable_timeline_extraction: true
+
+# 存储配置
+storage:
+  # Neo4j图数据库
+  neo4j_uri: bolt://localhost:7687
+  neo4j_username: neo4j
+  neo4j_password: password
+  
+  # 向量数据库
+  vector_store_type: chroma
+  vector_store_path: ./data/vector_store
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+
+  # 知识图谱抽取
+  knowledge_graph_path: ./data/knowledge_graph
+
+# 处理配置
+processing:
+  batch_size: 10
+  max_workers: 4
+  enable_parallel: true
+  cache_enabled: true
+  cache_dir: ./data/cache
+
+# 记忆配置
+memory:
+  enabled: true
+  memory_type: buffer  # buffer, vector, summary
+  max_token_limit: 4000
+  memory_path: ./data/memory
+
+# 反思配置
+reflection:
+  enabled: true
+  reflection_interval: 5  # 每处理多少个文档进行一次反思
+  reflection_path: ./data/reflection
+  max_reflections: 10  # 最多保存多少条反思
+

@@ -1,0 +1,192 @@
+{
+  "entities": [
+    {
+      "type": "Character",
+      "description": "人物角色",
+      "properties": {
+        "name": "角色姓名",
+        "gender": "性别",
+        "age": "年龄或年龄段",
+        "identity": "角色身份（如军人、科学家）",
+        "affiliation": "所属阵营或组织"
+      }
+    },
+    {
+      "type": "Event",
+      "description": "具有叙事意义的重要事件节点，例如关键转折、冲突、高潮等",
+      "properties": {
+        "name": "事件名称",
+        "type": "事件类型（如战斗、谈判、灾难、决策）",
+        "description": "事件的完整叙述性描述，通常为一句完整的话，说明发生了什么、谁参与了事件、何时何地发生，例如:主角在地下基地中拒绝了上级的命令",
+        "time": "发生时间",
+        "location": "发生地点"
+      }
+    },
+    {
+    "type": "Action",
+    "description": "角色或对象的具体动作或行为，通常是局部动态表达，例如移动、攻击、转身等",
+    "properties": {
+      "verb": "动词（如 接近、后退、举枪）",
+      "actor": "执行动作的主体（角色名或物体）",
+      "target": "动作的目标（如另一角色、物体、方向）",
+      "description": "动作的简要描述",
+      "location": "动作发生地点",
+      "time": "动作发生时间"
+    }
+  },
+    {
+      "type": "Location",
+      "description": "地点、场景、地理位置",
+      "properties": {
+        "name": "地名或场景名称",
+        "type": "地点类型（如城市、飞船、地下基地）",
+        "description": "地点的简要描述"
+      }
+    },
+    {
+      "type": "Object",
+      "description": "比较重要的具体物品或道具（剧组需要准备的）",
+      "properties": {
+        "name": "物品名称",
+        "type": "类别（如武器、芯片、信物）",
+        "owner": "拥有者"
+      }
+    },
+    {
+      "type": "Concept",
+      "description": "比较重要的抽象概念、组织、身份、职能",
+      "properties": {
+        "name": "概念或身份名称",
+        "category": "所属类别（如科技、政治、文化）",
+        "definition": "简要定义"
+      }
+    },
+    {
+      "type": "Emotion",
+      "description": "角色在事件中表达的情绪或心理状态",
+      "properties": {
+        "type": "情绪类型（如愤怒、悲伤、恐惧）",
+        "intensity": "情绪强度",
+        "trigger": "引发情绪的事件或对象"
+      }
+    },
+    {
+      "type": "Goal",
+      "description": "比较重要的角色的目标、动机或意图",
+      "properties": {
+        "type": "目标类型（如复仇、寻找、保护）",
+        "object": "目标对象",
+        "status": "达成状态（已达成、未达成）"
+      }
+    },
+    {
+      "type": "TimePoint",
+      "description": "时间点或时间段",
+      "properties": {
+        "description": "时间描述（如“黄昏”、“2084年夏天”）",
+        "relative_to": "相对参考点（如事件、节日）",
+        "type": "时间类型（精确、模糊、相对）"
+      }
+    }
+  ],
+  "relations": {
+    "character_relations": [
+      {
+        "type": "family_relation",
+        "description": "家庭关系，如父子、兄妹（适用于：Character -> Character）"
+      },
+      {
+        "type": "social_relation",
+        "description": "社会关系，如同事、朋友、上下属（适用于：Character -> Character）"
+      },
+      {
+        "type": "has_emotion",
+        "description": "角色在某事件或行为中表达出特定情绪（适用于：Character -> Emotion）"
+      },
+      {
+        "type": "has_goal",
+        "description": "角色具有某种目标或意图（适用于：Character -> Goal）"
+      },
+      {
+        "type": "affiliated_with",
+        "description": "角色隶属于某组织、身份、概念体系（适用于：Character -> Concept）"
+      },
+      {
+        "type": "opposes",
+        "description": "角色对他人或目标产生对立关系（适用于：Character -> Character / Goal）"
+      },
+      {
+        "type": "supports",
+        "description": "角色对他人或目标提供支持或帮助（适用于：Character -> Character / Goal）"
+      }
+    ],
+
+    "event_action_relations": [
+      {
+        "type": "participates_in",
+        "description": "角色或物体参与某事件（适用于：Character / Object -> Event）"
+      },
+      {
+        "type": "performs_action",
+        "description": "角色执行某个动作（适用于：Character -> Action）"
+      },
+      {
+        "type": "affects",
+        "description": "某动作或事件影响某对象或角色（适用于：Action / Event -> Character / Object）"
+      },
+      {
+        "type": "triggers",
+        "description": "某个动作或事件引发另一个事件或动作（适用于：Action / Event -> Event / Action）"
+      },
+      {
+        "type": "composes_event",
+        "description": "动作属于某个事件过程的一部分（适用于：Action -> Event）"
+      },
+      {
+        "type": "happens_at",
+        "description": "事件或动作发生在某时间或地点（适用于：Event / Action -> Location / TimePoint）"
+      }
+    ],
+
+    "scene_relations": [
+      {
+        "type": "appears_in",
+        "description": "实体出现在某场景、地点或事件中（适用于：Character / Object / Concept -> Location / Event）"
+      },
+      {
+        "type": "follows",
+        "description": "某事件或动作在时序上接续另一个（适用于：Event / Action -> Event / Action）"
+      },
+      {
+        "type": "located_in_time",
+        "description": "事件或动作定位于某时间点（适用于：Event / Action -> TimePoint）"
+      }
+    ],
+
+    "object_relations": [
+      {
+        "type": "owns",
+        "description": "角色或组织拥有某物品或道具（适用于：Character / Concept -> Object）"
+      },
+      {
+        "type": "uses",
+        "description": "角色或物体使用某物品（适用于：Character / Object -> Object）"
+      },
+      {
+        "type": "target_of_action",
+        "description": "某物体或角色是某个动作的目标（适用于：Action -> Object / Character）"
+      }
+    ],
+
+    "semantic_relations": [
+      {
+        "type": "is_a",
+        "description": "实体属于某类抽象概念（适用于：任意实体 -> Concept）"
+      },
+      {
+        "type": "part_of",
+        "description": "某实体是另一个更大实体的组成部分（适用于：Action / Object -> Event / Location）"
+      }
+    ]
+  }
+}

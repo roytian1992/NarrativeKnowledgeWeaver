@@ -1,0 +1,27 @@
+# 基础依赖
+python-dotenv>=1.0.0
+pyyaml>=6.0
+tqdm>=4.66.0
+pandas
+openai
+
+# LLM依赖
+langchain>=0.1.0
+langgraph
+langchain-openai>=0.0.5
+langchain-community>=0.0.10
+openai>=1.0.0
+transformers>=4.36.0
+torch>=2.0.0
+
+# 工具依赖
+qwen-agent
+
+# 存储依赖
+neo4j>=5.14.0
+chromadb>=0.4.22
+sentence-transformers>=2.2.2
+
+# 记忆和反思依赖
+langchain-core>=0.1.0
+

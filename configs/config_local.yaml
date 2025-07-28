@@ -1,0 +1,59 @@
+# KAG配置文件
+
+# LLM配置
+llm:
+  provider: qwen3          # 改成 local 表示用本地模型
+  model_name: qwen3        # 给 LLMManager 用，区分不同 local model
+  model_path: /home/RoyTian/roytian/Qwen3/Qwen3-14B # 你的本地模型路径，填你本地 Qwen3 模型的 HF路径 or 本地路径
+  device: auto             # auto / cuda / cpu （建议 auto）
+  max_new_tokens: 32768   # 本地 LLM 用 max_new_tokens
+  temperature: 0.1         # 温度
+
+# 信息抽取配置
+extraction:
+  chunk_size: 1000
+  chunk_overlap: 200
+  max_entities_per_chunk: 20
+  max_relations_per_chunk: 30
+  enable_script_parsing: true
+  enable_character_analysis: true
+  enable_timeline_extraction: true
+
+
+memory:
+  enabled: true
+  memory_type: buffer  # buffer, vector, summary
+  max_token_limit: 4000
+  memory_path: ./data/memory
+  embedding_model_name: /home/RoyTian/roytian/Embeddings/all-MiniLM-L6-v2
+
+
+
+# 存储配置
+storage:
+  # Neo4j图数据库
+  neo4j_uri: bolt://localhost:7687
+  neo4j_username: neo4j
+  neo4j_password: lifeishard
+  
+  # 向量数据库
+  vector_store_type: chroma
+  vector_store_path: data/vector_store
+  embedding_model_name: /home/RoyTian/roytian/Embeddings/all-MiniLM-L6-v2
+  # 关键词检索
+  document_store_path: data/document_store
+
+  # 知识图谱抽取
+  knowledge_graph_path: data/knowledge_graph
+
+  # 关系型数据库
+  sql_database_path: data/sql
+
+# 处理配置
+processing:
+  batch_size: 10
+  max_workers: 4
+  enable_parallel: true
+  cache_enabled: true
+  cache_dir: data/cache
+

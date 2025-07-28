@@ -1,0 +1,60 @@
+# KAG配置文件 - OpenAI API版本
+
+# LLM配置
+llm:
+  provider: openai         # 使用OpenAI API
+  model_name: Qwen3-235B-A22B-FP8
+  api_key: sk-testAPI-8LzU7p2vZgEwrYxM3nPhQ4WkR9BaX0yDfJtCmL5oTqNhV6s1EiKdMbAgZcXYu7rQ # 请替换为您的API密钥
+  base_url: http://115.190.15.46:30000/v1
+  temperature: 0.0
+  max_tokens: 8096
+  enable_thinking: True
+  timeout: 60
+
+# 信息抽取配置
+extraction:
+  chunk_size: 500
+  chunk_overlap: 0
+  score_threshold: 7
+  max_retries: 3
+  enable_parallel: true
+  max_workers: 8
+
+
+memory:
+  enabled: true
+  memory_type: buffer  # buffer, vector, summary
+  max_token_limit: 4000
+  memory_path: ./data/memory
+  embedding_model_name: /root/RoyTian/Embeddings/all-MiniLM-L6-v2
+
+
+
+# 存储配置
+storage:
+  # Neo4j图数据库
+  neo4j_uri: bolt://localhost:7687
+  neo4j_username: neo4j
+  neo4j_password: lifeishard
+  
+  # 向量数据库
+  vector_store_type: chroma
+  vector_store_path: data/vector_store
+  embedding_model_name: /root/RoyTian/Embeddings/all-MiniLM-L6-v2
+  # 关键词检索
+  document_store_path: data/document_store
+
+  # 知识图谱抽取
+  knowledge_graph_path: data/knowledge_graph
+
+  # 关系型数据库
+  sql_database_path: data/sql
+
+# 处理配置
+processing:
+  batch_size: 10
+  max_workers: 4
+  enable_parallel: true
+  cache_enabled: true
+  cache_dir: data/cache
+
