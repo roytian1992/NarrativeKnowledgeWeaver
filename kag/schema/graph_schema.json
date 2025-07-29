@@ -91,102 +91,33 @@
   ],
   "relations": {
     "character_relations": [
-      {
-        "type": "family_relation",
-        "description": "家庭关系，如父子、兄妹（适用于：Character -> Character）"
-      },
-      {
-        "type": "social_relation",
-        "description": "社会关系，如同事、朋友、上下属（适用于：Character -> Character）"
-      },
-      {
-        "type": "has_emotion",
-        "description": "角色在某事件或行为中表达出特定情绪（适用于：Character -> Emotion）"
-      },
-      {
-        "type": "has_goal",
-        "description": "角色具有某种目标或意图（适用于：Character -> Goal）"
-      },
-      {
-        "type": "affiliated_with",
-        "description": "角色隶属于某组织、身份、概念体系（适用于：Character -> Concept）"
-      },
-      {
-        "type": "opposes",
-        "description": "角色对他人或目标产生对立关系（适用于：Character -> Character / Goal）"
-      },
-      {
-        "type": "supports",
-        "description": "角色对他人或目标提供支持或帮助（适用于：Character -> Character / Goal）"
-      }
+      { "type": "family_with",   "description": "家庭血缘或婚姻关系（Character → Character）" },
+      { "type": "social_with",   "description": "社会/职场/朋友/上下属关系（Character → Character）" },
+      { "type": "supports",      "description": "支持他人或目标（Character → Character / Goal）" },
+      { "type": "opposes",       "description": "对立、阻碍（Character → Character / Goal）" },
+      { "type": "affiliated_to", "description": "隶属于组织或概念阵营（Character → Concept）" }
     ],
-
     "event_action_relations": [
-      {
-        "type": "participates_in",
-        "description": "角色或物体参与某事件（适用于：Character / Object -> Event）"
-      },
-      {
-        "type": "performs_action",
-        "description": "角色执行某个动作（适用于：Character -> Action）"
-      },
-      {
-        "type": "affects",
-        "description": "某动作或事件影响某对象或角色（适用于：Action / Event -> Character / Object）"
-      },
-      {
-        "type": "triggers",
-        "description": "某个动作或事件引发另一个事件或动作（适用于：Action / Event -> Event / Action）"
-      },
-      {
-        "type": "composes_event",
-        "description": "动作属于某个事件过程的一部分（适用于：Action -> Event）"
-      },
-      {
-        "type": "happens_at",
-        "description": "事件或动作发生在某时间或地点（适用于：Event / Action -> Location / TimePoint）"
-      }
+      { "type": "performs",         "description": "执行动作（Character / Object → Action）" },
+      { "type": "participates_in",  "description": "参与事件（Character / Object → Event）" },
+      { "type": "part_of_event",    "description": "动作属于事件流程（Action → Event）" },
+      { "type": "causes",           "description": "引发事件或动作（Action / Event → Event / Action）" },
+      { "type": "affects",          "description": "动作或事件影响对象（Action / Event → Character / Object）" },
+      { "type": "happens_at",       "description": "发生在时间或地点（Event / Action → Location / TimePoint）" }
     ],
-
     "scene_relations": [
-      {
-        "type": "appears_in",
-        "description": "实体出现在某场景、地点或事件中（适用于：Character / Object / Concept -> Location / Event）"
-      },
-      {
-        "type": "follows",
-        "description": "某事件或动作在时序上接续另一个（适用于：Event / Action -> Event / Action）"
-      },
-      {
-        "type": "located_in_time",
-        "description": "事件或动作定位于某时间点（适用于：Event / Action -> TimePoint）"
-      }
+      { "type": "follows", "description": "时序接续关系（Event / Action → Event / Action）" }
     ],
 
     "object_relations": [
-      {
-        "type": "owns",
-        "description": "角色或组织拥有某物品或道具（适用于：Character / Concept -> Object）"
-      },
-      {
-        "type": "uses",
-        "description": "角色或物体使用某物品（适用于：Character / Object -> Object）"
-      },
-      {
-        "type": "target_of_action",
-        "description": "某物体或角色是某个动作的目标（适用于：Action -> Object / Character）"
-      }
+      { "type": "owns",  "description": "拥有物品（Character / Concept → Object）" },
+      { "type": "uses",  "description": "使用物品（Character / Object → Object）" }
     ],
 
     "semantic_relations": [
-      {
-        "type": "is_a",
-        "description": "实体属于某类抽象概念（适用于：任意实体 -> Concept）"
-      },
-      {
-        "type": "part_of",
-        "description": "某实体是另一个更大实体的组成部分（适用于：Action / Object -> Event / Location）"
-      }
+      { "type": "is_a",      "description": "属于某抽象概念（Any → Concept）" },
+      { "type": "part_of",   "description": "组成/从属关系（Action / Object / Location → Event / Object / Location）" },
+      { "type": "has_trait", "description": "拥有情绪、目标或其他静态属性（Character / Object → Emotion / Goal / Attribute）" }
     ]
   }
 }

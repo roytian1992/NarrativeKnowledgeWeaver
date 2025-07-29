@@ -57,7 +57,7 @@ class Neo4jUtils:
         with self.driver.session() as session:
             result = session.run(cypher, params)
             return [dict(record) for record in result]
-    
+        
     def search_entities_by_type(
         self,
         entity_type: Optional[str] = None,
@@ -118,6 +118,7 @@ class Neo4jUtils:
         self,
         source_id: str,
         predicate: Optional[str] = None,
+        relation_type: Optional[str] = None,
         entity_types: Optional[List[str]] = None,
         limit: int = 10,
         return_relations: bool = False
@@ -139,6 +140,8 @@ class Neo4jUtils:
             return []
 
         params = {"source_id": source_id, "limit": limit}
+        if relation_type:
+            params["rel_type"] = relation_type
         if predicate:
             params["predicate"] = predicate
         if entity_types:
@@ -147,6 +150,7 @@ class Neo4jUtils:
         # entity type 过滤语句
         type_filter = "AND target.type IN $etypes" if entity_types else ""
         pred_filter = "AND rel.predicate = $predicate" if predicate else ""
+        rel_type_clause = f":{relation_type}" if relation_type else ""
 
         results = []
 
@@ -154,6 +158,7 @@ class Neo4jUtils:
             # 正向关系
             forward_cypher = f"""
             MATCH (source)-[rel]->(target)
+              {type_filter}
             WHERE source.id = $source_id
               AND rel.predicate IS NOT NULL
               {pred_filter}
@@ -172,6 +177,7 @@ class Neo4jUtils:
             # 反向关系
             backward_cypher = f"""
             MATCH (target)-[rel]->(source)
+              {type_filter}
             WHERE source.id = $source_id
               AND rel.predicate IS NOT NULL
               {pred_filter}
@@ -634,5 +640,137 @@ class Neo4jUtils:
         """
         embed = self.model.encode(text, normalize_embeddings=normalize).tolist()
         return self._query_entity_knn(embed, top_k=top_k)
-
+    
+    
+    def create_subgraph(
+        self,
+        graph_name: str = "subgraph_1",
+        exclude_node_labels: Optional[List[str]] = None,
+        exclude_rel_types: Optional[List[str]] = None,
+        force_refresh: bool = False,
+    ) -> None:
+        """
+        创建/刷新一个 GDS 命名子图：
+        - 节点：全图节点，但会排除指定标签（默认 :Scene）
+        - 边  ：排除指定关系类型（默认 SCENE_CONTAINS）
         
+        Args:
+            graph_name:            子图名称
+            exclude_node_labels:   要排除的节点标签列表，默认 ["Scene"]
+            exclude_rel_types:     要排除的关系类型列表，默认 ["SCENE_CONTAINS"]
+            force_refresh:         如子图已存在，是否强制删除后重建
+        """
+
+        exclude_node_labels = exclude_node_labels or ["Scene"]
+        exclude_rel_types   = exclude_rel_types   or ["SCENE_CONTAINS"]
+
+        with self.driver.session() as s:
+            # --- 1. 若已存在且要求刷新，则删除 ---
+            exists = s.run("RETURN gds.graph.exists($name) AS ok",
+                        name=graph_name).single()["ok"]
+            if exists and force_refresh:
+                s.run("CALL gds.graph.drop($name, false)", name=graph_name)
+                exists = False
+                print(f"[✓] 旧子图 {graph_name} 已删除并刷新")
+
+            if exists:
+                print(f"[✓] GDS 子图 {graph_name} 已存在，跳过创建")
+                return
+
+            # --- 2. 生成节点 / 关系 Cypher ---
+            #   节点：排除指定标签
+            label_filter = " AND ".join([f"NOT '{lbl}' IN labels(n)" for lbl in exclude_node_labels]) or "true"
+            node_query = f"""
+            MATCH (n) WHERE {label_filter}
+            RETURN id(n) AS id
+            """
+
+            #   关系：排除指定类型 & 排除与被排除节点相连的边
+            rel_filter = " AND ".join([f"type(r) <> '{rt}'" for rt in exclude_rel_types]) or "true"
+            # 额外保证两端节点都不是被排除标签
+            node_label_neg = " AND ".join([f"NOT '{lbl}' IN labels(a)" for lbl in exclude_node_labels] +
+                                        [f"NOT '{lbl}' IN labels(b)" for lbl in exclude_node_labels]) or "true"
+
+            rel_query = f"""
+            MATCH (a)-[r]->(b)
+            WHERE {rel_filter} AND {node_label_neg}
+            RETURN id(a) AS source, id(b) AS target
+            """
+
+            # --- 3. 调用 project.cypher ---
+            s.run("""
+            CALL gds.graph.project.cypher(
+            $name,
+            $nodeQuery,
+            $relQuery
+            )
+            """, name=graph_name, nodeQuery=node_query, relQuery=rel_query)
+
+            print(f"[+] 已创建 GDS 子图 {graph_name}（排除标签 {exclude_node_labels}，排除边 {exclude_rel_types}）")
+
+    def run_louvain(
+        self,
+        graph_name: str = "event_graph",
+        write_property: str = "community",
+        max_iterations: int = 20,
+        force_run: bool = False
+    ) -> None:
+        """
+        在指定子图上跑 Louvain；若已写过属性且 !force_run 则跳过
+        """
+        with self.driver.session() as s:
+            if not force_run:
+                # 快速检测是否已有社区字段
+                has_prop = s.run("""
+                    MATCH (n) WHERE exists(n[$prop]) RETURN n LIMIT 1
+                """, prop=write_property).single()
+                if has_prop:
+                    print(f"[✓] 节点已存在 {write_property}，跳过 Louvain")
+                    return
+
+            s.run(f"""
+            CALL gds.louvain.write($graph, {{
+              writeProperty: $prop,
+              maxIterations: $iters
+            }});
+            """, graph=graph_name, prop=write_property, iters=max_iterations)
+            print(f"[+] Louvain 已完成，结果写入 `{write_property}`")
+
+    # === 3. 取同社区事件对 ===
+    def fetch_event_pairs_same_community(
+        self,
+        max_depth: int = 3,
+        max_pairs: Optional[int] = None
+    ) -> List[Dict[str, str]]:
+        """
+        返回同社区 & 路径在 max_depth 内可达的事件对 ID 列表
+        """
+        q = f"""
+        MATCH (e1:Event)
+        MATCH (e2:Event)
+        WHERE e1.community = e2.community AND id(e1) < id(e2)
+          AND EXISTS {{
+              MATCH p = (e1)-[*1..{max_depth}]-(e2)
+              WHERE ALL(r IN relationships(p) WHERE type(r) <> 'SCENE_CONTAINS')
+          }}
+        RETURN e1.id AS srcId, e2.id AS dstId
+        """ + (f"LIMIT {max_pairs}" if max_pairs else "")
+        return self.execute_query(q)
+
+    # === 4. 写入 EVENT_CAUSES 关系 ===
+    def write_event_causes(self, rows: List[Dict[str, Any]]) -> None:
+        """
+        rows: [{srcId, dstId, weight, reason}]
+        """
+        if not rows:
+            return
+        self.execute_query("""
+        UNWIND $rows AS row
+        MATCH (s:Event {id: row.srcId})
+        MATCH (t:Event {id: row.dstId})
+        MERGE (s)-[ca:EVENT_CAUSES]->(t)
+        SET ca.weight = row.weight,
+            ca.reason = row.reason,
+            ca.predicate = row.predicate
+        """, {"rows": rows})
+        print(f"[+] 已写入/更新 EVENT_CAUSES 关系 {len(rows)} 条")

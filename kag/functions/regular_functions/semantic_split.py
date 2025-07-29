@@ -32,14 +32,14 @@ class SemanticSplitter:
 
         messages = [{"role": "user", "content": prompt_text}]
         starting_messages = messages.copy()
-
+        enable_thinking = False
         # 最多重试 3 次
         for attempt in range(3):
             try:
-                if attempt == 0:
-                    enable_thinking = True
-                else:
-                    enable_thinking = False
+                # if attempt == 0:
+                #     enable_thinking = True
+                # else:
+                #     enable_thinking = False
                     
                 result = self.llm.run(messages, enable_thinking=enable_thinking)
                 content = result[0]['content'].strip()
