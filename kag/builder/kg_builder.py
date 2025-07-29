@@ -30,6 +30,7 @@ from kag.llm.llm_manager import LLMManager
 from kag.agent.kg_extraction_agent import InformationExtractionAgent
 from kag.agent.attribute_extraction_agent import AttributeExtractionAgent
 from dataclasses import asdict 
+from kag.utils.neo4j_utils import Neo4jUtils
 # from ..schema.kg_schema import ENTITY_TYPES, RELATION_TYPE_GROUPS
 import os
 
@@ -43,6 +44,7 @@ class KnowledgeGraphBuilder:
         self.llm_manager = LLMManager(config)
         self.llm = self.llm_manager.get_llm()
         self.graph_store = GraphStore(config)
+        self.neo4j_utils = Neo4jUtils(self.graph_store.driver)
         self.vector_store = VectorStore(config)
         self.document_store = DocumentStore(config)
         self.kg = KnowledgeGraph()
@@ -652,6 +654,10 @@ class KnowledgeGraphBuilder:
         except Exception as e:
             if verbose:
                 print(f"⚠️ 存储失败: {str(e)}")
+                
+    def prepare_graph_embeddings(self):
+        self.neo4j_utils.load_emebdding_model(self.config.memory.embedding_model_name)
+        self.neo4j_utils.process_all_embeddings(exclude_node_types=["Scene"], exclude_rel_types=["SCENE_CONTAINS"])
     
     def search_entities(self, query: str, limit: int = 10) -> List[Entity]:
         return self.graph_store.search_entities(query, limit)

@@ -520,6 +520,7 @@ class EventCausalityBuilder:
         print("\n✅ 事件因果图构建完成！")
         return causality_graph
 
+
     def get_graph_statistics(self, graph: nx.DiGraph) -> Dict[str, Any]:
         """
         获取图的统计信息

@@ -9,6 +9,8 @@ import networkx as nx
 from neo4j import Driver
 from community import best_partition
 from kag.models.entities import Entity, Relation
+from sentence_transformers import SentenceTransformer
+from tqdm import tqdm
 
 
 class Neo4jUtils:
@@ -29,6 +31,12 @@ class Neo4jUtils:
             driver: Neo4j连接驱动
         """
         self.driver = driver
+        self.model = None
+        self.embedding_field = "embedding"
+        
+    def load_emebdding_model(self, model_name):
+        self.model = SentenceTransformer(model_name)
+        print("向量模型已加载")
     
     def execute_query(self, cypher: str, params: Dict[str, Any] = None) -> List[Dict]:
         """
@@ -224,6 +232,26 @@ class Neo4jUtils:
             rel_types = [record["relationshipType"] for record in result]
 
         return rel_types
+    
+    def list_node_labels(self) -> List[str]:
+        """
+        获取 Neo4j 图数据库中已存在的所有实体类型（节点标签）
+
+        Returns:
+            实体类型名称列表（去重、按字母排序）
+        """
+        cypher = """
+        CALL db.labels() YIELD label
+        RETURN label
+        ORDER BY label
+        """
+        with self.driver.session() as session:
+            result = session.run(cypher)
+            labels = [record["label"] for record in result]
+        if "*" in labels:
+            labels.remove("*")
+        return labels
+
 
     def has_path_between(
         self, 
@@ -406,4 +434,202 @@ class Neo4jUtils:
             )
         
         return entity, relation
+    
+    
+    def encode_node_embedding(self, node: Dict) -> List[float]:
+        name = node.get("name", "")
+        desc = node.get("description", "")
+        props = node.get("properties", "")
+        try:
+            props_dict = json.loads(props) if isinstance(props, str) else props
+        except Exception:
+            props_dict = {}
 
+        # 构造嵌入输入
+        if props_dict:
+            prop_text = "；".join([f"{k}：{v}" for k, v in props_dict.items()])
+            text = f"{name}：{desc}。{prop_text}"
+        else:
+            text = f"{name}：{desc}"
+        return self.model.encode(text, normalize_embeddings=True).tolist()
+
+    def encode_relation_embedding(self, rel: Dict) -> Optional[List[float]]:
+        try:
+            props = rel.get("properties", "")
+            props_dict = json.loads(props) if isinstance(props, str) else props
+            desc = props_dict.get("description", "")
+            if desc:
+                return self.model.encode(desc, normalize_embeddings=True).tolist()
+        except Exception:
+            pass
+        return None
+    
+    def fetch_all_nodes(self, node_types: List[str]) -> List[Dict]:
+        results = []
+        with self.driver.session() as session:
+            for label in node_types:
+                query = f"""
+                MATCH (e:{label})
+                RETURN labels(e) AS labels, e.id AS id, e.name AS name, e.description AS description, e.properties AS properties
+                """
+                res = session.run(query)
+                results.extend([r.data() for r in res])
+        return results
+
+    def fetch_all_relations(self, relation_types: Optional[List[str]] = None) -> List[Dict]:
+        """
+        获取图中所有关系，支持按关系类型（predicate）过滤。
+
+        Args:
+            relation_types: 要保留的关系类型列表（如 ["happens_at", "causes"]）
+                            若为 None，则返回所有关系
+
+        Returns:
+            每条边的数据字典，字段包括 predicate、id、properties
+        """
+        with self.driver.session() as session:
+            if relation_types:
+                predicate_filter = ", ".join([f"'{r}'" for r in relation_types])
+                query = f"""
+                MATCH ()-[r]->()
+                WHERE type(r) IN [{predicate_filter}]
+                RETURN type(r) AS predicate, r.id AS id, r.properties AS properties
+                """
+            else:
+                query = """
+                MATCH ()-[r]->()
+                RETURN type(r) AS predicate, r.id AS id, r.properties AS properties
+                """
+
+            result = session.run(query)
+            return [record.data() for record in result]
+
+        
+    def update_node_embedding(self, node_id: str, embedding: List[float]) -> None:
+        with self.driver.session() as session:
+            session.run(f"""
+            MATCH (e) WHERE e.id = $id
+            SET e.{self.embedding_field} = $embedding
+            """, id=node_id, embedding=embedding)
+            
+    def update_relation_embedding(self, rel_id: str, embedding: List[float]) -> None:
+        with self.driver.session() as session:
+            session.run(f"""
+            MATCH ()-[r]->() WHERE r.id = $id
+            SET r.{self.embedding_field} = $embedding
+            """, id=rel_id, embedding=embedding)
+    
+    def process_all_embeddings(self, exclude_node_types: List[str] = [], exclude_rel_types: List[str] = []):
+        """
+        自动处理所有节点标签和所有边，为其生成 embedding 并写回图数据库。
+        节点 embedding 输入：name + description (+ properties)
+        边 embedding 输入：properties.description
+        """
+        # === 获取所有实体类型（标签） ===
+        node_types = self.list_node_labels()
+
+        # === 处理节点嵌入 ===
+        print("🚀 开始处理节点嵌入...")
+        for node in exclude_node_types:
+            if node in node_types:
+                node_types.remove(node)
+                
+        print(f"📌 实体类型标签: {node_types}")
+        nodes = self.fetch_all_nodes(node_types)
+        for n in  tqdm(nodes, desc="Encoding Nodes", ncols=80):
+            try:
+                emb = self.encode_node_embedding(n)
+                self.update_node_embedding(n["id"], emb)
+            except Exception as e:
+                print(f"⚠️ Node {n.get('id')} embedding failed:", str(e))
+
+        print(f"✅ 节点嵌入完成，共处理 {len(nodes)} 个节点")
+
+        # === 处理关系嵌入 ===
+        print("🚀 开始处理边嵌入...")
+        rel_types = self.list_relationship_types()
+        for rel in exclude_rel_types: # 移除不需要考虑的边关系
+            if rel in rel_types:
+                rel_types.remove(rel)
+        
+        rels = self.fetch_all_relations(rel_types)
+        
+        for r in tqdm(rels, desc="Encoding Edges", ncols=80):
+            try:
+                emb = self.encode_relation_embedding(r)
+                if emb:
+                    self.update_relation_embedding(r["id"], emb)
+            except Exception as e:
+                print(f"⚠️ Relation {r.get('id')} embedding failed:", str(e))
+
+        print(f"✅ 边嵌入完成，共处理 {len(rels)} 条边")
+        
+        
+    def ensure_entity_superlabel(self):
+        """
+        为所有具有 embedding 的节点添加超标签 :Entity（跳过已存在标签）
+        """
+        query = """
+        MATCH (n)
+        WHERE n.embedding IS NOT NULL AND NOT 'Entity' IN labels(n)
+        SET n:Entity
+        """
+        with self.driver.session() as session:
+            session.run(query)
+            print("[✓] 已为所有含 embedding 的节点添加超标签 :Entity")
+
+    def create_vector_index(self, index_name="entityEmbeddingIndex", dim=768, similarity="cosine"):
+        """
+        删除已有同名索引并重建统一向量索引
+        """
+        with self.driver.session() as session:
+            # DROP index if exists（5.x 语法）
+            session.run(f"DROP INDEX {index_name} IF EXISTS")
+            print(f"[✓] 已删除旧索引 {index_name}（如存在）")
+
+            # 创建新索引（标准 Cypher 语法，社区版兼容）
+            session.run(f"""
+            CREATE VECTOR INDEX {index_name}
+            FOR (n:Entity)
+            ON (n.embedding)
+            OPTIONS {{
+              indexConfig: {{
+                `vector.dimensions`: {dim},
+                `vector.similarity_function`: '{similarity}'
+              }}
+            }}
+            """)
+            print(f"[✓] 已创建新向量索引 {index_name} on :Entity(embedding)")
+
+    def _query_entity_knn(self, embedding: list, top_k: int = 5):
+        """
+        查询与输入 embedding 向量最相似的 top-K 节点
+        """
+        query = """
+        CALL db.index.vector.queryNodes('entityEmbeddingIndex', $top_k, $embedding)
+        YIELD node, score
+        RETURN node.name AS name, labels(node) AS labels, node.id AS id, score
+        ORDER BY score DESC
+        """
+
+        with self.driver.session() as session:
+            result = session.run(query, {"embedding": embedding, "top_k": top_k})
+            return result.data()
+
+    def query_similar_entities(self, text: str, top_k: int = 5, normalize: bool = True):
+        """
+        给定自然语言 `text`，自动编码为 embedding，查询最相似的实体节点（使用 entityEmbeddingIndex）
+
+        Args:
+            text (str): 查询文本（如实体名、事件片段等）
+            model: 你的 embedding 模型（需有 encode 方法）
+            top_k (int): 返回前 top-k 个结果
+            normalize (bool): 是否标准化向量（确保匹配 cosine 索引）
+
+        Returns:
+            List[Dict]: 包含 name、labels、id、score 的结果列表
+        """
+        embed = self.model.encode(text, normalize_embeddings=normalize).tolist()
+        return self._query_entity_knn(embed, top_k=top_k)
+
+        
