@@ -33,9 +33,11 @@ class Neo4jUtils:
         self.driver = driver
         self.model = None
         self.embedding_field = "embedding"
+        self.dim = 768
         
     def load_emebdding_model(self, model_name):
         self.model = SentenceTransformer(model_name)
+        self.dim = self.model.get_sentence_embedding_dimension()
         print("向量模型已加载")
     
     def execute_query(self, cypher: str, params: Dict[str, Any] = None) -> List[Dict]:
@@ -578,10 +580,11 @@ class Neo4jUtils:
             session.run(query)
             print("[✓] 已为所有含 embedding 的节点添加超标签 :Entity")
 
-    def create_vector_index(self, index_name="entityEmbeddingIndex", dim=768, similarity="cosine"):
+    def create_vector_index(self, index_name="entityEmbeddingIndex", similarity="cosine"):
         """
         删除已有同名索引并重建统一向量索引
         """
+
         with self.driver.session() as session:
             # DROP index if exists（5.x 语法）
             session.run(f"DROP INDEX {index_name} IF EXISTS")
@@ -594,7 +597,7 @@ class Neo4jUtils:
             ON (n.embedding)
             OPTIONS {{
               indexConfig: {{
-                `vector.dimensions`: {dim},
+                `vector.dimensions`: {self.dim},
                 `vector.similarity_function`: '{similarity}'
               }}
             }}

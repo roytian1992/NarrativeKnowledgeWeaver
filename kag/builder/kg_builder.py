@@ -46,6 +46,7 @@ class KnowledgeGraphBuilder:
         self.graph_store = GraphStore(config)
         self.neo4j_utils = Neo4jUtils(self.graph_store.driver)
         self.vector_store = VectorStore(config)
+        self.vector_store.delete_collection()
         self.document_store = DocumentStore(config)
         self.kg = KnowledgeGraph()
         self.max_workers = 16
@@ -657,8 +658,11 @@ class KnowledgeGraphBuilder:
                 
     def prepare_graph_embeddings(self):
         self.neo4j_utils.load_emebdding_model(self.config.memory.embedding_model_name)
+        self.neo4j_utils.create_vector_index()
         self.neo4j_utils.process_all_embeddings(exclude_node_types=["Scene"], exclude_rel_types=["SCENE_CONTAINS"])
-    
+        self.neo4j_utils.ensure_entity_superlabel()
+        print("✅ 图向量构建完成")
+
     def search_entities(self, query: str, limit: int = 10) -> List[Entity]:
         return self.graph_store.search_entities(query, limit)
     

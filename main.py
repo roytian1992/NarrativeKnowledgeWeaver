@@ -65,10 +65,10 @@ def main():
     # builder.store_chunks(verbose=args.verbose)
     # builder.extract_entity_and_relation(verbose=args.verbose)
     # builder.extract_entity_attributes(verbose=args.verbose)
-
-    kg = builder.build_graph_from_results(verbose=args.verbose)
-    event_graph_builder = EventCausalityBuilder(config)
-    causality_graph = event_graph_builder.build_complete_causality_graph()
+    builder.prepare_graph_embeddings()
+    # kg = builder.build_graph_from_results(verbose=args.verbose)
+    # event_graph_builder = EventCausalityBuilder(config)
+    # causality_graph = event_graph_builder.build_complete_causality_graph()
     
     # 输出统计信息
     stats = builder.get_stats()
