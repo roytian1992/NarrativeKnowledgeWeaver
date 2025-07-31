@@ -138,7 +138,7 @@ class Neo4jUtils:
         """
         if self.driver is None:
             return []
-
+            
         params = {"source_id": source_id, "limit": limit}
         if relation_type:
             params["rel_type"] = relation_type
@@ -157,8 +157,7 @@ class Neo4jUtils:
         with self.driver.session() as session:
             # 正向关系
             forward_cypher = f"""
-            MATCH (source)-[rel]->(target)
-              {type_filter}
+            MATCH (source)-[rel{rel_type_clause }]->(target)
             WHERE source.id = $source_id
               AND rel.predicate IS NOT NULL
               {pred_filter}
@@ -166,6 +165,7 @@ class Neo4jUtils:
             RETURN target, rel
             LIMIT $limit
             """
+            # print("[CHECK] forward_cypher: ", session.run(forward_cypher, params))
 
             for record in session.run(forward_cypher, params):
                 entity, relation = self._process_entity_relation_record(record, source_id, "forward")
@@ -176,8 +176,7 @@ class Neo4jUtils:
 
             # 反向关系
             backward_cypher = f"""
-            MATCH (target)-[rel]->(source)
-              {type_filter}
+            MATCH (target)-[rel{rel_type_clause}]->(source)
             WHERE source.id = $source_id
               AND rel.predicate IS NOT NULL
               {pred_filter}
@@ -241,7 +240,7 @@ class Neo4jUtils:
 
         return rel_types
     
-    def list_node_labels(self) -> List[str]:
+    def list_entity_types(self) -> List[str]:
         """
         获取 Neo4j 图数据库中已存在的所有实体类型（节点标签）
 
@@ -419,23 +418,34 @@ class Neo4jUtils:
         """
         data = record["target"]
         rel = record["rel"]
+        # print("[CHECL] rel.type: ", rel.type )
         
         entity = self._build_entity_from_data(data)
+        # print("[CHECK] rel: ", [k for k in rel])
+        predicate = rel.get("predicate", rel.type)
+        
+        if direction == "forward":
+            relation_id_str = f"{source_id}_{predicate}_{data["id"]}"
+        else:
+            relation_id_str = f"{data["id"]}_{predicate}_{source_id}"
+            
+        rel_id = f"rel_{hash(relation_id_str) % 1000000}"
+        
         
         if direction == "forward":
             relation = Relation(
-                id=rel.get("id"),
+                id=rel.get("id", rel_id),
                 subject_id=source_id,
-                predicate=rel.get("predicate"),
+                predicate=predicate,
                 object_id=data["id"],
                 source_chunks=rel.get("source_chunks", []),
                 properties=json.loads(rel.get("properties", "{}")),
             )
         else:  # backward
             relation = Relation(
-                id=rel.get("id"),
+                id=rel.get("id", rel_id),
                 subject_id=data["id"],
-                predicate=rel.get("predicate"),
+                predicate=predicate,
                 object_id=source_id,
                 source_chunks=rel.get("source_chunks", []),
                 properties=json.loads(rel.get("properties", "{}")),
@@ -534,7 +544,7 @@ class Neo4jUtils:
         边 embedding 输入：properties.description
         """
         # === 获取所有实体类型（标签） ===
-        node_types = self.list_node_labels()
+        node_types = self.list_entity_types()
 
         # === 处理节点嵌入 ===
         print("🚀 开始处理节点嵌入...")
@@ -757,7 +767,6 @@ class Neo4jUtils:
         """ + (f"LIMIT {max_pairs}" if max_pairs else "")
         return self.execute_query(q)
 
-    # === 4. 写入 EVENT_CAUSES 关系 ===
     def write_event_causes(self, rows: List[Dict[str, Any]]) -> None:
         """
         rows: [{srcId, dstId, weight, reason}]
@@ -774,3 +783,374 @@ class Neo4jUtils:
             ca.predicate = row.predicate
         """, {"rows": rows})
         print(f"[+] 已写入/更新 EVENT_CAUSES 关系 {len(rows)} 条")
+    
+    def get_all_events_with_causality(self) -> List[Dict[str, Any]]:
+        """
+        获取所有事件及其因果关系信息
+        
+        Returns:
+            List[Dict]: 包含事件ID、属性和因果关系的列表
+        """
+        cypher = """
+        MATCH (e:Event)
+        OPTIONAL MATCH (e)-[r:EVENT_CAUSES]->(target:Event)
+        OPTIONAL MATCH (source:Event)-[r2:EVENT_CAUSES]->(e)
+        RETURN e.id as event_id, 
+            e.name as event_name,
+            e.description as event_description,
+            e.participants as participants,
+            collect(DISTINCT {target: target.id, weight: r.weight}) as outgoing_causes,
+            collect(DISTINCT {source: source.id, weight: r2.weight}) as incoming_causes
+        """
+        
+        result = self.execute_query(cypher)
+        return [dict(record) for record in result]
+
+    def get_causality_edges_by_weight(self, threshold: str = "Medium") -> List[Dict[str, Any]]:
+        """
+        根据权重阈值获取因果关系边
+        
+        Args:
+            threshold: 权重阈值 ("High", "Medium", "Low")
+            
+        Returns:
+            List[Dict]: 因果关系边列表
+        """
+        # 定义权重映射
+        weight_hierarchy = {
+            "High": 1.0,
+            "Medium": 0.6, 
+            "Low": 0.3
+        }
+        
+        weight_threshold = weight_hierarchy.get(threshold, 0.6)
+        
+        cypher = """
+        MATCH (source:Event)-[r:EVENT_CAUSES]->(target:Event)
+        WHERE r.weight >= $weight_threshold
+        RETURN source.id AS source_id, 
+            target.id AS target_id, 
+            r.weight AS weight
+        """
+        
+        params = {"weight_threshold": weight_threshold}
+        result = self.execute_query(cypher, params)
+        return [dict(record) for record in result]
+
+    def identify_event_clusters_by_connectivity(self, threshold: str = "Medium") -> List[List[str]]:
+        """
+        使用GDS连通分量算法识别事件聚类
+        
+        Args:
+            threshold: 因果关系权重阈值
+            
+        Returns:
+            List[List[str]]: 事件聚类列表，每个聚类包含事件ID列表
+        """
+        # 1. 创建基于权重阈值的投影图
+        graph_name = f"event_causality_graph_{threshold.lower()}"
+        
+        # 删除可能存在的旧图
+        drop_cypher = f"CALL gds.graph.drop('{graph_name}') YIELD graphName"
+        try:
+            self.execute_query(drop_cypher)
+        except:
+            pass  # 图不存在时忽略错误
+        
+        # 获取权重过滤条件
+        weight_hierarchy = {
+            "High": 1.0,
+            "Medium": 0.6, 
+            "Low": 0.3
+        }
+        weight_threshold = weight_hierarchy.get(threshold, 0.6)
+        
+        # 创建投影图 - 只包含满足权重条件的关系
+        create_graph_cypher = f"""
+        CALL gds.graph.project.cypher(
+            '{graph_name}',
+            'MATCH (n:Event) RETURN id(n) AS id',
+            'MATCH (a:Event)-[r:EVENT_CAUSES]->(b:Event) 
+            WHERE r.weight >= {weight_threshold}
+            RETURN id(a) AS source, id(b) AS target, r.weight AS weight'
+        )
+        """
+        # print("[CHECK] create_graph_cypher", create_graph_cypher)
+        
+        self.execute_query(create_graph_cypher)
+        
+        # 2. 运行连通分量算法
+        wcc_cypher = f"""
+        CALL gds.wcc.stream('{graph_name}')
+        YIELD nodeId, componentId
+        RETURN gds.util.asNode(nodeId).id as event_id, componentId
+        ORDER BY componentId, event_id
+        """
+        
+        result = self.execute_query(wcc_cypher)
+        # print("[CHECK] result: ", result)
+        
+        # 3. 组织结果为聚类
+        clusters = {}
+        for record in result:
+            component_id = record['componentId']
+            event_id = record['event_id']
+            
+            if component_id not in clusters:
+                clusters[component_id] = []
+            clusters[component_id].append(event_id)
+        
+        # print("[CHECK] clusters: ", clusters)
+        # 4. 清理图
+        # self.execute_query(drop_cypher)
+        
+        # 5. 过滤聚类 - 只保留通过权重阈值连接的事件
+        filtered_clusters = []
+        edges = self.get_causality_edges_by_weight(threshold)
+        # print("[CHECK] edges: ", edges)
+        
+        # 构建满足权重条件的连接图
+        connected_events = set()
+        for edge in edges:
+            connected_events.add(edge['source_id'])
+            connected_events.add(edge['target_id'])
+        
+        for cluster in clusters.values():
+            # 只保留有满足权重条件连接的聚类，且聚类大小大于1
+            if len(cluster) > 1:
+                cluster_has_valid_connections = any(event_id in connected_events for event_id in cluster)
+                if cluster_has_valid_connections:
+                    filtered_clusters.append(cluster)
+        
+        return filtered_clusters
+            
+
+    def _fallback_clustering(self, threshold: str) -> List[List[str]]:
+        """
+        降级聚类方法：基于直接因果关系的简单聚类
+        
+        Args:
+            threshold: 权重阈值
+            
+        Returns:
+            List[List[str]]: 事件聚类列表
+        """
+        edges = self.get_causality_edges_by_weight(threshold)
+        
+        # 构建邻接表
+        graph = {}
+        all_events = set()
+        
+        for edge in edges:
+            source = edge['source_id']
+            target = edge['target_id']
+            
+            all_events.add(source)
+            all_events.add(target)
+            
+            if source not in graph:
+                graph[source] = []
+            if target not in graph:
+                graph[target] = []
+                
+            graph[source].append(target)
+            graph[target].append(source)  # 无向图
+        
+        # DFS查找连通分量
+        visited = set()
+        clusters = []
+        
+        def dfs(node, current_cluster):
+            if node in visited:
+                return
+            visited.add(node)
+            current_cluster.append(node)
+            
+            for neighbor in graph.get(node, []):
+                dfs(neighbor, current_cluster)
+        
+        for event in all_events:
+            if event not in visited:
+                cluster = []
+                dfs(event, cluster)
+                if len(cluster) > 1:  # 只保留有多个事件的聚类
+                    clusters.append(cluster)
+        
+        return clusters
+
+    def get_event_details(self, event_ids: List[str]) -> List[Dict[str, Any]]:
+        """
+        获取事件详细信息
+        
+        Args:
+            event_ids: 事件ID列表
+            
+        Returns:
+            List[Dict]: 事件详细信息列表
+        """
+        cypher = """
+        MATCH (e:Event)
+        WHERE e.id IN $event_ids
+        OPTIONAL MATCH (s:Scene)-[:SCENE_CONTAINS]->(e)
+        RETURN e.id as event_id,
+            e.name as event_name,
+            e.description as event_description,
+            e.participants as participants,
+            e.location as location,
+            e.time as time,
+            collect(DISTINCT s.id) as scene_ids,
+            collect(DISTINCT s.name) as scene_names
+        """
+        
+        params = {"event_ids": event_ids}
+        result = self.execute_query(cypher, params)
+        return [dict(record) for record in result]
+
+    def get_causality_paths(self, event_ids: List[str]) -> List[Dict[str, Any]]:
+        """
+        获取事件间的因果路径
+        
+        Args:
+            event_ids: 事件ID列表
+            
+        Returns:
+            List[Dict]: 因果路径信息
+        """
+        cypher = """
+        MATCH (source:Event)-[r:EVENT_CAUSES]->(target:Event)
+        WHERE source.id IN $event_ids AND target.id IN $event_ids
+        RETURN source.id as source_id,
+            source.name as source_name,
+            target.id as target_id,
+            target.name as target_name,
+            r.weight as weight,
+            r.description as causality_description
+        ORDER BY 
+            CASE r.weight 
+                WHEN 'High' THEN 1 
+                WHEN 'Medium' THEN 2 
+                WHEN 'Low' THEN 3 
+                ELSE 4 
+            END
+        """
+        
+        params = {"event_ids": event_ids}
+        result = self.execute_query(cypher, params)
+        return [dict(record) for record in result]
+
+    def create_plot_node(self, plot_data: Dict[str, Any]) -> bool:
+        """
+        创建Plot节点
+        
+        Args:
+            plot_data: Plot数据字典
+            
+        Returns:
+            bool: 创建是否成功
+        """
+        cypher = """
+        CREATE (p:Plot {
+            id: $plot_id,
+            title: $title,
+            summary: $summary,
+            structure_type: $structure_type,
+            narrative_roles: $narrative_roles,
+            created_at: datetime()
+        })
+        RETURN p.id as plot_id
+        """
+        
+        params = {
+            "plot_id": plot_data["id"],
+            "title": plot_data["title"],
+            "summary": plot_data["summary"],
+            "structure_type": plot_data.get("structure", {}).get("type", "起承转合"),
+            "narrative_roles": str(plot_data.get("structure", {}).get("narrative_roles", {}))
+        }
+        
+        try:
+            result = self.execute_query(cypher, params)
+            return len(list(result)) > 0
+        except Exception as e:
+            print(f"创建Plot节点失败: {e}")
+            return False
+
+    def create_has_event_relationships(self, plot_id: str, event_ids: List[str]) -> bool:
+        """
+        创建HAS_EVENT关系
+        
+        Args:
+            plot_id: Plot ID
+            event_ids: 事件ID列表
+            
+        Returns:
+            bool: 创建是否成功
+        """
+        cypher = """
+        MATCH (p:Plot {id: $plot_id})
+        MATCH (e:Event)
+        WHERE e.id IN $event_ids
+        CREATE (p)-[:HAS_EVENT]->(e)
+        RETURN count(*) as relationships_created
+        """
+        
+        params = {
+            "plot_id": plot_id,
+            "event_ids": event_ids
+        }
+        
+        try:
+            result = self.execute_query(cypher, params)
+            count = list(result)[0]['relationships_created']
+            return count == len(event_ids)
+        except Exception as e:
+            print(f"创建HAS_EVENT关系失败: {e}")
+            return False
+
+    def write_plot_to_neo4j(self, plot_data: Dict[str, Any]) -> bool:
+        """
+        完整的Plot写入功能
+        
+        Args:
+            plot_data: Plot数据字典，包含id、title、summary、event_ids、structure
+            
+        Returns:
+            bool: 写入是否成功
+        """
+        try:
+            # 1. 创建Plot节点
+            if not self.create_plot_node(plot_data):
+                return False
+            
+            # 2. 创建HAS_EVENT关系
+            event_ids = plot_data.get("event_ids", [])
+            if event_ids and not self.create_has_event_relationships(plot_data["id"], event_ids):
+                return False
+            
+            print(f"成功写入Plot: {plot_data['id']}")
+            return True
+            
+        except Exception as e:
+            print(f"写入Plot到Neo4j失败: {e}")
+            return False
+
+    def get_plot_statistics(self) -> Dict[str, int]:
+        """
+        获取Plot图谱统计信息
+        
+        Returns:
+            Dict[str, int]: 统计信息
+        """
+        cypher = """
+        MATCH (p:Plot)
+        OPTIONAL MATCH (p)-[:HAS_EVENT]->(e:Event)
+        OPTIONAL MATCH (s:Scene)-[:SCENE_CONTAINS]->(e)
+        RETURN count(DISTINCT p) as plot_count,
+            count(DISTINCT e) as event_count,
+            count(DISTINCT s) as scene_count
+        """
+        
+        result = self.execute_query(cypher)
+        return dict(list(result)[0])
+    
+    

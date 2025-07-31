@@ -8,7 +8,6 @@ from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
-
 from ..models.entities import Document
 from ..utils.config import KAGConfig
 
@@ -48,6 +47,16 @@ class VectorStore:
         except Exception as e:
             print(f"❌ 向量数据库初始化失败: {str(e)}")
             self.client = None
+            
+    def _ensure_collection(self):
+        """确保 collection 可用，若被删除则自动重新获取"""
+        try:
+            _ = self.collection.count()
+        except:
+            self.collection = self.client.get_or_create_collection(
+                name="kag_documents",
+                metadata={"description": "KAG文档向量存储"}
+            )
     
     def store_documents(self, documents: List[Document]) -> None:
         """存储文档到向量数据库"""
@@ -55,6 +64,7 @@ class VectorStore:
             print("⚠️ 向量数据库未初始化，跳过向量存储")
             return
         
+        self._ensure_collection()  
         try:
             # 准备数据
             ids = []
@@ -99,6 +109,7 @@ class VectorStore:
         """语义搜索"""
         if not self.client or not self.collection:
             return []
+        self._ensure_collection()  
         
         try:
             # 生成查询向量
@@ -139,6 +150,7 @@ class VectorStore:
         """根据元数据搜索"""
         if not self.client or not self.collection:
             return []
+        self._ensure_collection()  
         
         try:
             # 构建where条件
@@ -193,6 +205,8 @@ class VectorStore:
 
         if not doc_ids:
             return []
+        
+        self._ensure_collection()  
 
         try:
             result = self.collection.get(
@@ -217,6 +231,8 @@ class VectorStore:
         """获取统计信息"""
         if not self.client or not self.collection:
             return {"status": "disconnected"}
+        
+        self._ensure_collection()  
         
         try:
             count = self.collection.count()

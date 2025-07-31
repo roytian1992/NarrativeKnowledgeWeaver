@@ -46,7 +46,6 @@ class KnowledgeGraphBuilder:
         self.graph_store = GraphStore(config)
         self.neo4j_utils = Neo4jUtils(self.graph_store.driver)
         self.vector_store = VectorStore(config)
-        self.vector_store.delete_collection()
         self.document_store = DocumentStore(config)
         self.kg = KnowledgeGraph()
         self.max_workers = 16
@@ -326,8 +325,19 @@ class KnowledgeGraphBuilder:
                 )
                 attributes = result.get("attributes", {})
                 if isinstance(attributes, str):
-                    attributes = json.loads(attributes)
+                    try:
+                        attributes = json.loads(attributes)
+                    except json.JSONDecodeError:
+                        print(f"[ERROR] 无法解析 JSON: {attributes}")
+                        attributes = {}
 
+                # 如果是 list，则取第一个（保守处理）
+                if isinstance(attributes, list):
+                    if attributes:
+                        attributes = attributes[0]
+                    else:
+                        attributes = {}
+                    
                 new_entity = deepcopy(entity)
                 new_entity.properties = attributes
                 new_entity.description = ""
@@ -361,13 +371,19 @@ class KnowledgeGraphBuilder:
                 attributes = result.get("attributes", {})
                 # description = result.get("description", "")
                 # print("[CHECK] description: ", result)
+                if "new_description" not in result:
+                    print("[CHECK] result: ", result)
                 description = result.get("new_description", "")
+                
+                # print("[CHECK] result: ", result)
                 # print("[CHECK] 新的描述: ", description)
                 if isinstance(attributes, str):
                     attributes = json.loads(attributes)
 
                 new_entity = deepcopy(entity)
                 new_entity.properties = attributes
+                # if new_entity.type == "Event":
+                #     print("[CHECK] attributes: ", attributes)
                 if description:
                     new_entity.description = description
                 return entity_name, new_entity
@@ -466,7 +482,7 @@ class KnowledgeGraphBuilder:
             
             # 处理基础实体
             for entity_data in result.get("entities", []):
-                if entity_data.get("type") == "Event" and entity_data["name"] in entity_map:
+                if entity_data.get("scope").lower()=="local" and entity_data["name"] in entity_map:
                 # 在已有名字前加场景前缀；如前缀已存在则再追加计数
                     new_name = f"{play_name}中的{entity_data['name']}"
                     suffix = 1
@@ -639,6 +655,8 @@ class KnowledgeGraphBuilder:
         try:
             if verbose:
                 print("   - 存储到向量数据库...")
+            self.vector_store.delete_collection()
+            self.vector_store._initialize()
             self.vector_store.store_documents(list(self.kg.documents.values()))
         except Exception as e:
             if verbose:

@@ -81,7 +81,8 @@ class AttributeExtractionAgent:
             entity_type=entity_type,
             description=description,
             attribute_definitions=attribute_definitions,
-            attributes=attributes
+            attributes=attributes,
+            abbreviations=self.abbreviation_info
         )
         result = json.loads(correct_json_format(result))
         return {
@@ -98,8 +99,8 @@ class AttributeExtractionAgent:
         source_chunks = state["source_chunks"]
         if entity_type in ["Event", "Action", "Emotion", "Goal"]:
             documents = self.vector_store.search_by_ids(source_chunks)
-            # if not documents:
-            #     documents = self.vector_store.search(query=entity_name, limit=1)
+            if not documents:
+                documents = self.vector_store.search(query=entity_name, limit=1)
             # print("[CHECK] entity_name: ", entity_name)
             # print("[CHECK] source_chunks: ", source_chunks)
             # print("[CHECK] source chunk result: ", documents)

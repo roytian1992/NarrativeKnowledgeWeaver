@@ -25,6 +25,7 @@ class AttributeExtractor:
             return json.dumps({"error": f"参数解析失败: {str(e)}"}, ensure_ascii=False)
 
         if not text or not description or not entity_type:
+            print("[CHECK] 检查参数输入: ", params_dict)
             return json.dumps({"error": "缺少必要参数: text/description/entity_type"}, ensure_ascii=False)
 
         try:
@@ -67,7 +68,7 @@ class AttributeExtractor:
             starting_messages = messages.copy()
             # print("[CHECK] prompt text", prompt_text)
             full_response = ""
-            max_round = 3
+            max_round = 2
 
             for i in range(max_round):
                 enable_thinking = (i == 0)

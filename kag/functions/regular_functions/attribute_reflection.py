@@ -21,6 +21,7 @@ class AttributeReflector:
             return json.dumps({"error": f"参数解析失败: {str(e)}"}, ensure_ascii=False)
 
         if not entity_type or not description or not attribute_definitions or not attributes:
+            print("[CHECK] 检查参数输入: ", params_dict)
             return json.dumps({"error": "缺少必要参数: entity_type / description / attribute_definitions / attributes"})
 
         try:

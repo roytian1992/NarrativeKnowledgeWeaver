@@ -61,8 +61,8 @@ def main():
     builder = KnowledgeGraphBuilder(config)
     
     # 构建知识图谱
-    # builder.prepare_chunks(args.input, verbose=args.verbose)
-    # builder.store_chunks(verbose=args.verbose)
+    builder.prepare_chunks(args.input, verbose=args.verbose)
+    builder.store_chunks(verbose=args.verbose)
     builder.extract_entity_and_relation(verbose=args.verbose)
     builder.extract_entity_attributes(verbose=args.verbose)
     builder.prepare_graph_embeddings()
