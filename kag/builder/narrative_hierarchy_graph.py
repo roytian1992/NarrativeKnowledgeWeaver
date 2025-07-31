@@ -220,9 +220,7 @@ class EventCausalityBuilder:
         # 把事件 ID 做成集合，便于后面实体映射
         id2entity = {e.id: e for e in events}
 
-        pairs = self.neo4j_utils.fetch_event_pairs_same_community(
-            max_depth=max_depth
-        )
+        pairs = self.neo4j_utils.fetch_event_pairs_same_community()
         # print("[CHECK]: ", pairs)
         filtered_pairs = []
         for row in pairs:
@@ -230,7 +228,7 @@ class EventCausalityBuilder:
             if src_id in id2entity and dst_id in id2entity:
                 filtered_pairs.append((id2entity[src_id], id2entity[dst_id]))
 
-        print(f"[✓] 同社区 + 可达事件对: {len(filtered_pairs)}")
+        print(f"[✓] 同社区事件对: {len(filtered_pairs)}")
         return filtered_pairs
 
     def write_event_cause_edges(self, causality_results):
@@ -335,6 +333,7 @@ class EventCausalityBuilder:
 
     def initialize(self):
         # 1. 创建子图和计算社区划分
+        # self.neo4j_utils.delete_relation_type("EVENT_CAUSES")
         self.neo4j_utils.create_subgraph(
             graph_name="event_graph",
             exclude_node_labels=["Scene"],
@@ -347,6 +346,19 @@ class EventCausalityBuilder:
             write_property="community",
             force_run=True
         )
+    
+    def filter_pair_by_distance_and_similarity(self, pairs):
+        filtered_pairs = []
+        for pair in tqdm(pairs, desc="筛选节点对"):
+            src_id, tgt_id = pair[0].id, pair[1].id
+            reachable = self.neo4j_utils.check_nodes_reachable(src_id, tgt_id)
+            if reachable: # 如果节点间距离小于3，保留。
+                filtered_pairs.append(pair)
+            else:
+                score = self.neo4j_utils.compute_semantic_similarity(src_id, tgt_id)
+                if score >= 0.7: # 如果节点间的相似度大于等于0.7，保留。
+                    filtered_pairs.append(pair)  
+        return filtered_pairs
     
     def build_event_causality_graph(
         self,
@@ -375,8 +387,9 @@ class EventCausalityBuilder:
         # 4. 过滤事件对
         print("\n🔍 过滤事件对...")
         filtered_pairs = self.filter_event_pairs_by_community(event_list)
+        filtered_pairs = self.filter_pair_by_distance_and_similarity(filtered_pairs)
         filtered_pairs = self.sort_event_pairs_by_scene_time(filtered_pairs)
-        
+        print("     最终候选事件对数量： ", len(filtered_pairs))
         # 5. 检查因果关系
         print("\n🔍 检查因果关系...")
         causality_results = self.check_causality_batch(filtered_pairs)

@@ -8,7 +8,7 @@ KAG-Builder 主程序
 import argparse
 import sys
 from pathlib import Path
-from kag.builder.event_plot_graph import EventCausalityBuilder
+from kag.builder.narrative_hierarchy_graph import EventCausalityBuilder
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent
@@ -61,12 +61,12 @@ def main():
     builder = KnowledgeGraphBuilder(config)
     
     # 构建知识图谱
-    builder.prepare_chunks(args.input, verbose=args.verbose)
-    builder.store_chunks(verbose=args.verbose)
-    builder.extract_entity_and_relation(verbose=args.verbose)
-    builder.extract_entity_attributes(verbose=args.verbose)
-    builder.prepare_graph_embeddings()
-    kg = builder.build_graph_from_results(verbose=args.verbose)
+    # builder.prepare_chunks(args.input, verbose=args.verbose)
+    # builder.store_chunks(verbose=args.verbose)
+    # builder.extract_entity_and_relation(verbose=args.verbose)
+    # builder.extract_entity_attributes(verbose=args.verbose)
+    # kg = builder.build_graph_from_results(verbose=args.verbose)
+    # builder.prepare_graph_embeddings()
     event_graph_builder = EventCausalityBuilder(config)
     event_graph_builder.initialize()
     event_graph_builder.build_event_causality_graph()

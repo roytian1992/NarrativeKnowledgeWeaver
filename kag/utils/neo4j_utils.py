@@ -260,6 +260,15 @@ class Neo4jUtils:
         return labels
 
 
+    def delete_relation_type(self, relation_type):
+        print("🧹 正在清除已有的 EVENT_CAUSES 关系...")
+        self.execute_query(f"""
+            MATCH (:Event)-[r:{relation_type}]->(:Event)
+            DELETE r
+        """)
+        print("✅ 已删除所有 EVENT_CAUSES 关系")
+        
+
     def has_path_between(
         self, 
         src_id: str, 
@@ -652,6 +661,52 @@ class Neo4jUtils:
         return self._query_entity_knn(embed, top_k=top_k)
     
     
+    def compute_semantic_similarity(self, node_id_1, node_id_2):
+        query = f"""
+        MATCH (a {{id: '{node_id_1}'}}), (b {{id: '{node_id_2}'}})                                          
+        RETURN gds.similarity.cosine(a.embedding, b.embedding) AS similarity
+        """
+        result = self.execute_query(query)
+        return result[0].get("similarity")
+    
+    def check_nodes_reachable(
+        self,
+        src_id: str,
+        dst_id: str,
+        max_depth: int = 3,
+        excluded_rels: Optional[List[str]] = None
+    ) -> bool:
+        """
+        判断两个任意节点之间是否存在路径，长度不超过 max_depth，且不包含某些关系类型
+        
+        Args:
+            src_id: 起点节点 ID
+            dst_id: 终点节点 ID
+            max_depth: 最大允许的路径深度
+            excluded_rels: 要排除的关系类型列表（如 ["SCENE_CONTAINS"]）
+            
+        Returns:
+            是否可达（True/False）
+        """
+        rel_filter = ""
+        if excluded_rels:
+            # 构造过滤谓词：type(r) <> 'X' AND type(r) <> 'Y' ...
+            rel_filter = " AND ".join([f"type(r) <> '{rel}'" for rel in excluded_rels])
+            rel_filter = f"WHERE ALL(r IN relationships(p) WHERE {rel_filter})"
+
+        query = f"""
+        MATCH (n1 {{id: $src_id}}), (n2 {{id: $dst_id}})
+        RETURN EXISTS {{
+            MATCH p = (n1)-[*1..{max_depth}]-(n2)
+            {rel_filter}
+        }} AS reachable
+        """
+        result = self.execute_query(query, {"src_id": src_id, "dst_id": dst_id})
+        if result and isinstance(result, list):
+            return result[0].get("reachable", False)
+        return False
+
+
     def create_subgraph(
         self,
         graph_name: str = "subgraph_1",
@@ -746,26 +801,43 @@ class Neo4jUtils:
             """, graph=graph_name, prop=write_property, iters=max_iterations)
             print(f"[+] Louvain 已完成，结果写入 `{write_property}`")
 
+    
     # === 3. 取同社区事件对 ===
     def fetch_event_pairs_same_community(
-        self,
-        max_depth: int = 3,
-        max_pairs: Optional[int] = None
-    ) -> List[Dict[str, str]]:
+            self,
+            max_pairs: Optional[int] = None
+        ) -> List[Dict[str, str]]:
         """
-        返回同社区 & 路径在 max_depth 内可达的事件对 ID 列表
+        返回同社区的事件对 ID 列表（不再考虑图中是否路径可达）
         """
-        q = f"""
-        MATCH (e1:Event)
-        MATCH (e2:Event)
+        q = """
+        MATCH (e1:Event), (e2:Event)
         WHERE e1.community = e2.community AND id(e1) < id(e2)
-          AND EXISTS {{
-              MATCH p = (e1)-[*1..{max_depth}]-(e2)
-              WHERE ALL(r IN relationships(p) WHERE type(r) <> 'SCENE_CONTAINS')
-          }}
         RETURN e1.id AS srcId, e2.id AS dstId
-        """ + (f"LIMIT {max_pairs}" if max_pairs else "")
+        """
+        if max_pairs:
+            q += f"\nLIMIT {max_pairs}"
         return self.execute_query(q)
+
+    # def fetch_event_pairs_same_community(
+    #     self,
+    #     max_depth: int = 3,
+    #     max_pairs: Optional[int] = None
+    # ) -> List[Dict[str, str]]:
+    #     """
+    #     返回同社区 & 路径在 max_depth 内可达的事件对 ID 列表
+    #     """
+    #     q = f"""
+    #     MATCH (e1:Event)
+    #     MATCH (e2:Event)
+    #     WHERE e1.community = e2.community AND id(e1) < id(e2)
+    #       AND EXISTS {{
+    #           MATCH p = (e1)-[*1..{max_depth}]-(e2)
+    #           WHERE ALL(r IN relationships(p) WHERE type(r) <> 'SCENE_CONTAINS')
+    #       }}
+    #     RETURN e1.id AS srcId, e2.id AS dstId
+    #     """ + (f"LIMIT {max_pairs}" if max_pairs else "")
+    #     return self.execute_query(q)
 
     def write_event_causes(self, rows: List[Dict[str, Any]]) -> None:
         """

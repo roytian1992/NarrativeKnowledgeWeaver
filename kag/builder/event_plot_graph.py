@@ -315,6 +315,13 @@ class EventCausalityBuilder:
 
     def initialize(self):
         # 1. 创建子图和计算社区划分
+        print("🧹 正在清除已有的 EVENT_CAUSES 关系...")
+        self.neo4j_utils.execute_query("""
+            MATCH (:Event)-[r:EVENT_CAUSES]->(:Event)
+            DELETE r
+        """)
+        print("✅ 已删除所有 EVENT_CAUSES 关系")
+    
         self.neo4j_utils.create_subgraph(
             graph_name="event_graph",
             exclude_node_labels=["Scene"],
