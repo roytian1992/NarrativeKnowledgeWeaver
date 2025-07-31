@@ -145,7 +145,6 @@ class InformationExtractor:
         """
         对属性抽取结果进行反思评估，判断是否完整、是否需要补充上下文等
         """
-
         params = {
             "entity_name": entity_name,
             "entity_type": entity_type,
@@ -172,5 +171,5 @@ class InformationExtractor:
             "abbreviations": abbreviations
         }
         result = self.event_causality_checker.call(params=json.dumps(params))
-        # print("[CHECK] event_causality input: ", params)
+        # print("[CHECK] check event causality result: ", result)
         return result

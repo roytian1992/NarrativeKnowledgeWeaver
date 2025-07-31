@@ -61,8 +61,7 @@ class Neo4jUtils:
     def search_entities_by_type(
         self,
         entity_type: Optional[str] = None,
-        keyword: Optional[str] = None,
-        limit: int = 20,
+        keyword: Optional[str] = None
     ) -> List[Entity]:
         """
         搜索图中所有满足类型和关键词的实体（可选过滤）
@@ -82,12 +81,11 @@ class Neo4jUtils:
         MATCH (e:{entity_type if entity_type else ''})
         {{where_clause}}
         RETURN DISTINCT e
-        LIMIT $limit
         """
 
         # 动态拼接 WHERE 子句
         where_clauses = []
-        params = {"limit": limit}
+        params = {}
 
         if entity_type:
             where_clauses.append("e.type = $etype")
@@ -261,12 +259,12 @@ class Neo4jUtils:
 
 
     def delete_relation_type(self, relation_type):
-        print("🧹 正在清除已有的 EVENT_CAUSES 关系...")
+        print(f"🧹 正在清除已有的 {relation_type} 关系...")
         self.execute_query(f"""
-            MATCH (:Event)-[r:{relation_type}]->(:Event)
+            MATCH ()-[r:{relation_type}]->()
             DELETE r
         """)
-        print("✅ 已删除所有 EVENT_CAUSES 关系")
+        print(f"✅ 已删除所有 {relation_type} 关系")
         
 
     def has_path_between(

@@ -109,8 +109,7 @@ class EventCausalityBuilder:
         
         # 1. 获取所有场景并排序
         scene_entities = self.neo4j_utils.search_entities_by_type(
-            entity_type="Scene", 
-            limit=500
+            entity_type="Scene"
         )
         
         self.sorted_scenes = sorted(
@@ -333,11 +332,11 @@ class EventCausalityBuilder:
 
     def initialize(self):
         # 1. 创建子图和计算社区划分
-        # self.neo4j_utils.delete_relation_type("EVENT_CAUSES")
+        self.neo4j_utils.delete_relation_type("EVENT_CAUSES")
         self.neo4j_utils.create_subgraph(
             graph_name="event_graph",
             exclude_node_labels=["Scene"],
-            exclude_rel_types=["SCENE_CONTAINS"],
+            exclude_rel_types=["SCENE_CONTAINS", "EVENT_CAUSES"],
             force_refresh=True
         )
 
@@ -351,7 +350,7 @@ class EventCausalityBuilder:
         filtered_pairs = []
         for pair in tqdm(pairs, desc="筛选节点对"):
             src_id, tgt_id = pair[0].id, pair[1].id
-            reachable = self.neo4j_utils.check_nodes_reachable(src_id, tgt_id)
+            reachable = self.neo4j_utils.check_nodes_reachable(src_id, tgt_id, excluded_rels=["SCENE_CONTAINS", "EVENT_CAUSES"])
             if reachable: # 如果节点间距离小于3，保留。
                 filtered_pairs.append(pair)
             else:
