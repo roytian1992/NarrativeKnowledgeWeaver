@@ -63,7 +63,7 @@ class SemanticSplitter:
             }
             
             # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('semantic_split_prompt', variables)
+            prompt_text = self.prompt_loader.render_prompt('semantic_splitter_prompt', variables)
             
             # 构建消息
             messages = [{"role": "user", "content": prompt_text}]
