@@ -6,25 +6,10 @@ from typing import Dict, Any, List
 import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
+from kag.utils.general_text import attribute_reflection_repair_template
 
 logger = logging.getLogger(__name__)
 
-
-repair_template = """
-请修复以下属性反思结果中的问题：
-
-原始响应：{original_response}
-错误信息：{error_message}
-
-请确保返回的JSON包含：
-1. "reflection_result"字段，包含反思结果
-2. "issues"字段，包含发现的问题列表
-3. "suggestions"字段，包含改进建议列表
-4. "score"字段，包含评分信息
-5. JSON格式正确
-
-请直接返回修复后的JSON，不要包含解释。
-"""
 
 
 class AttributeReflector:
@@ -38,15 +23,11 @@ class AttributeReflector:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = ["reflection_result"]
-        self.field_validators = {
-            "reflection_result": lambda x: isinstance(x, dict),
-            "issues": lambda x: isinstance(x, list) if x is not None else True,
-            "suggestions": lambda x: isinstance(x, list) if x is not None else True
-        }
+        self.required_fields = []
+        self.field_validators = {}
         
         # 修复提示词模板
-        self.repair_template = repair_template
+        self.repair_template = attribute_reflection_repair_template
     
     def call(self, params: str, **kwargs) -> str:
         """
@@ -62,61 +43,63 @@ class AttributeReflector:
         try:
             # 解析参数
             params_dict = json.loads(params)
+            text = params_dict.get("text", "")
             entity_name = params_dict.get("entity_name", "")
-            entity_type = params_dict.get("entity_type", "")
             description = params_dict.get("description", "")
+            entity_type = params_dict.get("entity_type", "")
             attribute_definitions = params_dict.get("attribute_definitions", "")
-            attributes = params_dict.get("attributes", "")
-            abbreviations = params_dict.get("abbreviations", "")
+            abbreviations = params_dict.get("abbreviations", "")  # 和实体抽取逻辑保持一致
+            feedbacks = params_dict.get("feedbacks", "")
+            original_text = params_dict.get("original_text", "")
+            previous_results = params_dict.get("previous_results", "")
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
             error_result = {
                 "error": f"参数解析失败: {str(e)}", 
-                "reflection_result": {},
-                "issues": [],
-                "suggestions": [],
-                "score": 0
+                "feedbacks": [],
+                "need_additional_context": False,
+                "attributes_to_retry": [],
             }
             from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-        
-        if not entity_name or not attributes:
-            error_result = {
-                "error": "缺少必要参数", 
-                "reflection_result": {},
-                "issues": [],
-                "suggestions": [],
-                "score": 0
-            }
-            from kag.utils.format import correct_json_format
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-        
+                
         try:
             # 构建提示词变量
-            variables = {
-                'entity_name': entity_name,
-                'entity_type': entity_type,
-                'description': description,
-                'attribute_definitions': attribute_definitions,
-                'attributes': attributes
-            }
+            if original_text and previous_results and feedbacks:
+                text = f"这些是之前的上下文：\n{original_text } \n这些是新增的文本，用于对已有的抽取结果进行补充和改进:\n{text}\n"
+                
+            prompt_text = self.prompt_loader.render_prompt(
+                prompt_id='extract_attributes_prompt',
+                variables={
+                    "text": text,
+                    "entity_name": entity_name,
+                    "description": description,
+                    "entity_type": entity_type,
+                    "attribute_definitions": attribute_definitions
+                }
+            )
             
-            # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('reflect_attributes_prompt', variables)
+            # agent 指令（system prompt），同你之前写法
+            agent_prompt_text = self.prompt_loader.render_prompt(
+                prompt_id="agent_prompt",
+                variables={"abbreviations": abbreviations}
+            )
+            messages = [{"role": "system", "content": agent_prompt_text}]
             
-            # 构建消息
-            messages = []
-            
-            # 添加agent提示
-            if abbreviations:
-                agent_prompt_text = self.prompt_loader.render_prompt(
-                    'agent_prompt',
-                    variables={"abbreviations": abbreviations}
-                )
-                messages.append({"role": "system", "content": agent_prompt_text})
-            
+            if original_text and previous_results and feedbacks:
+                background_info = f"上一次信息抽取的上下文：\n{original_text.strip()}\n\n" 
+                
+                background_info += f"上一次抽取的结果如下：\n{previous_results}\n反馈建议如下：\n{feedbacks}\n请仅针对缺失字段或内容不足的字段进行补充，保留已有字段。"
+                
+                messages.append({
+                    "role": "user",
+                    "content": background_info
+                })
+                
+                prompt_text = prompt_text + "\n" + f"这是之前抽取的结果：\n {previous_results} \n 在此基础上根据建议进行补充和改进。"
+
             messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
@@ -136,10 +119,9 @@ class AttributeReflector:
             logger.error(f"属性反思过程中出现异常: {e}")
             error_result = {
                 "error": f"属性反思失败: {str(e)}",
-                "reflection_result": {},
-                "issues": [],
-                "suggestions": [],
-                "score": 0
+                "feedbacks": [],
+                "need_additional_context": False,
+                "attributes_to_retry": [],
             }
             from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))

@@ -1,28 +1,10 @@
-"""
-因果关系检查器
-使用增强的JSON处理工具
-"""
 from typing import Dict, Any, List
 import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
+from kag.utils.general_text import causality_check_repair_template
 
 logger = logging.getLogger(__name__)
-
-
-repair_template = """
-请修复以下因果关系检查结果中的问题：
-
-原始响应：{original_response}
-错误信息：{error_message}
-
-请确保返回的JSON包含：
-1. "causal"字段，表示因果关系结果 (High/Medium/Low/None)
-2. "reason"字段，表示原因说明
-3. JSON格式正确
-
-请直接返回修复后的JSON，不要包含解释。
-"""
 
 
 class EventCausalityChecker:
@@ -47,7 +29,7 @@ class EventCausalityChecker:
         }
         
         # 修复提示词模板
-        self.repair_template = repair_template
+        self.repair_template = causality_check_repair_template
     
     def call(self, params: str, **kwargs) -> str:
         """
@@ -89,26 +71,22 @@ class EventCausalityChecker:
         
         try:
             # 添加提示信息
-            if abbreviations:
-                agent_prompt_text = self.prompt_loader.render_prompt(
-                    'agent_prompt',
-                    variables={"abbreviations": abbreviations}
-                )
-            
-            # 构建提示词变量
-            variables = {
-                "event_1_info": event_1_info,
-                "event_2_info": event_2_info
-            }
-            
-            # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('check_event_causality_prompt', variables)
-            
-            # 构建消息
-            messages = []
-            if abbreviations:
-                messages.append({"role": "system", "content": agent_prompt_text})
-            messages.append({"role": "user", "content": prompt_text})
+            agent_prompt_text = self.prompt_loader.render_prompt(
+                prompt_id="agent_prompt",
+                variables={"abbreviations": abbreviations}
+            )
+
+            # 用户提示词（任务具体内容）
+            prompt_text = self.prompt_loader.render_prompt(
+                prompt_id="check_event_causality_prompt",
+                variables={
+                    "event_1_info": event_1_info,
+                    "event_2_info": event_2_info
+                }
+            )
+
+            messages = [{"role": "system", "content": agent_prompt_text},
+                        {"role": "user", "content": prompt_text}]
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
             corrected_json = process_with_format_guarantee(

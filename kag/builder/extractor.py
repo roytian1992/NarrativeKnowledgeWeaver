@@ -130,7 +130,7 @@ class InformationExtractor:
         result = self.attribute_extraction.call(params=json.dumps(params))
         # print("[CHECK] entity name: ", entity_name)
         # print("[CHECK] input text: ", text)
-        # print("[CHECK] entity attribute extraction result: ", result)
+        print("[CHECK] entity attribute extraction result: ", result)
         return result
 
     def reflect_entity_attributes(
@@ -155,7 +155,7 @@ class InformationExtractor:
         }
 
         result = self.attribute_reflection.call(params=json.dumps(params))
-        # print("[CHECK] attribute reflection result:", result)
+        print("[CHECK] attribute reflection result:", result)
         return result
 
     def check_event_causality(

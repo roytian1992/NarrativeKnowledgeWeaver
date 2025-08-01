@@ -150,7 +150,7 @@ class EnhancedJSONUtils:
                     repair_messages.append({"role": "user", "content": repair_prompt})
                     
                     # 调用LLM修复
-                    repair_result = llm_client.run(repair_messages, enable_thinking=enable_thinking)
+                    repair_result = llm_client.run(repair_messages, enable_thinking=False)
                     repair_content = repair_result[0]['content'] if isinstance(repair_result, list) else repair_result.get('content', '')
                     
                     # 验证修复结果
@@ -195,7 +195,7 @@ class EnhancedJSONUtils:
         # 所有尝试都失败，返回错误结果，但仍使用correct_json_format处理
         logger.error("所有修复尝试都失败")
         final_corrected = correct_json_format(current_content)
-        
+        print("[CHECK] 最终结果: ", final_corrected)
         error_result = {
             "error": "响应处理失败",
             "original_content": current_content,
@@ -229,6 +229,7 @@ def process_with_format_guarantee(llm_client,
                                 required_fields: Optional[List[str]] = None,
                                 field_validators: Optional[Dict[str, Callable]] = None,
                                 max_retries: int = 3,
+                                enable_thinking: bool = True,
                                 repair_template: Optional[str] = None) -> str:
     """
     处理LLM响应并保证返回correct_json_format处理后的结果
@@ -242,6 +243,7 @@ def process_with_format_guarantee(llm_client,
         required_fields=required_fields,
         field_validators=field_validators,
         max_retries=max_retries,
+        enable_thinking=enable_thinking,
         repair_prompt_template=repair_template
     )
     

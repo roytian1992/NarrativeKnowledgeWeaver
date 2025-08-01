@@ -6,24 +6,9 @@ from typing import Dict, Any, List
 import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
+from kag.utils.general_text import attribute_repair_template
 
 logger = logging.getLogger(__name__)
-
-
-repair_template = """
-请修复以下属性提取结果中的问题：
-
-原始响应：{original_response}
-错误信息：{error_message}
-
-请确保返回的JSON包含：
-1. "attributes"字段，且为数组格式
-2. 每个属性包含必要的字段信息
-3. JSON格式正确
-
-请直接返回修复后的JSON，不要包含解释。
-"""
-
 
 class AttributeExtractor:
     """
@@ -42,7 +27,7 @@ class AttributeExtractor:
         }
         
         # 修复提示词模板
-        self.repair_template = repair_template
+        self.repair_template = attribute_repair_template
     
     def call(self, params: str, **kwargs) -> str:
         """
@@ -75,38 +60,40 @@ class AttributeExtractor:
             from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
         
-        if not text or not description or not entity_type:
-            error_result = {"error": "缺少必要参数", "attributes": []}
-            from kag.utils.format import correct_json_format
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-        
         try:
-            # 构建提示词变量
-            variables = {
-                'text': text,
-                'entity_name': entity_name,
-                'description': description,
-                'entity_type': entity_type,
-                'attribute_definitions': attribute_definitions
-            }
-            
-            # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('extract_attributes_prompt', variables)
-            
-            # 构建消息
-            messages = []
-            
-            # 添加背景信息
             if original_text and previous_results and feedbacks:
-                background_info = f"这是提取之前的上下文：\n{original_text}\n这是提取的结果：\n{previous_results}\n相关问题的建议：\n{feedbacks}\n请特别关注上述建议进行属性提取。"
-                messages.append({"role": "user", "content": background_info})
+                text = f"这些是之前的上下文：\n{original_text } \n这些是新增的文本，用于对已有的抽取结果进行补充和改进:\n{text}\n"
+                
+            prompt_text = self.prompt_loader.render_prompt(
+                prompt_id='extract_attributes_prompt',
+                variables={
+                    "text": text,
+                    "entity_name": entity_name,
+                    "description": description,
+                    "entity_type": entity_type,
+                    "attribute_definitions": attribute_definitions
+                }
+            )
             
-            # 添加agent提示
+            # agent 指令（system prompt），同你之前写法
             agent_prompt_text = self.prompt_loader.render_prompt(
-                'agent_prompt',
+                prompt_id="agent_prompt",
                 variables={"abbreviations": abbreviations}
             )
-            messages.append({"role": "system", "content": agent_prompt_text})
+            messages = [{"role": "system", "content": agent_prompt_text}]
+            
+            if original_text and previous_results and feedbacks:
+                background_info = f"上一次信息抽取的上下文：\n{original_text.strip()}\n\n" 
+                
+                background_info += f"上一次抽取的结果如下：\n{previous_results}\n反馈建议如下：\n{feedbacks}\n请仅针对缺失字段或内容不足的字段进行补充，保留已有字段。"
+                
+                messages.append({
+                    "role": "user",
+                    "content": background_info
+                })
+                
+                prompt_text = prompt_text + "\n" + f"这是之前抽取的结果：\n {previous_results} \n 在此基础上根据建议进行补充和改进。"
+
             messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果

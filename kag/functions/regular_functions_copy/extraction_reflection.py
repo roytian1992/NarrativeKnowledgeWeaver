@@ -33,6 +33,7 @@ class ExtractionReflector:
             original_text = params_dict.get("original_text", "")
             abbreviations = params_dict.get("abbreviations", "")
             previous_reflection = params_dict.get("previous_reflection", {})
+            version = params_dict.get("version", "default")
             
         except Exception as e:
             return json.dumps({"error": f"参数解析失败: {str(e)}"})
@@ -41,8 +42,12 @@ class ExtractionReflector:
             return json.dumps({"error": "缺少必要参数: logs"})
 
         try:
+            if version == "short":
+                prompt_id = "reflect_extraction_short_prompt"
+            else:
+                prompt_id = "reflect_extraction_prompt"
             prompt_text = self.prompt_loader.render_prompt(
-                prompt_id='reflect_extraction_prompt',
+                prompt_id=prompt_id,
                 variables={
                     'logs': logs,
                     'entity_type_description_text': entity_type_description_text,

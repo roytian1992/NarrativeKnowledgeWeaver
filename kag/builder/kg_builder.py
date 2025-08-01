@@ -48,7 +48,7 @@ class KnowledgeGraphBuilder:
         self.vector_store = VectorStore(config)
         self.document_store = DocumentStore(config)
         self.kg = KnowledgeGraph()
-        self.max_workers = 16
+        self.max_workers = 32
         self.load_schema("kag/schema/graph_schema.json")
         self.load_abbreviations("kag/schema/settings_schema.json")
         self.processor = DocumentProcessor(config, self.llm)

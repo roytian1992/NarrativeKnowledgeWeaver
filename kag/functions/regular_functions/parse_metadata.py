@@ -1,18 +1,15 @@
-"""
-语义分割器
-使用增强的JSON处理工具
-"""
 from typing import Dict, Any, List
 import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
-from kag.utils.general_text import semantic_splitter_repair_template
+from kag.utils.general_text import general_repair_template
 
 logger = logging.getLogger(__name__)
 
-class SemanticSplitter:
+
+class EntityExtractor:
     """
-    语义分割器
+    集成format.py的实体提取器
     确保最终返回的是correct_json_format处理后的结果
     """
     
@@ -21,17 +18,15 @@ class SemanticSplitter:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = ["segments"]
-        self.field_validators = {
-            "segments": lambda x: isinstance(x, list) and len(x) > 0
-        }
+        self.required_fields = []
+        self.field_validators = {}
         
         # 修复提示词模板
-        self.repair_template = semantic_splitter_repair_template
+        self.repair_template = general_repair_template
     
     def call(self, params: str, **kwargs) -> str:
         """
-        调用语义分割，保证返回correct_json_format处理后的结果
+        调用实体提取，保证返回correct_json_format处理后的结果
         
         Args:
             params: 参数字符串
@@ -44,29 +39,41 @@ class SemanticSplitter:
             # 解析参数
             params_dict = json.loads(params)
             text = params_dict.get("text", "")
-            max_segments = params_dict.get("max_segments", 3)
-            min_length = params_dict.get("min_length", len(text) * 0.4)
+            title = params_dict.get("title", "")
+            subtitle = params_dict.get("subtitle", "")
+            file_type = params_dict.get("file_type", "novel")
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
-            error_result = {"error": f"参数解析失败: {str(e)}", "segments": [text, ]}
+            error_result = {"error": f"参数解析失败: {str(e)}", "metadata": {}}
             from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-        
+                
         try:
-            # 构建提示词变量
-            variables = {
-                'text': text,
-                'max_segments': max_segments,
-                'min_length': min_length,
-            }
-            
-            # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('semantic_split_prompt', variables)
-            
-            # 构建消息
-            messages = [{"role": "user", "content": prompt_text}]
+            if subtitle:
+                title = f"{title}\n子标题：{subtitle}"
+                
+            if file_type == "screenplay":
+                prompt_id = "parse_screenplay_prompt"
+                variables = {
+                    "title": title
+                }
+            else:
+                prompt_id = "parse_novel_prompt"
+                varialbles = {
+                    "title": title,
+                    "text": text
+                }
+                
+            prompt_text = self.prompt_loader.render_prompt(
+                prompt_id=prompt_id,
+                variables=variables
+            )
+           
+            # 构造初始消息
+            messages = []
+            messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
             corrected_json = process_with_format_guarantee(
@@ -74,18 +81,18 @@ class SemanticSplitter:
                 messages=messages,
                 required_fields=self.required_fields,
                 field_validators=self.field_validators,
-                max_retries=1,
+                max_retries=2,
                 repair_template=self.repair_template
             )
             
-            logger.info("语义分割完成，返回格式化后的JSON")
+            logger.info("元数据提取完成，返回格式化后的JSON")
             return corrected_json
             
         except Exception as e:
-            logger.error(f"语义分割过程中出现异常: {e}")
+            logger.error(f"元数据提取过程中出现异常: {e}")
             error_result = {
-                "error": f"语义分割失败: {str(e)}",
-                "segments": [text, ]
+                "error": f"元数据提取失败: {str(e)}",
+                "metadata": {}
             }
             from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))

@@ -1,12 +1,12 @@
 {
-  "id": "parse_screenplay_prompt",
+  "id": "parse_screenplay_metadata",
   "category": "regular_function",
   "name": "剧本场景元数据抽取",
   "description": "用于从剧本场景内容中抽取空间、位置、景光等元数据",
-  "template": "请解析以下剧本场景信息，提取结构化元数据：\n\n场景名称：{scene_name}\n\n**请提取以下字段：**\n- **scene_category**：INT（内景）/ EXT（外景）/ null\n- **lighting**：景光（日 / 夜 / 无日夜 / null）\n- **space**：空间类型（现实世界 / 数字空间 / 梦境 / null）\n- **region**：区域信息（如“月球基地”“北京城市街区”）\n- **main_location**：主场景位置（如“指挥室”“走廊”）\n- **sub_location**：次级位置（如“门口”“窗边”等）\n- **summary**：该场景的一句话剧情概要\n\n**返回格式（严格遵循 JSON）：**\n```json\n{\n  \"scene_category\": \"INT / EXT / null\",\n  \"lighting\": \"日 / 夜 / 无日夜 / null\",\n  \"space\": \"现实世界 / 数字空间 / 梦境 / null\",\n  \"region\": \"区域信息或 null\",\n  \"main_location\": \"主场景位置或 null\",\n  \"sub_location\": \"次场景位置或 null\",\n  \"summary\": \"一句话剧情概要\"\n}\n```\n\n请严格按 JSON 格式输出，不要添加自然语言说明。",
+  "template": "请解析以下剧本场景信息，提取结构化元数据：\n\n标题名称：{title}\n\n**请提取以下字段：**\n- **scene_category**：INT（内景）/ EXT（外景）/ null\n- **lighting**：景光（日 / 夜 / 无日夜 / null）\n- **space**：空间类型（现实世界 / 数字空间 / 梦境 / null）\n- **region**：区域信息（如“月球基地”“北京城市街区”）\n- **main_location**：主场景位置（如“指挥室”“走廊”）\n- **sub_location**：次级位置（如“门口”“窗边”等）\n- **summary**：该场景的一句话剧情概要\n\n**返回格式（严格遵循 JSON）：**\n```json\n{\n  \"metadata\": {\n    \"scene_category\": \"INT / EXT / null\",\n    \"lighting\": \"日 / 夜 / 无日夜 / null\",\n    \"space\": \"现实世界 / 数字空间 / 梦境 / null\",\n    \"region\": \"区域信息或 null\",\n    \"main_location\": \"主场景位置或 null\",\n    \"sub_location\": \"次场景位置或 null\",\n    \"summary\": \"一句话剧情概要\"\n  }\n}\n```\n\n请严格按 JSON 格式输出，不要添加自然语言说明。",
   "variables": [
     {
-      "name": "scene_name",
+      "name": "title",
       "description": "剧本场景标题，例如 INT.实验舱.夜"
     }
   ]

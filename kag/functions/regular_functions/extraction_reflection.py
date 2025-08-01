@@ -1,30 +1,10 @@
-"""
-提取反思器
-使用增强的JSON处理工具
-"""
 from typing import Dict, Any, List
 import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
+from kag.utils.general_text import extraction_refletion_repair_template, general_rules
 
 logger = logging.getLogger(__name__)
-
-
-repair_template = """
-请修复以下提取反思结果中的问题：
-
-原始响应：{original_response}
-错误信息：{error_message}
-
-请确保返回的JSON包含：
-1. "reflection_result"字段，包含反思结果
-2. "issues"字段，包含发现的问题列表
-3. "suggestions"字段，包含改进建议列表
-4. "score"字段，包含评分信息
-5. JSON格式正确
-
-请直接返回修复后的JSON，不要包含解释。
-"""
 
 
 class ExtractionReflector:
@@ -38,15 +18,11 @@ class ExtractionReflector:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = ["reflection_result"]
-        self.field_validators = {
-            "reflection_result": lambda x: isinstance(x, dict),
-            "issues": lambda x: isinstance(x, list) if x is not None else True,
-            "suggestions": lambda x: isinstance(x, list) if x is not None else True
-        }
+        self.required_fields = ["score"]
+        self.field_validators = {}
         
         # 修复提示词模板
-        self.repair_template = repair_template
+        self.repair_template = extraction_refletion_repair_template
     
     def call(self, params: str, **kwargs) -> str:
         """
@@ -60,32 +36,22 @@ class ExtractionReflector:
             str: 经过correct_json_format处理的JSON字符串
         """
         try:
-            # 解析参数
+            # 解析参数 - 使用正确的参数名称
             params_dict = json.loads(params)
+            logs = params_dict.get("logs", "")
+            entity_type_description_text = params_dict.get("entity_type_description_text", "")
+            relation_type_description_text = params_dict.get("relation_type_description_text", "")
             original_text = params_dict.get("original_text", "")
-            entity_extraction_result = params_dict.get("entity_extraction_result", "")
-            relation_extraction_result = params_dict.get("relation_extraction_result", "")
-            entity_type_description = params_dict.get("entity_type_description", "")
-            relation_type_description = params_dict.get("relation_type_description", "")
+            abbreviations = params_dict.get("abbreviations", "")
+            previous_reflection = params_dict.get("previous_reflection", {})
+            version = params_dict.get("version", "default")
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
             error_result = {
                 "error": f"参数解析失败: {str(e)}", 
-                "reflection_result": {},
-                "issues": [],
-                "suggestions": [],
-                "score": 0
-            }
-            from kag.utils.format import correct_json_format
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-        
-        if not original_text:
-            error_result = {
-                "error": "缺少原始文本", 
-                "reflection_result": {},
-                "issues": [],
+                "current_issues": [],
                 "suggestions": [],
                 "score": 0
             }
@@ -93,20 +59,48 @@ class ExtractionReflector:
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
         
         try:
-            # 构建提示词变量
-            variables = {
-                'original_text': original_text,
-                'entity_extraction_result': entity_extraction_result,
-                'relation_extraction_result': relation_extraction_result,
-                'entity_type_description': entity_type_description,
-                'relation_type_description': relation_type_description
-            }
+            if version == "short":
+                prompt_id = "reflect_extraction_short_prompt"
+            else:
+                prompt_id = "reflect_extraction_prompt"
+            prompt_text = self.prompt_loader.render_prompt(
+                prompt_id=prompt_id,
+                variables={
+                    'logs': logs,
+                    'entity_type_description_text': entity_type_description_text,
+                    'relation_type_description_text': relation_type_description_text
+                },
+            )
+
+            agent_prompt_text = self.prompt_loader.render_prompt(
+                prompt_id="agent_prompt",
+                variables={"abbreviations": abbreviations}
+            )
+
+            messages = [{"role": "system", "content": agent_prompt_text}]
             
-            # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('extraction_reflection_prompt', variables)
             
-            # 构建消息
-            messages = [{"role": "user", "content": prompt_text}]
+            background_info = ""
+            if original_text:
+                background_info += f"这是之前信息抽取的原文：\n{original_text.strip()}" 
+            background_info += f"这是实体和关系抽取时需要遵守的一些准则：\n{general_rules}"
+                
+            messages.append({"role": "user", "content": background_info})
+                    
+            previous_issues = previous_reflection.get("issues", "")
+            previous_suggestions = previous_reflection.get("suggestions", "")
+            relation_extraction_results = previous_reflection.get("previous_relations", "")
+            entitity_extraction_results = previous_reflection.get("previous_entities", "")
+            score = previous_reflection.get("score", "")
+            
+            if previous_issues and score:
+                summary = f"之前反思给出的得分为: {score}\n具体建议为：\n{previous_issues}\n，根据建议改进后的抽取结果为：\n\n"
+                summary += f"实体抽取：\n{entitity_extraction_results}\n关系抽取:\n {relation_extraction_results}"
+                # print("[CHECK] summary: ", summary)
+                messages.append({"role": "user", "content": summary})
+            
+            
+            messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
             corrected_json = process_with_format_guarantee(
@@ -114,7 +108,8 @@ class ExtractionReflector:
                 messages=messages,
                 required_fields=self.required_fields,
                 field_validators=self.field_validators,
-                max_retries=3,
+                max_retries=2,
+                enable_thinking=True,
                 repair_template=self.repair_template
             )
             
@@ -125,8 +120,7 @@ class ExtractionReflector:
             logger.error(f"提取反思过程中出现异常: {e}")
             error_result = {
                 "error": f"提取反思失败: {str(e)}",
-                "reflection_result": {},
-                "issues": [],
+                "current_issues": [],
                 "suggestions": [],
                 "score": 0
             }
