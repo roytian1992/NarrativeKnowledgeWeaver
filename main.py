@@ -34,6 +34,11 @@ def main():
         help="配置文件路径"
     )
     parser.add_argument(
+        "--glossary", "-g",
+        default="WanderingEarth2",
+        help="术语列表"
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="显示详细输出"
@@ -58,7 +63,7 @@ def main():
             print("✅ 从环境变量加载配置")
     
     # 创建构建器
-    builder = KnowledgeGraphBuilder(config)
+    builder = KnowledgeGraphBuilder(config, doc_type="novel", glossary=args.glossary)
     
     # 构建知识图谱
     # builder.prepare_chunks(args.input, verbose=args.verbose)
@@ -67,24 +72,26 @@ def main():
     # builder.extract_entity_attributes(verbose=args.verbose)
     # kg = builder.build_graph_from_results(verbose=args.verbose)
     # builder.prepare_graph_embeddings()
-    event_graph_builder = EventCausalityBuilder(config)
-    event_graph_builder.initialize()
-    event_graph_builder.build_event_causality_graph()
     
-    # 输出统计信息
-    stats = builder.get_stats()
-    print("\n📊 最终统计信息:")
-    print(f"   - 实体数量: {stats['knowledge_graph']['entities']}")
-    print(f"   - 关系数量: {stats['knowledge_graph']['relations']}")
-    print(f"   - 文档数量: {stats['knowledge_graph']['documents']}")
-    print(f"   - 文本块数量: {stats['knowledge_graph']['chunks']}")
+    event_graph_builder = EventCausalityBuilder(config, doc_type="novel")
+    # event_graph_builder.initialize()
+    # event_graph_builder.build_event_causality_graph()
+    event_graph_builder.run_SABER()
     
-    # 保存统计信息
-    if args.output_stats:
-        import json
-        with open(args.output_stats, 'w', encoding='utf-8') as f:
-            json.dump(stats, f, ensure_ascii=False, indent=2)
-        print(f"📄 统计信息已保存到: {args.output_stats}")
+    # # 输出统计信息
+    # stats = builder.get_stats()
+    # print("\n📊 最终统计信息:")
+    # print(f"   - 实体数量: {stats['knowledge_graph']['entities']}")
+    # print(f"   - 关系数量: {stats['knowledge_graph']['relations']}")
+    # print(f"   - 文档数量: {stats['knowledge_graph']['documents']}")
+    # print(f"   - 文本块数量: {stats['knowledge_graph']['chunks']}")
+    
+    # # 保存统计信息
+    # if args.output_stats:
+    #     import json
+    #     with open(args.output_stats, 'w', encoding='utf-8') as f:
+    #         json.dump(stats, f, ensure_ascii=False, indent=2)
+    #     print(f"📄 统计信息已保存到: {args.output_stats}")
     
     print("\n🎉 知识图谱构建完成!")
         
