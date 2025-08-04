@@ -7,6 +7,7 @@ import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
 from kag.utils.general_text import semantic_splitter_repair_template
+from kag.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,6 @@ class SemanticSplitter:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
             error_result = {"error": f"参数解析失败: {str(e)}", "segments": [text, ]}
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
         
         try:
@@ -69,7 +69,7 @@ class SemanticSplitter:
             messages = [{"role": "user", "content": prompt_text}]
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json = process_with_format_guarantee(
+            corrected_json, status = process_with_format_guarantee(
                 llm_client=self.llm,
                 messages=messages,
                 required_fields=self.required_fields,
@@ -79,7 +79,14 @@ class SemanticSplitter:
             )
             
             logger.info("语义分割完成，返回格式化后的JSON")
-            return corrected_json
+            if status == "success":
+                return corrected_json
+            else:
+                error_result = {
+                    "error": f"语义分割失败，返回默认分割方式",
+                    "segments": [text, ]
+                }
+                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
             
         except Exception as e:
             logger.error(f"语义分割过程中出现异常: {e}")
@@ -87,6 +94,5 @@ class SemanticSplitter:
                 "error": f"语义分割失败: {str(e)}",
                 "segments": [text, ]
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 

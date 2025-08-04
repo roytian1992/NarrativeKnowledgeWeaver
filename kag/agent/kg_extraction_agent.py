@@ -3,29 +3,21 @@ from enum import Enum
 from langgraph.graph import StateGraph, END
 from kag.utils.format import correct_json_format
 from kag.builder.reflection import DynamicReflector
-from kag.builder.extractor import InformationExtractor
+from kag.builder.knowledge_extractor import InformationExtractor
+import asyncio  
 
 class InformationExtractionAgent:
-    def __init__(self, config, llm):
+    def __init__(self, config, llm, system_prompt):
         self.config = config
         self.extractor = InformationExtractor(config, llm)
         self.load_schema("kag/schema/graph_schema.json")
-        self.load_abbreviations("kag/schema/settings_schema.json")
         self.graph = self._build_graph()
         self.reflector = DynamicReflector(config)
         self.score_threshold = self.config.extraction.score_threshold
         self.max_retries = self.config.extraction.max_retries
-        
+        self.system_prompt = system_prompt
         # print("[CHECK] score threshold: ", self.score_threshold)
         # print("[CHECK] max retries: ", self.max_retries)
-
-    def load_abbreviations(self, path):
-        with open(path, "r", encoding="utf-8") as f:
-            abbr = json.load(f)
-        self.abbreviation_info = "\n".join(
-            f"- **{a['abbr']}**: {a['full']}（{a['zh']}） - {a['description']}"
-            for a in abbr.get("abbreviations", [])
-        )
 
     def load_schema(self, path):
         with open(path, "r", encoding="utf-8") as f:
@@ -69,7 +61,7 @@ class InformationExtractionAgent:
         result = self.extractor.extract_entities(
             text=state["content"],
             entity_type_description_text=self.entity_type_description_text,
-            abbreviations=self.abbreviation_info,
+            system_prompt=self.system_prompt,
             reflection_results=reflection_results 
         )
         reflection_results["previous_entities"] = result
@@ -95,7 +87,7 @@ class InformationExtractionAgent:
             text=state["content"],
             entity_list=state["entity_list"],
             relation_type_description_text=self.relation_type_description_text,
-            abbreviations=self.abbreviation_info,
+            system_prompt=self.system_prompt,
             reflection_results=reflection_results,
         )
         reflection_results["previous_relations"] = result
@@ -127,7 +119,7 @@ class InformationExtractionAgent:
             relation_type_description_text=self.relation_type_description_text,
             original_text=state["content"],
             previous_reflection=reflection_results,
-            abbreviations=self.abbreviation_info,
+            system_prompt=self.system_prompt,
             version=version
         )
         result = json.loads(correct_json_format(result))
@@ -199,11 +191,49 @@ class InformationExtractionAgent:
         })
         return result.get("best_result", result)
 
-    async def arun(self, text: str):
-        result = await self.graph.ainvoke({
-            "content": text,
-            "retry_count": 0,
-            "best_score": 0,
-            "best_result": {}
-        })
-        return result.get("best_result", result)
+    # async def arun(self, text: str):
+    #     result = await self.graph.ainvoke({
+    #         "content": text,
+    #         "retry_count": 0,
+    #         "best_score": 0,
+    #         "best_result": {}
+    #     })
+    #     return result.get("best_result", result)
+    
+    async def arun(self, text: str,
+                   timeout: int = 600,
+                   max_attempts: int = 5,
+                   backoff_seconds: int = 30):
+        """
+        异步抽取（带超时 + 重试）
+        ・timeout        每次调用最多等待秒数
+        ・max_attempts   总尝试次数 = 1 次正常 + (max_attempts-1) 次重试
+        ・backoff_seconds 简单线性退避（30,60,…）
+        """
+        attempt = 0
+        while attempt < self.max_retries:
+            try:
+                coro = self.graph.ainvoke({
+                    "content": text,
+                    "retry_count": 0,
+                    "best_score": 0,
+                    "best_result": {}
+                })
+                result = await asyncio.wait_for(coro, timeout=timeout)
+                return result.get("best_result", result)     # <<< 正常返回
+            except asyncio.TimeoutError:
+                attempt += 1
+                if attempt >= max_attempts:
+                    # 超时仍失败 —— 返回空抽取，供上层继续流程
+                    print("[CHECK] text: ", text)
+                    print({"entities": [], "relations": [],
+                            "error": f"timeout after {max_attempts} attempts"})
+                    return {"entities": [], "relations": [],
+                            "error": f"timeout after {max_attempts} attempts"}
+                # 退避后重试
+                await asyncio.sleep(backoff_seconds * attempt)
+            except Exception as e:
+                # 其它异常不重试（你可按需改成也重试）
+                print("[CHECK] text: ", text)
+                print({"entities": [], "relations": [], "error": str(e)})
+                return {"entities": [], "relations": [], "error": str(e)}

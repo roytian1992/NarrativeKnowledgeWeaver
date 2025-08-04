@@ -3,12 +3,14 @@
 """
 
 from .kg_builder import KnowledgeGraphBuilder
-from .processor import DocumentProcessor
-from .extractor import InformationExtractor
+from .document_processor import DocumentProcessor
+from .knowledge_extractor import InformationExtractor
+from .document_parser import DocumentParser
 
 __all__ = [
     "KnowledgeGraphBuilder",
     "DocumentProcessor", 
     "InformationExtractor",
+    "DocumentParser"
 ]
 

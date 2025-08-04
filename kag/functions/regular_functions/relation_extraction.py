@@ -3,6 +3,7 @@ import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
 from kag.utils.general_text import general_rules, relation_repair_template
+from kag.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
@@ -42,14 +43,13 @@ class RelationExtractor:
             text = params_dict.get("text", "")
             relation_type_description_text = params_dict.get("relation_type_description_text", "")
             entity_list = params_dict.get("entity_list", "")
-            abbreviations = params_dict.get("abbreviations", "")
+            system_prompt = params_dict.get("system_prompt", "")
             reflection_results = params_dict.get("reflection_results", {})
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
             error_result = {"error": f"参数解析失败: {str(e)}", "relations": []}
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
         
         try:
@@ -67,14 +67,9 @@ class RelationExtractor:
                     'relation_type_description_text': relation_type_description_text,
                 },
             )
-
-            agent_prompt_text = self.prompt_loader.render_prompt(
-                prompt_id="agent_prompt",
-                variables={"abbreviations": abbreviations}
-            )
             # 初始消息组装
             messages = [
-                {"role": "system", "content": agent_prompt_text},
+                {"role": "system", "content": system_prompt},
             ]
             
             # messages.append({"role": "user", "content": f"这是实体和关系抽取时需要遵守的一些准则：\n{general_rules}"})
@@ -99,7 +94,7 @@ class RelationExtractor:
             messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json = process_with_format_guarantee(
+            corrected_json, status = process_with_format_guarantee(
                 llm_client=self.llm,
                 messages=messages,
                 required_fields=self.required_fields,
@@ -108,9 +103,16 @@ class RelationExtractor:
                 max_retries=3,
                 repair_template=self.repair_template
             )
-            
-            logger.info("关系提取完成，返回格式化后的JSON")
-            return corrected_json
+            if status == "success":
+                logger.info("关系提取完成，返回格式化后的JSON")
+                return corrected_json
+            else:
+                error_result = {
+                    "error": f"关系提取失败: {str(e)}",
+                    "relations": []
+                }
+                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
+
             
         except Exception as e:
             logger.error(f"关系提取过程中出现异常: {e}")
@@ -118,6 +120,5 @@ class RelationExtractor:
                 "error": f"关系提取失败: {str(e)}",
                 "relations": []
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 

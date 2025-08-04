@@ -66,6 +66,7 @@ class GraphStore:
             e.type = $type,
             e.aliases = $aliases,
             e.description = $description,
+            e.scope = $scope,
             e.properties = $properties,
             e.source_chunks = $source_chunks
         """
@@ -77,6 +78,7 @@ class GraphStore:
                 "type": entity.type,
                 "aliases": entity.aliases,
                 "description": entity.description,
+                "scope": entity.scope,
                 "properties": properties,
                 # "confidence": entity.confidence,
                 "source_chunks": entity.source_chunks
@@ -181,10 +183,10 @@ class GraphStore:
         
         with self.driver.session() as session:
             # 统计实体数量
-            entity_count = session.run("MATCH (e:Entity) RETURN count(e) as count").single()["count"]
+            entity_count = session.run("MATCH (e) RETURN count(e) as count").single()["count"]
             
             # 统计关系数量
-            relation_count = session.run("MATCH ()-[r:RELATION]->() RETURN count(r) as count").single()["count"]
+            relation_count = session.run("MATCH ()-[r]->() RETURN count(r) as count").single()["count"]
             
             return {
                 "status": "connected",

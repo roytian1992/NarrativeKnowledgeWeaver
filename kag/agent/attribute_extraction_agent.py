@@ -4,29 +4,21 @@ from typing import Dict
 from langgraph.graph import StateGraph, END
 from kag.utils.format import correct_json_format
 from ..storage.vector_store import VectorStore
-from kag.builder.extractor import InformationExtractor
-
+from kag.builder.knowledge_extractor import InformationExtractor
+import asyncio 
 
 def format_property_definitions(properties: Dict[str, str]) -> str:
     return "\n".join([f"- **{key}**：{desc}" for key, desc in properties.items()])
 
 
 class AttributeExtractionAgent:
-    def __init__(self, config, llm):
+    def __init__(self, config, llm, system_prompt=""):
         self.config = config
         self.extractor = InformationExtractor(config, llm)
         self.vector_store = VectorStore(config)
         self.load_schema("kag/schema/graph_schema.json")
-        self.load_abbreviations("kag/schema/settings_schema.json")
         self.graph = self._build_graph()
-
-    def load_abbreviations(self, path):
-        with open(path, "r", encoding="utf-8") as f:
-            abbr = json.load(f)
-        self.abbreviation_info = "\n".join(
-            f"- **{a['abbr']}**: {a['full']}（{a['zh']}） - {a['description']}"
-            for a in abbr.get("abbreviations", [])
-        )
+        self.system_prompt = system_prompt
 
     def load_schema(self, path):
         with open(path, "r", encoding="utf-8") as f:
@@ -50,7 +42,7 @@ class AttributeExtractionAgent:
             description=type_description,
             entity_type=entity_type,
             attribute_definitions=attribute_definitions,
-            abbreviations=self.abbreviation_info,
+            system_prompt=self.system_prompt,
             previous_results=state.get("previous_result", ""),
             feedbacks=feedbacks,
             original_text=state.get("original_text", "")
@@ -82,7 +74,7 @@ class AttributeExtractionAgent:
             description=description,
             attribute_definitions=attribute_definitions,
             attributes=attributes,
-            abbreviations=self.abbreviation_info
+            system_prompt=self.system_prompt,
         )
         result = json.loads(correct_json_format(result))
         return {
@@ -151,14 +143,61 @@ class AttributeExtractionAgent:
             "has_added_context": False
         })
 
-    async def arun(self, text: str, entity_name: str, entity_type: str, source_chunks: list = [], original_text: str = None):
-        return await self.graph.ainvoke({
-            "content": text,
-            "entity_name": entity_name,
-            "entity_type": entity_type,
-            "source_chunks": source_chunks,
-            "original_text": original_text or text,
-            "previous_result": "",
-            "feedbacks": [],
-            "has_added_context": False
-        })
+    async def arun(
+        self,
+        text: str,
+        entity_name: str,
+        entity_type: str,
+        source_chunks: list = None,
+        original_text: str | None = None,
+        timeout: int = 120,
+        max_attempts: int = 3,
+        backoff_seconds: int = 30,
+    ):
+        """
+        异步属性抽取（带超时 + 重试）
+
+        Parameters
+        ----------
+        text : str
+            待抽取文本（通常是实体描述）
+        entity_name : str
+            实体名称
+        entity_type : str
+            实体类型
+        source_chunks : list
+            来源 chunk ID 列表
+        original_text : str | None
+            原始全文（可选）
+        timeout : int
+            单次调用最长等待秒数
+        max_attempts : int
+            最大尝试次数（1 次正常 + max_attempts-1 次重试）
+        backoff_seconds : int
+            超时后退避秒数的基准（线性：n×backoff_seconds）
+        """
+        source_chunks = source_chunks or []
+        attempt = 0
+
+        while attempt < max_attempts:
+            try:
+                coro = self.graph.ainvoke({
+                    "content": text,
+                    "entity_name": entity_name,
+                    "entity_type": entity_type,
+                    "source_chunks": source_chunks,
+                    "original_text": original_text or text,
+                    "previous_result": "",
+                    "feedbacks": [],
+                    "has_added_context": False
+                })
+                result = await asyncio.wait_for(coro, timeout=timeout)
+                return result.get("best_result", result)   # 正常成功
+            except asyncio.TimeoutError:
+                attempt += 1
+                if attempt >= max_attempts:
+                    return {"attributes": {}, "error": f"timeout after {max_attempts} attempts"}
+                await asyncio.sleep(backoff_seconds * attempt)  # 简单退避
+            except Exception as e:
+                # 其它异常不做重试；若想也重试，可改为同超时逻辑
+                return {"attributes": {}, "error": str(e)}

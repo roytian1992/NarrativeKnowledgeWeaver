@@ -7,9 +7,9 @@ import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
 from kag.utils.general_text import attribute_reflection_repair_template
+from kag.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
-
 
 
 class AttributeReflector:
@@ -23,8 +23,11 @@ class AttributeReflector:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = []
-        self.field_validators = {}
+        self.required_fields = ["attributes", "new_description"]
+        self.field_validators = {
+            "attributes": lambda x: isinstance(x, dict),
+            "new_description": lambda x: isinstance(x, str)
+        }
         
         # 修复提示词模板
         self.repair_template = attribute_reflection_repair_template
@@ -48,7 +51,7 @@ class AttributeReflector:
             description = params_dict.get("description", "")
             entity_type = params_dict.get("entity_type", "")
             attribute_definitions = params_dict.get("attribute_definitions", "")
-            abbreviations = params_dict.get("abbreviations", "")  # 和实体抽取逻辑保持一致
+            system_prompt = params_dict.get("system_prompt", "")  # 和实体抽取逻辑保持一致
             feedbacks = params_dict.get("feedbacks", "")
             original_text = params_dict.get("original_text", "")
             previous_results = params_dict.get("previous_results", "")
@@ -62,7 +65,6 @@ class AttributeReflector:
                 "need_additional_context": False,
                 "attributes_to_retry": [],
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
                 
         try:
@@ -82,11 +84,7 @@ class AttributeReflector:
             )
             
             # agent 指令（system prompt），同你之前写法
-            agent_prompt_text = self.prompt_loader.render_prompt(
-                prompt_id="agent_prompt",
-                variables={"abbreviations": abbreviations}
-            )
-            messages = [{"role": "system", "content": agent_prompt_text}]
+            messages = [{"role": "system", "content": system_prompt}]
             
             if original_text and previous_results and feedbacks:
                 background_info = f"上一次信息抽取的上下文：\n{original_text.strip()}\n\n" 
@@ -103,7 +101,7 @@ class AttributeReflector:
             messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json = process_with_format_guarantee(
+            corrected_json, status = process_with_format_guarantee(
                 llm_client=self.llm,
                 messages=messages,
                 required_fields=self.required_fields,
@@ -113,7 +111,17 @@ class AttributeReflector:
             )
             
             logger.info("属性反思完成，返回格式化后的JSON")
-            return corrected_json
+            if status != "error":
+                return corrected_json
+            else:
+                error_result = {
+                    "error": f"属性反思失败: {str(e)}",
+                    "feedbacks": [],
+                    "need_additional_context": False,
+                    "attributes_to_retry": [],
+                }
+                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
+                
             
         except Exception as e:
             logger.error(f"属性反思过程中出现异常: {e}")
@@ -123,6 +131,5 @@ class AttributeReflector:
                 "need_additional_context": False,
                 "attributes_to_retry": [],
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 

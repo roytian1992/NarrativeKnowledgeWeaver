@@ -11,7 +11,23 @@ from community import best_partition
 from kag.models.entities import Entity, Relation
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+# from kag.builder.kg_builder_2 import DOC_TYPE_META
 
+
+DOC_TYPE_META: Dict[str, Dict[str, str]] = {
+    "screenplay": {
+        "section_label": "Scene",
+        "title": "scene_name",
+        "subtitle_key": "sub_scene_name",
+        "contains_pred": "SCENE_CONTAINS",
+    },
+    "novel": {
+        "section_label": "Chapter",
+        "title": "chapter_name",
+        "subtitle": "sub_chapter_name",
+        "contains_pred": "CHAPTER_CONTAINS",
+    },
+}
 
 class Neo4jUtils:
     """
@@ -23,13 +39,18 @@ class Neo4jUtils:
     4. 查询结果标准化处理
     """
     
-    def __init__(self, driver: Driver):
+    def __init__(self, driver: Driver, doc_type: str = "screenplay"):
         """
         初始化Neo4j工具类
         
         Args:
             driver: Neo4j连接驱动
         """
+        if doc_type not in DOC_TYPE_META:
+            raise ValueError(f"Unsupported doc_type: {doc_type}")
+        self.doc_type = doc_type
+        self.meta = DOC_TYPE_META[doc_type]
+        
         self.driver = driver
         self.model = None
         self.embedding_field = "embedding"
@@ -112,86 +133,87 @@ class Neo4jUtils:
                 entities.append(self._build_entity_from_data(data))
             return entities
 
+    
     def search_related_entities(
         self,
         source_id: str,
         predicate: Optional[str] = None,
-        relation_type: Optional[str] = None,
+        relation_types: Optional[List[str]] = None,
         entity_types: Optional[List[str]] = None,
-        limit: int = 10,
+        limit: Optional[int] = None,
         return_relations: bool = False
     ) -> Union[List[Entity], List[Tuple[Entity, Relation]]]:
         """
-        搜索与指定实体相关的实体
-        
+        搜索与指定实体相关的实体，可按关系类型、谓词、目标实体类型过滤
+
         Args:
-            source_id: 源实体ID
-            predicate: 关系谓词过滤
-            entity_types: 目标实体类型过滤
-            limit: 结果数量限制
-            return_relations: 是否返回关系信息
-            
+            source_id: 源实体 ID
+            predicate: 关系谓词过滤（rel.predicate）
+            relation_types: 关系类型标签列表（Cypher 中的 :TYPE 标签）
+            entity_types: 目标实体类型过滤（target.type）
+            limit: 返回数量限制（可选，不传则不限制）
+            return_relations: 是否返回 (实体, 关系) 对
+
         Returns:
             实体列表或实体-关系元组列表
         """
         if self.driver is None:
             return []
-            
-        params = {"source_id": source_id, "limit": limit}
-        if relation_type:
-            params["rel_type"] = relation_type
+
+        params: Dict[str, any] = {"source_id": source_id}
         if predicate:
             params["predicate"] = predicate
+        if relation_types:
+            params["rel_types"] = relation_types
         if entity_types:
             params["etypes"] = entity_types
+        if limit:
+            params["limit"] = limit
 
-        # entity type 过滤语句
+        # 构造 Cypher 过滤子句
+        predicate_filter = "AND rel.predicate = $predicate" if predicate else ""
         type_filter = "AND target.type IN $etypes" if entity_types else ""
-        pred_filter = "AND rel.predicate = $predicate" if predicate else ""
-        rel_type_clause = f":{relation_type}" if relation_type else ""
+        rel_type_filter = "AND type(rel) IN $rel_types" if relation_types else ""
+        limit_clause = "LIMIT $limit" if limit else ""
 
         results = []
 
         with self.driver.session() as session:
-            # 正向关系
+            # 正向边查询
             forward_cypher = f"""
-            MATCH (source)-[rel{rel_type_clause }]->(target)
+            MATCH (source)-[rel]->(target)
             WHERE source.id = $source_id
-              AND rel.predicate IS NOT NULL
-              {pred_filter}
-              {type_filter}
+            AND rel.predicate IS NOT NULL
+            {predicate_filter}
+            {rel_type_filter}
+            {type_filter}
             RETURN target, rel
-            LIMIT $limit
+            {limit_clause}
             """
-            # print("[CHECK] forward_cypher: ", session.run(forward_cypher, params))
 
             for record in session.run(forward_cypher, params):
                 entity, relation = self._process_entity_relation_record(record, source_id, "forward")
-                if return_relations:
-                    results.append((entity, relation))
-                else:
-                    results.append(entity)
+                results.append((entity, relation) if return_relations else entity)
 
-            # 反向关系
+            # 反向边查询
             backward_cypher = f"""
-            MATCH (target)-[rel{rel_type_clause}]->(source)
+            MATCH (target)-[rel]->(source)
             WHERE source.id = $source_id
-              AND rel.predicate IS NOT NULL
-              {pred_filter}
-              {type_filter}
+            AND rel.predicate IS NOT NULL
+            {predicate_filter}
+            {rel_type_filter}
+            {type_filter}
             RETURN target, rel
-            LIMIT $limit
+            {limit_clause}
             """
 
             for record in session.run(backward_cypher, params):
                 entity, relation = self._process_entity_relation_record(record, source_id, "backward")
-                if return_relations:
-                    results.append((entity, relation))
-                else:
-                    results.append(entity)
+                results.append((entity, relation) if return_relations else entity)
 
         return results
 
+    
     def get_entity_by_id(self, entity_id: str) -> Optional[Entity]:
         """
         根据 ID 精准查找一个实体节点（兼容所有标签）
@@ -218,6 +240,38 @@ class Neo4jUtils:
 
             data = record["e"]
             return self._build_entity_from_data(data)
+        
+        
+    def delete_relation_by_ids(
+        self,
+        source_id: str,
+        target_id: str,
+        relation_type: str
+    ) -> bool:
+        """
+        根据 source_id、target_id 和 relation_type 删除指定关系
+
+        Args:
+            source_id: 源实体的 ID
+            target_id: 目标实体的 ID
+            relation_type: 要删除的关系类型（如 "EVENT_CAUSES"）
+
+        Returns:
+            bool: 是否成功删除了关系（True 表示至少删除了一条）
+        """
+        cypher = f"""
+        MATCH (s)-[r:{relation_type}]->(t)
+        WHERE s.id = $source_id AND t.id = $target_id
+        DELETE r
+        RETURN COUNT(r) AS deleted_count
+        """
+        params = {"source_id": source_id, "target_id": target_id}
+
+        with self.driver.session() as session:
+            result = session.run(cypher, params)
+            record = result.single()
+            return record and record["deleted_count"] > 0
+
 
     def list_relationship_types(self) -> List[str]:
         """
@@ -256,6 +310,45 @@ class Neo4jUtils:
         if "*" in labels:
             labels.remove("*")
         return labels
+
+
+    def get_relation_summary(self, src_id: str, tgt_id: str, relation_type: str=None) -> Optional[str]:
+        """
+        直接在 Neo4j 中查找 src_id 到 tgt_id 之间的特定关系，并返回格式化描述
+        
+        Args:
+            src_id: 源实体 ID
+            tgt_id: 目标实体 ID
+            relation_type: 关系类型（如 "EVENT_CAUSES"）
+        
+        Returns:
+            格式化描述字符串或 None
+        """
+        cypher = f"""
+        MATCH (s {{id: $src_id}})-[r:{relation_type}]->(t {{id: $tgt_id}})
+        RETURN r, s.id AS source_id, t.id AS target_id
+        LIMIT 1
+        """
+        results = self.execute_query(cypher, {"src_id": src_id, "tgt_id": tgt_id})
+
+        if not results:
+            return None
+
+        record = results[0]
+        relation = record["r"]
+        description = ""
+        subject_name = self.get_entity_by_id(src_id).name
+        subject_description = self.get_entity_by_id(src_id).description
+        object_name = self.get_entity_by_id(tgt_id).name
+        object_description = self.get_entity_by_id(tgt_id).description
+        if relation_type == "EVENT_CAUSES":
+            if relation.get("reason", ""):
+                description = " 理由: " + str(relation.get("reason"))
+            return f"{src_id} --> {tgt_id}\n{subject_description}-->{object_description}{description}"
+            
+        relation_name = relation.get("relation_name", relation.get("predicate", relation_type))
+        description = ":" + relation.get("description", "无相关描述")
+        return f"{subject_name}({subject_description})-{relation_name}->{object_name}({object_description}){description}"
 
 
     def delete_relation_type(self, relation_type):
@@ -310,81 +403,6 @@ class Neo4jUtils:
             print(f"[Neo4j] has_path_between (whitelist mode) 执行失败: {e}")
             return False
 
-    def build_filtered_graph(self, allowed_rels: Set[str]) -> nx.Graph:
-        """
-        从 Neo4j 构建一个仅包含指定关系类型的无向图
-        
-        Args:
-            allowed_rels: 允许的关系类型集合
-            
-        Returns:
-            NetworkX无向图
-        """
-        G = nx.Graph()
-        with self.driver.session() as session:
-            cypher = f"""
-            MATCH (s)-[r]->(o)
-            WHERE type(r) IN $allowed_rels
-            RETURN s.id AS src, o.id AS dst
-            """
-            result = session.run(cypher, {"allowed_rels": list(allowed_rels)})
-            for record in result:
-                src, dst = record["src"], record["dst"]
-                if src and dst:
-                    G.add_edge(src, dst)
-        return G
-
-    def assign_components_and_communities(self, G: nx.Graph) -> Dict[str, Tuple[int, int]]:
-        """
-        为图中的每个节点分配 (component_id, community_id)
-        
-        Args:
-            G: NetworkX图
-            
-        Returns:
-            节点ID到(连通体ID, 社区ID)的映射
-        """
-        node_map = {}
-        component_id = 0
-
-        for component_nodes in nx.connected_components(G):
-            subgraph = G.subgraph(component_nodes)
-            community_dict = best_partition(subgraph)
-            for node_id in community_dict:
-                community_id = community_dict[node_id]
-                node_map[node_id] = (component_id, community_id)
-            component_id += 1
-
-        return node_map
-
-    def has_path_between_nx(
-        self, 
-        G: nx.Graph, 
-        src_id: str, 
-        dst_id: str, 
-        max_depth: int = 3
-    ) -> bool:
-        """
-        判断 NetworkX 图中两个节点之间是否存在路径，且路径长度不超过 max_depth
-        
-        Args:
-            G: NetworkX图（已过滤后的白名单图）
-            src_id: 起点节点 ID
-            dst_id: 终点节点 ID
-            max_depth: 路径最大深度
-            
-        Returns:
-            是否存在满足条件的路径
-        """
-        if src_id not in G or dst_id not in G:
-            return False
-        try:
-            length = nx.shortest_path_length(G, source=src_id, target=dst_id)
-            return length <= max_depth
-        except nx.NetworkXNoPath:
-            return False
-        except nx.NodeNotFound:
-            return False
 
     def _build_entity_from_data(self, data) -> Entity:
         """
@@ -544,23 +562,23 @@ class Neo4jUtils:
             SET r.{self.embedding_field} = $embedding
             """, id=rel_id, embedding=embedding)
     
-    def process_all_embeddings(self, exclude_node_types: List[str] = [], exclude_rel_types: List[str] = []):
+    def process_all_embeddings(self, exclude_entity_types: List[str] = [], exclude_relation_types: List[str] = []):
         """
         自动处理所有节点标签和所有边，为其生成 embedding 并写回图数据库。
         节点 embedding 输入：name + description (+ properties)
         边 embedding 输入：properties.description
         """
         # === 获取所有实体类型（标签） ===
-        node_types = self.list_entity_types()
+        entity_types = self.list_entity_types()
 
         # === 处理节点嵌入 ===
         print("🚀 开始处理节点嵌入...")
-        for node in exclude_node_types:
-            if node in node_types:
-                node_types.remove(node)
+        for node in exclude_entity_types:
+            if node in entity_types:
+                entity_types.remove(node)
                 
-        print(f"📌 实体类型标签: {node_types}")
-        nodes = self.fetch_all_nodes(node_types)
+        print(f"📌 实体类型标签: {entity_types}")
+        nodes = self.fetch_all_nodes(entity_types)
         for n in  tqdm(nodes, desc="Encoding Nodes", ncols=80):
             try:
                 emb = self.encode_node_embedding(n)
@@ -569,27 +587,7 @@ class Neo4jUtils:
                 print(f"⚠️ Node {n.get('id')} embedding failed:", str(e))
 
         print(f"✅ 节点嵌入完成，共处理 {len(nodes)} 个节点")
-
-        # === 处理关系嵌入 ===
-        print("🚀 开始处理边嵌入...")
-        rel_types = self.list_relationship_types()
-        for rel in exclude_rel_types: # 移除不需要考虑的边关系
-            if rel in rel_types:
-                rel_types.remove(rel)
-        
-        rels = self.fetch_all_relations(rel_types)
-        
-        for r in tqdm(rels, desc="Encoding Edges", ncols=80):
-            try:
-                emb = self.encode_relation_embedding(r)
-                if emb:
-                    self.update_relation_embedding(r["id"], emb)
-            except Exception as e:
-                print(f"⚠️ Relation {r.get('id')} embedding failed:", str(e))
-
-        print(f"✅ 边嵌入完成，共处理 {len(rels)} 条边")
-        
-        
+                
     def ensure_entity_superlabel(self):
         """
         为所有具有 embedding 的节点添加超标签 :Entity（跳过已存在标签）
@@ -705,11 +703,43 @@ class Neo4jUtils:
         return False
 
 
+    def create_event_causality_graph(self, graph_name: str = "event_causality_graph", force_refresh: bool = True):
+        """
+        创建一个只包含 Event 节点 + EVENT_CAUSES 边的 GDS 图，用于因果分析
+        """
+        with self.driver.session() as s:
+            if force_refresh:
+                s.run("CALL gds.graph.drop($name, false) YIELD graphName", name=graph_name)
+                print(f"[✓] 已删除旧图 {graph_name}")
+
+            s.run("""
+            CALL gds.graph.project(
+                $name,
+                'Event',
+                {
+                    EVENT_CAUSES: {
+                        orientation: 'NATURAL',
+                        properties: ['weight']
+                    }
+                }
+            )
+            """, name=graph_name)
+
+            print(f"[+] 已创建因果子图 {graph_name}（仅包含 Event 节点与 EVENT_CAUSES 边）")
+            
+            result = s.run("""
+                MATCH (:Event)-[r:EVENT_CAUSES]->(:Event)
+                RETURN count(r) AS edge_count
+            """)
+            edge_count = result.single()["edge_count"]
+            print(f"[✓] 当前 EVENT_CAUSES 边数量：{edge_count}")
+
+    
     def create_subgraph(
         self,
         graph_name: str = "subgraph_1",
-        exclude_node_labels: Optional[List[str]] = None,
-        exclude_rel_types: Optional[List[str]] = None,
+        exclude_entity_types: Optional[List[str]] = None,
+        exclude_relation_types: Optional[List[str]] = None,
         force_refresh: bool = False,
     ) -> None:
         """
@@ -724,8 +754,8 @@ class Neo4jUtils:
             force_refresh:         如子图已存在，是否强制删除后重建
         """
 
-        exclude_node_labels = exclude_node_labels or ["Scene"]
-        exclude_rel_types   = exclude_rel_types   or ["SCENE_CONTAINS"]
+        exclude_entity_types = exclude_entity_types or [self.meta["section_label"]]
+        exclude_relation_types = exclude_relation_types or [self.meta["contains_pred"]]
 
         with self.driver.session() as s:
             # --- 1. 若已存在且要求刷新，则删除 ---
@@ -742,17 +772,17 @@ class Neo4jUtils:
 
             # --- 2. 生成节点 / 关系 Cypher ---
             #   节点：排除指定标签
-            label_filter = " AND ".join([f"NOT '{lbl}' IN labels(n)" for lbl in exclude_node_labels]) or "true"
+            label_filter = " AND ".join([f"NOT '{lbl}' IN labels(n)" for lbl in exclude_entity_types]) or "true"
             node_query = f"""
             MATCH (n) WHERE {label_filter}
             RETURN id(n) AS id
             """
 
             #   关系：排除指定类型 & 排除与被排除节点相连的边
-            rel_filter = " AND ".join([f"type(r) <> '{rt}'" for rt in exclude_rel_types]) or "true"
+            rel_filter = " AND ".join([f"type(r) <> '{rt}'" for rt in exclude_relation_types]) or "true"
             # 额外保证两端节点都不是被排除标签
-            node_label_neg = " AND ".join([f"NOT '{lbl}' IN labels(a)" for lbl in exclude_node_labels] +
-                                        [f"NOT '{lbl}' IN labels(b)" for lbl in exclude_node_labels]) or "true"
+            node_label_neg = " AND ".join([f"NOT '{lbl}' IN labels(a)" for lbl in exclude_entity_types] +
+                                        [f"NOT '{lbl}' IN labels(b)" for lbl in exclude_entity_types]) or "true"
 
             rel_query = f"""
             MATCH (a)-[r]->(b)
@@ -769,7 +799,7 @@ class Neo4jUtils:
             )
             """, name=graph_name, nodeQuery=node_query, relQuery=rel_query)
 
-            print(f"[+] 已创建 GDS 子图 {graph_name}（排除标签 {exclude_node_labels}，排除边 {exclude_rel_types}）")
+            print(f"[+] 已创建 GDS 子图 {graph_name}（排除标签 {exclude_entity_types}，排除边 {exclude_relation_types}）")
 
     def run_louvain(
         self,
@@ -817,26 +847,6 @@ class Neo4jUtils:
             q += f"\nLIMIT {max_pairs}"
         return self.execute_query(q)
 
-    # def fetch_event_pairs_same_community(
-    #     self,
-    #     max_depth: int = 3,
-    #     max_pairs: Optional[int] = None
-    # ) -> List[Dict[str, str]]:
-    #     """
-    #     返回同社区 & 路径在 max_depth 内可达的事件对 ID 列表
-    #     """
-    #     q = f"""
-    #     MATCH (e1:Event)
-    #     MATCH (e2:Event)
-    #     WHERE e1.community = e2.community AND id(e1) < id(e2)
-    #       AND EXISTS {{
-    #           MATCH p = (e1)-[*1..{max_depth}]-(e2)
-    #           WHERE ALL(r IN relationships(p) WHERE type(r) <> 'SCENE_CONTAINS')
-    #       }}
-    #     RETURN e1.id AS srcId, e2.id AS dstId
-    #     """ + (f"LIMIT {max_pairs}" if max_pairs else "")
-    #     return self.execute_query(q)
-
     def write_event_causes(self, rows: List[Dict[str, Any]]) -> None:
         """
         rows: [{srcId, dstId, weight, reason}]
@@ -850,6 +860,7 @@ class Neo4jUtils:
         MERGE (s)-[ca:EVENT_CAUSES]->(t)
         SET ca.weight = row.weight,
             ca.reason = row.reason,
+            ca.confidence = row.confidence,
             ca.predicate = row.predicate
         """, {"rows": rows})
         print(f"[+] 已写入/更新 EVENT_CAUSES 关系 {len(rows)} 条")
@@ -1047,34 +1058,74 @@ class Neo4jUtils:
                     clusters.append(cluster)
         
         return clusters
+    
+    def enrich_event_nodes_with_context(self) -> None:
+        """
+        为每个 Event 节点补全上下文字段，并合并写入到 e.properties（字符串型 JSON）中：
+        - time: List[str]
+        - participants: List[str]
+        - location: List[str]
+        - chapter_name 或 scene_name: List[str]，取决于 doc_type
+        """
+
+        section_key = "scene_name" if self.doc_type == "screenplay" else "chapter_name"
+        section_label = "Scene" if self.doc_type == "screenplay" else "Chapter"
+
+        # Step 1: 查询所有事件节点及其上下文
+        cypher = f"""
+        MATCH (e:Event)
+        OPTIONAL MATCH (e)-[]-(t:TimePoint)
+        OPTIONAL MATCH (e)-[]-(c:Character)
+        OPTIONAL MATCH (e)-[]-(l:Location)
+        OPTIONAL MATCH (e)-[]-(s:{section_label})
+        RETURN e.id AS id,
+            [x IN COLLECT(DISTINCT t.value) WHERE x IS NOT NULL] AS time,
+            [x IN COLLECT(DISTINCT c.name) WHERE x IS NOT NULL] AS participants,
+            [x IN COLLECT(DISTINCT l.name) WHERE x IS NOT NULL] AS location,
+            [x IN COLLECT(DISTINCT s.name) WHERE x IS NOT NULL] AS {section_key},
+            e.properties AS properties
+        """
+        records = self.execute_query(cypher)
+
+        # Step 2: 合并字段并写入 properties（注意 properties 是字符串型 JSON）
+        for r in tqdm(records, desc="更新 Event properties 上下文"):
+            try:
+                props: Dict[str, Any] = json.loads(r["properties"]) if r.get("properties") else {}
+            except Exception:
+                print(f"⚠️ JSON 解析失败，跳过 id={r['id']}")
+                continue
+
+            props["time"] = r.get("time", [])
+            props["participants"] = r.get("participants", [])
+            props["location"] = r.get("location", [])
+            props[section_key] = r.get(section_key, [])
+
+            self.execute_query(
+                "MATCH (e:Event {id: $id}) SET e.properties = $props_str",
+                {"id": r["id"], "props_str": json.dumps(props, ensure_ascii=False)}
+            )
+
+        print(f"[✓] 已将上下文属性封装写入 e.properties 字符串字段（包含 time, participants, location, {section_key}）")
+
 
     def get_event_details(self, event_ids: List[str]) -> List[Dict[str, Any]]:
         """
-        获取事件详细信息
-        
-        Args:
-            event_ids: 事件ID列表
-            
-        Returns:
-            List[Dict]: 事件详细信息列表
+        返回事件节点的核心信息 + properties + 所属章节信息
         """
-        cypher = """
+        cypher = f"""
         MATCH (e:Event)
         WHERE e.id IN $event_ids
-        OPTIONAL MATCH (s:Scene)-[:SCENE_CONTAINS]->(e)
-        RETURN e.id as event_id,
-            e.name as event_name,
-            e.description as event_description,
-            e.participants as participants,
-            e.location as location,
-            e.time as time,
-            collect(DISTINCT s.id) as scene_ids,
-            collect(DISTINCT s.name) as scene_names
+        OPTIONAL MATCH (s:{self.meta['section_label']})-[:{self.meta['contains_pred']}]->(e)
+        RETURN e.id          AS event_id,
+            e.name        AS event_name,
+            e.source_chunks AS source_chunks,
+            e.description AS event_description,
+            e.properties  AS event_properties,          // ← 直接返回整个属性 Map
+            collect(DISTINCT s.id)   AS section_ids,
+            collect(DISTINCT s.name) AS section_names
         """
-        
-        params = {"event_ids": event_ids}
-        result = self.execute_query(cypher, params)
-        return [dict(record) for record in result]
+        return self.execute_query(cypher, {"event_ids": event_ids})
+
 
     def get_causality_paths(self, event_ids: List[str]) -> List[Dict[str, Any]]:
         """
@@ -1203,6 +1254,78 @@ class Neo4jUtils:
         except Exception as e:
             print(f"写入Plot到Neo4j失败: {e}")
             return False
+    
+    
+    def load_connected_components_subgraph(self, node_ids: List[int]) -> tuple[Dict[int, Dict], List[Dict]]:
+        """
+        从 Neo4j 加载一个 CC 的所有节点和边
+        
+        Args:
+            node_ids: Neo4j 内部节点 ID 列表
+
+        Returns:
+            - node_map: {nodeId -> 属性字典}
+            - edges: List of {sid, tid, w, reason}
+        """
+        # 1. 节点
+        cypher_nodes = f"""
+        UNWIND $ids AS nid
+        MATCH (n) WHERE n.id = nid
+        RETURN n.id AS dbid,
+                n.id AS eid,
+                n.embedding AS emb
+        """
+        nodes = self.execute_query(cypher_nodes, {"ids": node_ids})
+        node_map = {n["dbid"]: n for n in nodes}
+
+        # 2. 边
+        cypher_edges = """
+        MATCH (u)-[r:EVENT_CAUSES]->(v)
+        WHERE u.id IN $ids AND v.id IN $ids
+        RETURN u.id AS sid,
+                v.id AS tid,
+                r.weight AS weight,
+                r.reason AS reason,
+                r.confidence AS confidence
+        """
+        edges = self.execute_query(cypher_edges, {"ids": node_ids})
+        return node_map, edges
+    
+    
+    def fetch_scc_components(self, graph_name, min_size: int = 0) -> List[List[int]]:
+        """
+        调用 GDS 的 scc.stream 返回强连通体
+        针对 size>1 的组件才需要断环
+        """
+        cypher = f"""
+        CALL gds.scc.stream('{graph_name}')
+        YIELD nodeId, componentId
+        WITH gds.util.asNode(nodeId) AS n, componentId
+        RETURN componentId,
+            collect(n.id) AS nodeIds
+        """
+        sccs = self.execute_query(cypher)
+        sccs = [c["nodeIds"] for c in sccs if len(c["nodeIds"]) >= min_size]
+        # print(f"Detected { len(sccs)} SCCs with size>1")
+        return sccs
+
+    def fetch_wcc_components(self, graph_name, min_size: int = 0) -> List[List[int]]:
+        """
+        调用 GDS 的 scc.stream 返回强连通体
+        针对 size>1 的组件才需要断环
+        """
+        cypher = f"""
+        CALL gds.wcc.stream('{graph_name}')
+        YIELD nodeId, componentId
+        WITH gds.util.asNode(nodeId) AS n, componentId
+        RETURN componentId,
+            collect(n.id) AS nodeIds
+        """
+        sccs = self.execute_query(cypher)
+        sccs = [c["nodeIds"] for c in sccs if len(c["nodeIds"]) >= min_size]
+        # print(f"Detected { len(sccs)} WCCs with size>1")
+        return sccs
+
 
     def get_plot_statistics(self) -> Dict[str, int]:
         """
@@ -1211,16 +1334,48 @@ class Neo4jUtils:
         Returns:
             Dict[str, int]: 统计信息
         """
-        cypher = """
+        cypher = f"""
         MATCH (p:Plot)
         OPTIONAL MATCH (p)-[:HAS_EVENT]->(e:Event)
-        OPTIONAL MATCH (s:Scene)-[:SCENE_CONTAINS]->(e)
-        RETURN count(DISTINCT p) as plot_count,
-            count(DISTINCT e) as event_count,
-            count(DISTINCT s) as scene_count
+        OPTIONAL MATCH (s:{self.meta['section_label']})-[:{self.meta['contains_pred']}]->(e)
+        RETURN count(DISTINCT p) AS plot_count,
+               count(DISTINCT e) AS event_count,
+               count(DISTINCT s) AS section_count
         """
         
         result = self.execute_query(cypher)
         return dict(list(result)[0])
     
+    def get_starting_events(self):
+        cypher = """
+        MATCH (e:Event)
+        WHERE NOT ()-[:EVENT_CAUSES]->(e)
+        RETURN e.id AS event_id
+        """
+        result = self.execute_query(cypher)
+        result = [e["event_id"] for e in result]
+        return result
+    
+    def find_event_chain(self, entity_id: str, graph_name: str) -> List[List[str]]:
+        """
+        使用 GDS 的 DFS，从指定 entity_id 出发，在给定图中搜索所有因果路径（事件链）
+        
+        Args:
+            entity_id: 事件节点 ID（如 'entity_123456'）
+            graph_name: 已创建的 GDS 图名（如 'eventCausalGraph'）
+
+        Returns:
+            所有 DFS 路径构成的事件链列表，每条链是 event_id 的有序列表
+        """
+        cypher = """
+        MATCH (e:Event {id: $entity_id})
+        WITH e AS start_node
+        CALL gds.dfs.stream($graph_name, { sourceNode: start_node })
+        YIELD nodeIds
+        RETURN [nodeId IN nodeIds | gds.util.asNode(nodeId).id] AS event_chain
+        """
+        
+        results = self.execute_query(cypher, {"entity_id": entity_id, "graph_name": graph_name})
+        return [record["event_chain"] for record in results if "event_chain" in record]
+
     

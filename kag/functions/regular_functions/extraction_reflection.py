@@ -3,6 +3,7 @@ import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
 from kag.utils.general_text import extraction_refletion_repair_template, general_rules
+from kag.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class ExtractionReflector:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = ["score"]
+        self.required_fields = []
         self.field_validators = {}
         
         # 修复提示词模板
@@ -42,7 +43,7 @@ class ExtractionReflector:
             entity_type_description_text = params_dict.get("entity_type_description_text", "")
             relation_type_description_text = params_dict.get("relation_type_description_text", "")
             original_text = params_dict.get("original_text", "")
-            abbreviations = params_dict.get("abbreviations", "")
+            system_prompt = params_dict.get("system_prompt", "")
             previous_reflection = params_dict.get("previous_reflection", {})
             version = params_dict.get("version", "default")
             
@@ -55,14 +56,14 @@ class ExtractionReflector:
                 "suggestions": [],
                 "score": 0
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
         
         try:
             if version == "short":
-                prompt_id = "reflect_extraction_short_prompt"
+                prompt_id = "reflect_extraction_prompt_short"
             else:
                 prompt_id = "reflect_extraction_prompt"
+                
             prompt_text = self.prompt_loader.render_prompt(
                 prompt_id=prompt_id,
                 variables={
@@ -71,13 +72,7 @@ class ExtractionReflector:
                     'relation_type_description_text': relation_type_description_text
                 },
             )
-
-            agent_prompt_text = self.prompt_loader.render_prompt(
-                prompt_id="agent_prompt",
-                variables={"abbreviations": abbreviations}
-            )
-
-            messages = [{"role": "system", "content": agent_prompt_text}]
+            messages = [{"role": "system", "content": system_prompt}]
             
             
             background_info = ""
@@ -88,14 +83,14 @@ class ExtractionReflector:
             messages.append({"role": "user", "content": background_info})
                     
             previous_issues = previous_reflection.get("issues", "")
-            previous_suggestions = previous_reflection.get("suggestions", "")
-            relation_extraction_results = previous_reflection.get("previous_relations", "")
-            entitity_extraction_results = previous_reflection.get("previous_entities", "")
+            # previous_suggestions = previous_reflection.get("suggestions", "")
+            # relation_extraction_results = previous_reflection.get("previous_relations", "")
+            # entitity_extraction_results = previous_reflection.get("previous_entities", "")
             score = previous_reflection.get("score", "")
             
             if previous_issues and score:
-                summary = f"之前反思给出的得分为: {score}\n具体建议为：\n{previous_issues}\n，根据建议改进后的抽取结果为：\n\n"
-                summary += f"实体抽取：\n{entitity_extraction_results}\n关系抽取:\n {relation_extraction_results}"
+                summary = f"之前反思给出的得分为: {score}\n具体建议为：\n{previous_issues}\n，\n如果现在的抽取结果（后续会给出）有改进，请在此基础上提高分数。"
+                # summary += f"实体抽取：\n{entitity_extraction_results}\n关系抽取:\n {relation_extraction_results}"
                 # print("[CHECK] summary: ", summary)
                 messages.append({"role": "user", "content": summary})
             
@@ -103,7 +98,7 @@ class ExtractionReflector:
             messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json = process_with_format_guarantee(
+            corrected_json, status = process_with_format_guarantee(
                 llm_client=self.llm,
                 messages=messages,
                 required_fields=self.required_fields,
@@ -112,9 +107,18 @@ class ExtractionReflector:
                 enable_thinking=True,
                 repair_template=self.repair_template
             )
-            
-            logger.info("提取反思完成，返回格式化后的JSON")
-            return corrected_json
+            if status == "success":
+                logger.info("提取反思完成，返回格式化后的JSON")
+                return corrected_json
+            else:
+                error_result = {
+                    "error": f"提取反思失败",
+                    "current_issues": [],
+                    "suggestions": [],
+                    "score": 0
+                }
+                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
+
             
         except Exception as e:
             logger.error(f"提取反思过程中出现异常: {e}")
@@ -124,6 +128,5 @@ class ExtractionReflector:
                 "suggestions": [],
                 "score": 0
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 

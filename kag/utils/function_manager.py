@@ -92,7 +92,7 @@ class EnhancedJSONUtils:
         issue_type, error_msg, parsed = EnhancedJSONUtils.analyze_json_response(
             content, required_fields, field_validators
         )
-        
+        # print("[CHECK]: ", issue_type, error_msg, parsed)
         is_valid = (issue_type == JSONIssueType.VALID)
         return is_valid, error_msg, parsed, corrected_content
     
@@ -137,7 +137,8 @@ class EnhancedJSONUtils:
         # 尝试重试和修复
         current_content = content
         for attempt in range(max_retries):
-            logger.info(f"尝试修复响应，第 {attempt + 1} 次")
+            print(f"尝试修复响应，第 {attempt + 1} 次")
+            print("[CHECK] current_content: ", current_content)
             
             try:
                 # 如果有修复提示词模板，使用LLM修复
@@ -193,12 +194,15 @@ class EnhancedJSONUtils:
                 continue
         
         # 所有尝试都失败，返回错误结果，但仍使用correct_json_format处理
-        logger.error("所有修复尝试都失败")
-        final_corrected = correct_json_format(current_content)
+        logger.error("所有修复尝试都失败，最后一次整任务尝试")
+        result = llm_client.run(initial_messages, enable_thinking=enable_thinking)
+        content = result[0]['content'] if isinstance(result, list) else result.get('content', '')
+        final_corrected = correct_json_format(content)
+        
         print("[CHECK] 最终结果: ", final_corrected)
         error_result = {
             "error": "响应处理失败",
-            "original_content": current_content,
+            "original_content": content,
             "error_details": error_msg,
             "attempts": max_retries + 1
         }
@@ -246,6 +250,11 @@ def process_with_format_guarantee(llm_client,
         enable_thinking=enable_thinking,
         repair_prompt_template=repair_template
     )
-    
-    return corrected_json
+    status = result_dict.get("error", "")
+    if status:
+        status = "error"
+    else:
+        status = "success"
+        
+    return corrected_json, status
 

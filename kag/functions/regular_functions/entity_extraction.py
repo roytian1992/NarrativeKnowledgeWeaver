@@ -3,6 +3,7 @@ import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
 from kag.utils.general_text import entity_repair_template, general_rules
+from kag.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
@@ -42,14 +43,13 @@ class EntityExtractor:
             params_dict = json.loads(params)
             text = params_dict.get("text", "")
             entity_type_description_text = params_dict.get("entity_type_description_text", "")
-            abbreviations = params_dict.get("abbreviations", "")
+            system_prompt = params_dict.get("system_prompt", "")
             reflection_results = params_dict.get("reflection_results", {})
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
             error_result = {"error": f"参数解析失败: {str(e)}", "entities": []}
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
                 
         try:
@@ -60,15 +60,9 @@ class EntityExtractor:
                     'entity_type_description_text': entity_type_description_text
                 },
             )
-
-            agent_prompt_text = self.prompt_loader.render_prompt(
-                prompt_id="agent_prompt",
-                variables={"abbreviations": abbreviations}
-            )
-
            
             # 构造初始消息
-            messages = [{"role": "system", "content": agent_prompt_text}]
+            messages = [{"role": "system", "content": system_prompt}]
             # messages.append({"role": "user", "content": f"这是实体和关系抽取时需要遵守的一些准则：\n{general_rules}"})
             
             previous_issues = reflection_results.get("issues", [])
@@ -95,7 +89,7 @@ class EntityExtractor:
             messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json = process_with_format_guarantee(
+            corrected_json, status = process_with_format_guarantee(
                 llm_client=self.llm,
                 messages=messages,
                 required_fields=self.required_fields,
@@ -104,9 +98,16 @@ class EntityExtractor:
                 enable_thinking=True,
                 repair_template=self.repair_template
             )
-            
-            logger.info("实体提取完成，返回格式化后的JSON")
-            return corrected_json
+            if status == "success":
+                logger.info("实体提取完成，返回格式化后的JSON")
+                return corrected_json
+            else:
+                error_result = {
+                    "error": f"实体提取失败",
+                    "entities": []
+                }
+                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
+
             
         except Exception as e:
             logger.error(f"实体提取过程中出现异常: {e}")
@@ -114,6 +115,5 @@ class EntityExtractor:
                 "error": f"实体提取失败: {str(e)}",
                 "entities": []
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 

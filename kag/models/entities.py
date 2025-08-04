@@ -33,6 +33,7 @@ class Entity(BaseModel):
     aliases: List[str] = Field(default_factory=list, description="别名列表")
     properties: Dict[str, Any] = Field(default_factory=dict, description="实体属性")
     description: Optional[str] = Field(default=None, description="实体描述")
+    scope: Optional[str] = Field(default=None, description="是否为全局实体")
     # confidence: float = Field(default=1.0, description="置信度")
     source_chunks: List[str] = Field(default_factory=list, description="来源文本块")
 

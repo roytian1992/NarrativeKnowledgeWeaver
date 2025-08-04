@@ -3,11 +3,12 @@ import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
 from kag.utils.general_text import general_repair_template
+from kag.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
 
-class EntityExtractor:
+class MetadataParser:
     """
     集成format.py的实体提取器
     确保最终返回的是correct_json_format处理后的结果
@@ -41,27 +42,31 @@ class EntityExtractor:
             text = params_dict.get("text", "")
             title = params_dict.get("title", "")
             subtitle = params_dict.get("subtitle", "")
-            file_type = params_dict.get("file_type", "novel")
+            doc_type = params_dict.get("doc_type", "novel")
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
             error_result = {"error": f"参数解析失败: {str(e)}", "metadata": {}}
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
                 
         try:
+            # 构造初始消息
+            messages = []
+            
             if subtitle:
                 title = f"{title}\n子标题：{subtitle}"
                 
-            if file_type == "screenplay":
-                prompt_id = "parse_screenplay_prompt"
+            if doc_type == "screenplay":
+                prompt_id = "parse_metadata_prompt_screenplay"
                 variables = {
                     "title": title
                 }
+                if text:
+                    messages.append({"role": "user", "content": f"这是本段文本的内容：\n {text}"})
             else:
-                prompt_id = "parse_novel_prompt"
-                varialbles = {
+                prompt_id = "parse_metadata_prompt_novel"
+                variables = {
                     "title": title,
                     "text": text
                 }
@@ -70,13 +75,12 @@ class EntityExtractor:
                 prompt_id=prompt_id,
                 variables=variables
             )
-           
-            # 构造初始消息
-            messages = []
+            # print("[CHECK] prompt_text: ", prompt_text)
+
             messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json = process_with_format_guarantee(
+            corrected_json, status = process_with_format_guarantee(
                 llm_client=self.llm,
                 messages=messages,
                 required_fields=self.required_fields,
@@ -84,9 +88,15 @@ class EntityExtractor:
                 max_retries=2,
                 repair_template=self.repair_template
             )
-            
-            logger.info("元数据提取完成，返回格式化后的JSON")
-            return corrected_json
+            if status == "success":
+                logger.info("元数据提取完成，返回格式化后的JSON")
+                return corrected_json
+            else:
+                error_result = {
+                    "error": f"元数据提取失败",
+                    "metadata": {}
+                }
+                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
             
         except Exception as e:
             logger.error(f"元数据提取过程中出现异常: {e}")
@@ -94,6 +104,5 @@ class EntityExtractor:
                 "error": f"元数据提取失败: {str(e)}",
                 "metadata": {}
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 

@@ -1,7 +1,3 @@
-"""
-情节生成器
-使用增强的JSON处理工具
-"""
 from typing import Dict, Any, List
 import json
 import logging

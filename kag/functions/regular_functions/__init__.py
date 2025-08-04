@@ -7,6 +7,10 @@ from .attribute_reflection import AttributeReflector
 from .graph_reflection import GraphReflector
 from .semantic_split import SemanticSplitter
 from .causality_check import EventCausalityChecker
+from .parse_metadata import MetadataParser
+from .paragraph_summarizer import ParagraphSummarizer
+from .redundancy_evaluation import RedundancyEvaluator
+from .entity_merge import EntityMerger
 
 __all__ = [
     "EntityExtractor",
@@ -16,6 +20,10 @@ __all__ = [
     "AttributeReflector",
     "GraphReflector",
     "SemanticSplitter",
-    "EventCausalityChecker"
+    "EventCausalityChecker",
+    "MetadataParser",
+    "ParagraphSummarizer",
+    "RedundancyEvaluator",
+    "EntityMerger"
 ]
 
