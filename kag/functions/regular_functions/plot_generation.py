@@ -23,7 +23,7 @@ class PlotGenerator:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = ["is_plot", "plot_info", "reason"]
+        self.required_fields = ["is_plot", "reason"]
         self.field_validators = {}
         
         # 修复提示词模板
