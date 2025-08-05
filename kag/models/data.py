@@ -6,24 +6,6 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
 
-# === 从 schema 自动导入类型定义 ===
-# from kag.schema.kg_schema import ENTITY_TYPES, RELATION_TYPE_GROUPS
-
-
-# === 动态生成 EntityType Enum ===
-# EntityType = Enum(
-#     "EntityType", {etype["type"]: etype["type"] for etype in ENTITY_TYPES}
-# )
-
-# # === 动态生成 RelationType Enum ===
-# # RELATION_TYPES = []
-# # for group in RELATION_TYPE_GROUPS.values():
-# #     RELATION_TYPES.extend(group)
-
-# RelationType = Enum(
-#     "RelationType", {rtype["type"]: rtype["type"] for rtype in RELATION_TYPES}
-# )
-
 # === 其他模型 ===
 
 class Entity(BaseModel):

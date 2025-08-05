@@ -22,35 +22,13 @@ class LLMManager:
     def get_llm(self, force_device=None):
         if self.llm is None:
             provider = self.config.llm.provider.lower()
-            if provider == "qwen3":
-                from .qwen3_llm import QwenFnCallLLM
-                self.llm = QwenFnCallLLM(self.config, force_device)
-            elif provider == "openai":
+            # if provider == "qwen3":
+            #     from .qwen3_llm import QwenFnCallLLM
+            #     self.llm = QwenFnCallLLM(self.config, force_device)
+            if provider == "openai":
                 self.llm = OpenAIQwenLLM(self.config)
                 self.is_chat_model = True
             else:
                 raise ValueError(f"Unsupported LLM provider: {provider}")
 
         return self.llm
-    
-    @staticmethod
-    def get_mock_llm() -> Any:
-        """获取模拟LLM，用于测试
-        
-        Returns:
-            模拟LLM
-        """
-        from langchain.llms.fake import FakeListLLM
-        return FakeListLLM(responses=["模拟回复"])
-    
-    @staticmethod
-    def is_qwen_llm(llm: Any) -> bool:
-        """判断是否是Qwen LLM
-        
-        Args:
-            llm: LLM实例
-            
-        Returns:
-            是否是Qwen LLM
-        """
-        return hasattr(llm, "tokenizer") or getattr(llm, "_llm_type", "") == "qwen_openai_fc"
