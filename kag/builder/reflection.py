@@ -28,8 +28,9 @@ class DynamicReflector:
                 name = ent.get("name", "UNKNOWN")
                 ent_type = ent.get("type", "UNKNOWN")
                 desc = ent.get("description", "") or "空白"
+                scope = ent.get("scope", "")
                 logs.append(
-                    f"实体『{name}』(类型: {ent_type})被抽取出来，相关描述为：{desc}"
+                    f"实体『{name}』(类型: {ent_type})被抽取出来，相关描述为：{desc}。当前实体scope被标记为：{scope}"
                 )
 
         # 2) 处理关系

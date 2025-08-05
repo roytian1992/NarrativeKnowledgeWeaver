@@ -17,6 +17,11 @@ sys.path.insert(0, str(project_root))
 from kag import KAGConfig
 from kag.builder.kg_builder import KnowledgeGraphBuilder
 import os
+import logging
+
+logging.getLogger("neo4j").setLevel(logging.ERROR)
+logging.getLogger("neo4j.io").setLevel(logging.ERROR)
+logging.getLogger("neo4j.bolt").setLevel(logging.ERROR)
 
 # os.environ["HTTP_PROXY"] = "http://localhost:7890"
 # os.environ["HTTPS_PROXY"] = "http://localhost:7890"
@@ -71,9 +76,9 @@ def main():
     builder = KnowledgeGraphBuilder(config, doc_type=args.doc_type, background_path=args.background)
     
     # 构建知识图谱
-    # builder.prepare_chunks(args.input, verbose=args.verbose)
-    # builder.store_chunks(verbose=args.verbose)
-    # builder.extract_entity_and_relation(verbose=args.verbose)
+    builder.prepare_chunks(args.input, verbose=args.verbose) 
+    builder.store_chunks(verbose=args.verbose)
+    builder.extract_entity_and_relation(verbose=args.verbose)
     builder.extract_entity_attributes(verbose=args.verbose)
     kg = builder.build_graph_from_results(verbose=args.verbose)
     builder.prepare_graph_embeddings()
@@ -83,6 +88,7 @@ def main():
     event_graph_builder.build_event_causality_graph()
     event_graph_builder.run_SABER()
     event_graph_builder.build_event_plot_graph()
+    event_graph_builder.generate_plot_relations()
     
     # # 输出统计信息
     # stats = builder.get_stats()
@@ -99,7 +105,7 @@ def main():
     #         json.dump(stats, f, ensure_ascii=False, indent=2)
     #     print(f"📄 统计信息已保存到: {args.output_stats}")
     
-    print("\n🎉 知识图谱构建完成!")
+    print("\n🎉 知识图谱和情节事件图构建完成!")
         
     # except Exception as e:
     #     print(f"❌ 构建失败: {str(e)}")

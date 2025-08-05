@@ -50,6 +50,7 @@ class EventCausalityChecker:
             event_1_info = params_dict.get("event_1_info", "")
             event_2_info = params_dict.get("event_2_info", "")
             system_prompt = params_dict.get("system_prompt", "")
+            related_context = params_dict.get("related_context", "")
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
@@ -84,8 +85,14 @@ class EventCausalityChecker:
                 }
             )
 
-            messages = [{"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt_text}]
+            # messages = [{"role": "system", "content": system_prompt},
+            #             {"role": "user", "content": prompt_text}]
+            
+            messages = [{"role": "system", "content": system_prompt}]
+            if related_context:
+                messages.append({"role": "user", "content": f"这是一些可供参考的内容：\n{related_context}"})
+                
+            messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
             corrected_json, status = process_with_format_guarantee(

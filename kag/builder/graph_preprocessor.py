@@ -108,7 +108,7 @@ class GraphPreprocessor:
         for result in extraction_results:
             entities = result["entities"]
             for entity in entities:
-                if entity["scope"] == "global" and entity["type"] in ["Character", "Object", "Concept"]:
+                if entity["scope"] == "global" and entity["type"] in ["Character", "Object", "Concept", "Event"]:
                     if entity["type"] in global_entities:
                         global_entities[entity["type"]].append(entity)
                     else:

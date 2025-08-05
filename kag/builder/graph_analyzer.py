@@ -7,7 +7,7 @@
 import json
 from typing import Dict, Any
 from kag.utils.config import KAGConfig
-from kag.functions.regular_functions import (EventCausalityChecker, RedundancyEvaluator, PlotGenerator)
+from kag.functions.regular_functions import (EventCausalityChecker, RedundancyEvaluator, PlotGenerator, PlotRelationExtractor)
 # from kag.schema.kg_schema import ENTITY_TYPES, RELATION_TYPE_GROUPS
 from kag.utils.prompt_loader import PromptLoader
 import os
@@ -25,18 +25,21 @@ class GraphAnalyzer:
         self.event_causality_checker = EventCausalityChecker(self.prompt_loader, self.llm)  
         self.redundancy_evaluator = RedundancyEvaluator(self.prompt_loader, self.llm)
         self.plot_generator = PlotGenerator(self.prompt_loader, self.llm)
+        self.plot_relation_extractor = PlotRelationExtractor(self.prompt_loader, self.llm)
 
     def check_event_causality(
         self,
         event_1_info: str,
         event_2_info: str,
-        system_prompt: str = ""
+        system_prompt: str = "",
+        related_context: str = ""
     ) -> str:
         """判断两个事件是否存在因果关系"""
         params = {
             "event_1_info": event_1_info,
             "event_2_info": event_2_info,
-            "system_prompt": system_prompt
+            "system_prompt": system_prompt,
+            "related_context": related_context
         }
         result = self.event_causality_checker.call(params=json.dumps(params))
         # print("[CHECK] check event causality result: ", result)
@@ -73,5 +76,21 @@ class GraphAnalyzer:
             "related_context": related_context
         }
         result = self.plot_generator.call(params=json.dumps(params))
+        # print("[CHECK] check event causality result: ", result)
+        return result
+    
+    def extract_plot_relation(
+        self,
+        plot_A_info: str,
+        plot_B_info: str,
+        system_prompt: str = ""
+    ):
+        """判断两个事件是否存在情节关系"""
+        params = {
+            "plot_A_info": plot_A_info,
+            "plot_B_info": plot_B_info,
+            "system_prompt": system_prompt,
+        }
+        result = self.plot_relation_extractor.call(params=json.dumps(params))
         # print("[CHECK] check event causality result: ", result)
         return result

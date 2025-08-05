@@ -33,7 +33,7 @@ DOC_TYPE_META: Dict[str, Dict[str, str]] = {
     "screenplay": {
         "section_label": "Scene",
         "title": "scene_name",
-        "subtitle_key": "sub_scene_name",
+        "subtitle": "sub_scene_name",
         "contains_pred": "SCENE_CONTAINS",
     },
     "novel": {
@@ -673,7 +673,7 @@ class KnowledgeGraphBuilder:
             # —— 处理当前 chunk 抽取出的实体 ——
             for ent_data in result.get("entities", []):
                 # 冲突处理：局部实体重名前加前缀
-                if (ent_data.get("scope", "").lower() == "local" or ent_data.get("type", "") in ["Event", "Action", "Emotion", "Goal"])and ent_data["name"] in entity_map:
+                if (ent_data.get("scope", "").lower() == "local" or ent_data.get("type", "") in ["Action", "Emotion", "Goal"])and ent_data["name"] in entity_map:
                     existing_entity = entity_map[ent_data["name"]]
                     existing_chunk_id = existing_entity.source_chunks[0]
                     existing_section_name = self.chunk2section_map[existing_chunk_id]
@@ -874,8 +874,8 @@ class KnowledgeGraphBuilder:
         self.neo4j_utils.load_emebdding_model(self.config.memory.embedding_model_name)
         self.neo4j_utils.create_vector_index()
         self.neo4j_utils.process_all_embeddings(
-            exclude_entity_types=[self.meta["section_label"]],
-            exclude_relation_types=[self.meta["contains_pred"]],
+            exclude_entity_types=[self.meta["section_label"]]
+            # exclude_relation_types=[self.meta["contains_pred"]],
         )
         self.neo4j_utils.ensure_entity_superlabel()
         print("✅ 图向量构建完成")

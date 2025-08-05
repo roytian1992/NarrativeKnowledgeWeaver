@@ -213,51 +213,6 @@ class EventCausalityBuilder:
         print(f"✅ 构建完成，共找到 {len(event_list)} 个事件")
         return event_list
     
-    def get_event_info(self, event_id: str, contain_relations=False, contain_properties=False) -> str:
-        """
-        获取事件的详细信息，用于因果关系检查
-        Args:
-            event_id: 事件ID
-            
-        Returns:
-            格式化的事件信息字符串
-        """
-        event_node = self.neo4j_utils.get_entity_by_id(event_id)
-        
-        relation_types = self.neo4j_utils.list_relationship_types()
-        
-        if "EVENT_CAUSES" in relation_types:
-            relation_types.remove("EVENT_CAUSES")
-            
-        results = self.neo4j_utils.search_related_entities(
-            source_id=event_id, 
-            return_relations=True,
-            relation_types=relation_types
-        )
-        
-        relevant_info = []
-        for result in results:
-            info = self._get_relation_info(result[1])
-            if info:
-                relevant_info.append("- " + info)
-                
-        event_description = event_node.description or "无具体描述"
-        
-        context = f"事件名称：{event_node.name}，描述：{event_description}\n"
-        if contain_relations:
-            context += f"相关信息有：\n" + "\n".join(relevant_info) + "\n"
-    
-        if contain_properties:
-            event_props = event_node.properties
-            # print(event_props)
-            non_empty_props = {k: v for k, v in event_props.items() if v}
-
-            if non_empty_props:
-                context += "事件的属性如下：\n"
-                for k, v in non_empty_props.items():
-                    context += f"- {k}：{v}\n"
-
-        return context
     
     def _get_relation_info(self, relation) -> Optional[str]:
         """
@@ -342,11 +297,18 @@ class EventCausalityBuilder:
             pair_key = (src_event.id, tgt_event.id)
             try:
                 # 获取事件信息
-                info_1 = self.get_event_info(src_event.id, True, True)
-                info_2 = self.get_event_info(tgt_event.id, True, True)
+                info_1 = self.neo4j_utils.get_entity_info(src_event.id, entity_type="事件", contain_properties=True, contain_relations=True)
+                info_2 = self.neo4j_utils.get_entity_info(tgt_event.id, entity_type="事件", contain_properties=True, contain_relations=True)
+                
+                chunks = self.neo4j_utils.get_entity_by_id(src_event.id).source_chunks + self.neo4j_utils.get_entity_by_id(tgt_event.id).source_chunks
+                chunks = list(set(chunks))
+                documents = self.vector_store.search_by_ids(chunks)
+                results = {doc.content for doc in documents}
+                related_context = "\n".join(list(results))
+                
                 # 调用 extractor 检查因果关系
                 result_json = self.graph_analyzer.check_event_causality(
-                    info_1, info_2, self.system_prompt_text
+                    info_1, info_2, system_prompt=self.system_prompt_text, related_context=related_context
                 )
                 result_dict = json.loads(result_json)
                 # print("[CHECK] result_dict: ", result_dict)
@@ -627,7 +589,7 @@ class EventCausalityBuilder:
             event_id = event_info["event_id"]
             full_event_details += f"**事件{i+1}的相关描述如下：**\n事件id：{event_id}\n"
             
-            background = self.get_event_info(event_id, True, True)
+            background = self.neo4j_utils.get_entity_info(event_id, "事件", True, True)
             event_props = json.loads(event_info.get("event_properties"))
             # print(event_props)
             non_empty_props = {k: v for k, v in event_props.items() if isinstance(v, str) and v.strip()}
@@ -735,8 +697,8 @@ class EventCausalityBuilder:
                 self.neo4j_utils.delete_relation_by_ids(edge[0], edge[1], "EVENT_CAUSES")
 
             # === 刷新 GDS 图 ===
+            # self.neo4j_utils.create_event_causality_graph("event_causality_graph", min_confidence=0.5, min_weight=0.5, force_refresh=True)
             self.neo4j_utils.create_event_causality_graph("event_causality_graph", force_refresh=True)
-
             loop_count += 1
 
     def get_all_event_chains(self, min_weight: float = 0.0, min_confidence: float = 0.0):
@@ -756,9 +718,75 @@ class EventCausalityBuilder:
         else:
             context = f"事件：{chain[0]}" +"\n\n事件具体信息如下：\n"
         for i, event in enumerate(chain):
-            context += f"事件{i+1}：{event}\n" + self.get_event_info(event, False, True) + "\n"
+            context += f"事件{i+1}：{event}\n" + self.get_event_info(event, "事件", False, True) + "\n"
         return context
         
+
+    def generate_plot_relations(self):
+        all_plot_pairs = self.neo4j_utils.get_plot_pairs()
+        edges_to_add = []
+
+        def process_pair(pair):
+            try:
+                plot_A_info = self.neo4j_utils.get_entity_info(pair["src"], "情节", False, True)
+                plot_B_info = self.neo4j_utils.get_entity_info(pair["tgt"], "情节", False, True)
+                result = self.graph_analyzer.extract_plot_relation(plot_A_info, plot_B_info, self.system_prompt_text)
+                result = json.loads(correct_json_format(result))
+
+                pair_edges = []
+                if result["relation_type"] == "PLOT_CONTRIBUTES_TO":
+                    first = result["direction"].split("->")[0]
+                    if first == "A":
+                        pair_edges.append({
+                            "src": pair["src"],
+                            "tgt": pair["tgt"],
+                            "relation_type": result["relation_type"],
+                            "confidence": result["confidence"],
+                            "reason": result["reason"]
+                        })
+                    else:
+                        pair_edges.append({
+                            "src": pair["tgt"],
+                            "tgt": pair["src"],
+                            "relation_type": result["relation_type"],
+                            "confidence": result["confidence"],
+                            "reason": result["reason"]
+                        })
+                elif result["relation_type"] == "PLOT_CONFLICTS_WITH":
+                    pair_edges.append({
+                        "src": pair["src"],
+                        "tgt": pair["tgt"],
+                        "relation_type": result["relation_type"],
+                        "confidence": result["confidence"],
+                        "reason": result["reason"]
+                    })
+                    pair_edges.append({
+                        "src": pair["tgt"],
+                        "tgt": pair["src"],
+                        "relation_type": result["relation_type"],
+                        "confidence": result["confidence"],
+                        "reason": result["reason"]
+                    })
+                return pair_edges
+            except Exception as e:
+                print(f"[⚠] 处理情节对 {pair} 出错: {e}")
+                return []
+
+        # 并发处理
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = [executor.submit(process_pair, pair) for pair in all_plot_pairs]
+            # for future in as_completed(futures):
+            for future in tqdm(as_completed(futures), total=len(futures), desc="抽取情节关系"):
+                edges_to_add.extend(future.result())
+
+        # 批量写入 Neo4j
+        if edges_to_add:
+            self.neo4j_utils.create_plot_relations(edges_to_add)
+            print(f"[✓] 已创建情节关系 {len(edges_to_add)} 条")
+        else:
+            print("[!] 没有生成任何情节关系")
+
+    
     def build_event_plot_graph(self):
         all_chains = self.get_all_event_chains(0.5, 0.5)
         print("[✓] 当前事件链数量：", len(all_chains))
@@ -783,6 +811,7 @@ class EventCausalityBuilder:
                     plot_title = plot_info["title"]
                     plot_info["id"] = f"plot_{hash(f'{plot_title}') % 1_000_000}"
                     plot_info["event_ids"] = chain
+                    plot_info["reason"] = result.get("reason", "")
                     self.neo4j_utils.write_plot_to_neo4j(plot_data=plot_info)
                     return True
                 return False

@@ -12,6 +12,7 @@ from .paragraph_summarizer import ParagraphSummarizer
 from .redundancy_evaluation import RedundancyEvaluator
 from .entity_merge import EntityMerger
 from .plot_generation import PlotGenerator
+from .plot_relation_extraction import PlotRelationExtractor
 
 __all__ = [
     "EntityExtractor",
@@ -26,6 +27,7 @@ __all__ = [
     "ParagraphSummarizer",
     "RedundancyEvaluator",
     "EntityMerger",
-    "PlotGenerator"
+    "PlotGenerator",
+    "PlotRelationExtractor"
 ]
 

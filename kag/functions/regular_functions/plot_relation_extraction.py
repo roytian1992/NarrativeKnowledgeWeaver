@@ -8,13 +8,14 @@ from kag.utils.format import correct_json_format
 logger = logging.getLogger(__name__)
 
 
-class PlotGenerator:
+class PlotRelationExtractor:
     """
     事件因果关系检查工具：输入两个事件的描述，判断是否存在因果关系，并输出置信度分类结果。
     输出 JSON 格式：
     {
-        "causal": "High / Medium / Low / None",
-        "reason": "原因或理由的描述"
+        "relation_type": "High / Medium / Low / None",
+        "reason": "原因或理由的描述",
+        "confidence: 置信度
     }
     """
     
@@ -23,7 +24,7 @@ class PlotGenerator:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = ["is_plot", "reason"]
+        self.required_fields = ["relation_type", "reason", "confidence", "direction"]
         self.field_validators = {}
         
         # 修复提示词模板
@@ -43,8 +44,8 @@ class PlotGenerator:
         try:
             # 解析参数
             params_dict = json.loads(params)
-            event_chain_info = params_dict.get("event_chain_info", "")
-            related_context = params_dict.get("related_context", "")
+            plot_A_info = params_dict.get("plot_A_info", "")
+            plot_B_info = params_dict.get("plot_B_info", "")
             system_prompt = params_dict.get("system_prompt", "")
             
         except Exception as e:
@@ -52,9 +53,10 @@ class PlotGenerator:
             # 即使是错误结果，也要经过correct_json_format处理
             error_result = {
                 "error": f"参数解析失败: {str(e)}", 
-                "is_plot": False,
+                "relation_type": "None",
                 "reason": "",
-                "plot_info": {},
+                "confidence": 0.0,
+                "direction": "A->B"
             }
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
         
@@ -62,15 +64,16 @@ class PlotGenerator:
 
             # 用户提示词（任务具体内容）
             prompt_text = self.prompt_loader.render_prompt(
-                prompt_id="generate_plot_prompt",
+                prompt_id="extract_plot_relation_prompt",
                 variables={
-                    "event_chain_info": event_chain_info,
+                    "plot_A_info": plot_A_info,
+                    "plot_B_info": plot_B_info
                 }
             )
 
             messages = [{"role": "system", "content": system_prompt}]
-            if related_context:
-                messages.append({"role": "user", "content": f"这是一些可供参考的内容：\n{related_context}"})
+            # if related_context:
+            #     messages.append({"role": "user", "content": f"这是一些可供参考的内容：\n{related_context}"})
                 
             messages.append({"role": "user", "content": prompt_text})
             
@@ -84,25 +87,27 @@ class PlotGenerator:
                 repair_template=self.repair_template
             )
             if status == "success":
-                logger.info("情节检查完成，返回格式化后的JSON")
+                logger.info("情节关系检查完成，返回格式化后的JSON")
                 return corrected_json
             else:
                 error_result = {
-                    "error": f"情节抽取失败",
-                    "is_plot": False,
+                    "error": f"情节关系抽取失败",
+                    "relation_type": "None",
                     "reason": "",
-                    "plot_info": {},
+                    "confidence": 0.0,
+                    "direction": "A->B"
                     }
                 correct_json_format(json.dumps(error_result, ensure_ascii=False))
             
         except Exception as e:
-            logger.error(f"情节抽取过程中出现异常: {e}")
+            logger.error(f"情节关系抽取过程中出现异常: {e}")
             # print("[CHECK]")
             error_result = {
-                "error": f"情节抽取失败: {str(e)}",
-                "is_plot": False,
+                "error": f"情节关系抽取失败: {str(e)}",
+                "relation_type": "None",
                 "reason": "",
-                "plot_info": {},
+                "confidence": 0.0,
+                "direction": "A->B"
             }
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 
