@@ -2,33 +2,20 @@ from typing import Dict, Any, List
 import json
 import logging
 from kag.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
+from kag.utils.general_text import general_repair_template
+from kag.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
 
-repair_template = """
-请修复以下情节生成结果中的问题：
-
-原始响应：{original_response}
-错误信息：{error_message}
-
-请确保返回的JSON包含：
-1. "plot_unit_id"字段，表示情节单元ID
-2. "title"字段，表示情节标题
-3. "description"字段，表示情节描述
-4. "theme"字段，表示主题
-5. "conflict"字段，表示冲突
-6. "participants"字段，表示参与者列表
-7. JSON格式正确
-
-请直接返回修复后的JSON，不要包含解释。
-"""
-
-
 class PlotGenerator:
     """
-    情节生成器
-    确保最终返回的是correct_json_format处理后的结果
+    事件因果关系检查工具：输入两个事件的描述，判断是否存在因果关系，并输出置信度分类结果。
+    输出 JSON 格式：
+    {
+        "causal": "High / Medium / Low / None",
+        "reason": "原因或理由的描述"
+    }
     """
     
     def __init__(self, prompt_loader=None, llm=None):
@@ -36,24 +23,15 @@ class PlotGenerator:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = [
-            "plot_unit_id", "title", "description", "theme", 
-            "conflict", "participants"
-        ]
-        self.field_validators = {
-            "title": lambda x: isinstance(x, str) and len(x.strip()) > 0,
-            "description": lambda x: isinstance(x, str) and len(x.strip()) > 10,
-            "participants": lambda x: isinstance(x, list),
-            "theme": lambda x: isinstance(x, str) and len(x.strip()) > 0,
-            "conflict": lambda x: isinstance(x, str) and len(x.strip()) > 0
-        }
+        self.required_fields = ["is_plot", "plot_info", "reason"]
+        self.field_validators = {}
         
         # 修复提示词模板
-        self.repair_template = repair_template
+        self.repair_template = general_repair_template
     
     def call(self, params: str, **kwargs) -> str:
         """
-        调用情节生成，保证返回correct_json_format处理后的结果
+        调用因果关系检查，保证返回correct_json_format处理后的结果
         
         Args:
             params: 参数字符串
@@ -65,56 +43,39 @@ class PlotGenerator:
         try:
             # 解析参数
             params_dict = json.loads(params)
-            events = params_dict.get("events", [])
-            cluster_info = params_dict.get("cluster_info", {})
-            causality_threshold = params_dict.get("causality_threshold", "Medium")
-            context = params_dict.get("context", "")
+            event_chain_info = params_dict.get("event_chain_info", "")
+            related_context = params_dict.get("related_context", "")
+            system_prompt = params_dict.get("system_prompt", "")
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
             error_result = {
                 "error": f"参数解析失败: {str(e)}", 
-                "plot_unit_id": "error_plot",
-                "title": "错误情节",
-                "description": f"参数解析失败: {str(e)}",
-                "theme": "错误处理",
-                "conflict": "系统异常",
-                "participants": []
+                "is_plot": False,
+                "reason": "",
+                "plot_info": {},
             }
-            from kag.utils.format import correct_json_format
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-        
-        if not events:
-            error_result = {
-                "error": "缺少事件数据", 
-                "plot_unit_id": "empty_plot",
-                "title": "空情节",
-                "description": "没有提供事件数据",
-                "theme": "空内容",
-                "conflict": "无冲突",
-                "participants": []
-            }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
         
         try:
-            # 构建提示词变量
-            variables = {
-                "events": json.dumps(events, ensure_ascii=False, indent=2),
-                "cluster_info": json.dumps(cluster_info, ensure_ascii=False, indent=2),
-                "causality_threshold": causality_threshold,
-                "context": context
-            }
-            
-            # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('plot_unit_construction_prompt', variables)
-            
-            # 构建消息
-            messages = [{"role": "user", "content": prompt_text}]
+
+            # 用户提示词（任务具体内容）
+            prompt_text = self.prompt_loader.render_prompt(
+                prompt_id="generate_plot_prompt",
+                variables={
+                    "event_chain_info": event_chain_info,
+                }
+            )
+
+            messages = [{"role": "system", "content": system_prompt}]
+            if related_context:
+                messages.append({"role": "user", "content": f"这是一些可供参考的内容：\n{related_context}"})
+                
+            messages.append({"role": "user", "content": prompt_text})
             
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json = process_with_format_guarantee(
+            corrected_json, status = process_with_format_guarantee(
                 llm_client=self.llm,
                 messages=messages,
                 required_fields=self.required_fields,
@@ -122,21 +83,26 @@ class PlotGenerator:
                 max_retries=3,
                 repair_template=self.repair_template
             )
-            
-            logger.info("情节生成完成，返回格式化后的JSON")
-            return corrected_json
+            if status == "success":
+                logger.info("因果关系检查完成，返回格式化后的JSON")
+                return corrected_json
+            else:
+                error_result = {
+                    "error": f"情节抽取失败",
+                    "is_plot": False,
+                    "reason": "",
+                    "plot_info": {},
+                    }
+                correct_json_format(json.dumps(error_result, ensure_ascii=False))
             
         except Exception as e:
-            logger.error(f"情节生成过程中出现异常: {e}")
+            logger.error(f"情节抽取过程中出现异常: {e}")
+            # print("[CHECK]")
             error_result = {
-                "error": f"情节生成失败: {str(e)}",
-                "plot_unit_id": f"exception_plot_{cluster_info.get('cluster_id', 'unknown')}",
-                "title": "异常情节单元",
-                "description": f"生成过程中出现异常: {str(e)}",
-                "theme": "异常处理",
-                "conflict": "系统异常",
-                "participants": []
+                "error": f"情节抽取失败: {str(e)}",
+                "is_plot": False,
+                "reason": "",
+                "plot_info": {},
             }
-            from kag.utils.format import correct_json_format
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 

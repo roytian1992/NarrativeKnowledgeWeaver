@@ -74,11 +74,6 @@ pip install -r requirements.txt
 ```
 
 ### 3. 配置环境
-复制并编辑配置文件：
-```bash
-cp configs/config_openai.yaml configs/config.yaml
-```
-
 在配置文件中设置：
 - OpenAI API密钥
 - Neo4j数据库连接信息
@@ -113,7 +108,8 @@ cp configs/config_openai.yaml configs/config.yaml
 ### 命令行使用
 
 ```bash
-python main.py --input your_data.json --config configs/config.yaml --verbose
+python3 main.py -c configs/config_openai.yaml -i examples/我机器人.json -v -g IRobot
+python3 main.py -c configs/config_openai.yaml -i examples/流浪地球2剧本.json -v -g WanderingEarth2
 ```
 
 ### 参数说明

@@ -318,6 +318,7 @@ class GraphPreprocessor:
         for result in extraction_results:
             for entity in result["entities"]:
                 entity["name"] = rename_map.get(entity["name"], entity["name"])
+                
             for relation in result["relations"]:
                 relation["subject"] = rename_map.get(relation["subject"], relation["subject"])
                 relation["object"] = rename_map.get(relation["object"], relation["object"])

@@ -36,7 +36,12 @@ def main():
     parser.add_argument(
         "--glossary", "-g",
         default="WanderingEarth2",
-        help="术语列表"
+        help="术语列表和背景信息"
+    )
+    parser.add_argument(
+        "--doc_type", "-t",
+        default="novel",
+        help="文本类型"
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -66,17 +71,18 @@ def main():
     builder = KnowledgeGraphBuilder(config, doc_type="novel", glossary=args.glossary)
     
     # 构建知识图谱
-    # builder.prepare_chunks(args.input, verbose=args.verbose)
-    # builder.store_chunks(verbose=args.verbose)
-    # builder.extract_entity_and_relation(verbose=args.verbose)
-    # builder.extract_entity_attributes(verbose=args.verbose)
-    # kg = builder.build_graph_from_results(verbose=args.verbose)
-    # builder.prepare_graph_embeddings()
+    builder.prepare_chunks(args.input, verbose=args.verbose)
+    builder.store_chunks(verbose=args.verbose)
+    builder.extract_entity_and_relation(verbose=args.verbose)
+    builder.extract_entity_attributes(verbose=args.verbose)
+    kg = builder.build_graph_from_results(verbose=args.verbose)
+    builder.prepare_graph_embeddings()
     
     event_graph_builder = EventCausalityBuilder(config, doc_type="novel")
-    # event_graph_builder.initialize()
-    # event_graph_builder.build_event_causality_graph()
+    event_graph_builder.initialize()
+    event_graph_builder.build_event_causality_graph()
     event_graph_builder.run_SABER()
+    event_graph_builder.build_event_plot_graph()
     
     # # 输出统计信息
     # stats = builder.get_stats()

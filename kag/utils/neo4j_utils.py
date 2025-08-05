@@ -703,36 +703,43 @@ class Neo4jUtils:
         return False
 
 
-    def create_event_causality_graph(self, graph_name: str = "event_causality_graph", force_refresh: bool = True):
+    def create_event_causality_graph(
+        self,
+        graph_name: str = "event_causality_graph",
+        force_refresh: bool = True,
+        min_weight: float = 0.0,
+        min_confidence: float = 0.0
+    ):
         """
-        创建一个只包含 Event 节点 + EVENT_CAUSES 边的 GDS 图，用于因果分析
+        创建一个只包含 Event 节点 + EVENT_CAUSES 边的 GDS 图，用于因果分析，
+        仅保留 weight >= min_weight 且 confidence >= min_confidence 的边。
         """
         with self.driver.session() as s:
             if force_refresh:
-                s.run("CALL gds.graph.drop($name, false) YIELD graphName", name=graph_name)
+                s.run("CALL gds.graph.drop($name, false) YIELD graphName", {"name": graph_name})
                 print(f"[✓] 已删除旧图 {graph_name}")
 
-            s.run("""
-            CALL gds.graph.project(
-                $name,
-                'Event',
-                {
-                    EVENT_CAUSES: {
-                        orientation: 'NATURAL',
-                        properties: ['weight']
-                    }
-                }
+            s.run(f"""
+            CALL gds.graph.project.cypher(
+                '{graph_name}',
+                'MATCH (e:Event) RETURN id(e) AS id',
+                'MATCH (e1:Event)-[r:EVENT_CAUSES]->(e2:Event)
+                WHERE r.weight >= {min_weight} AND r.confidence >= {min_confidence}
+                RETURN id(e1) AS source, id(e2) AS target, r.weight AS weight'
             )
-            """, name=graph_name)
+            """)
 
-            print(f"[+] 已创建因果子图 {graph_name}（仅包含 Event 节点与 EVENT_CAUSES 边）")
-            
-            result = s.run("""
+            print(f"[+] 已创建因果子图 {graph_name}（仅包含满足条件的 EVENT_CAUSES 边）")
+
+            result = s.run(f"""
                 MATCH (:Event)-[r:EVENT_CAUSES]->(:Event)
+                WHERE r.weight >= {min_weight} AND r.confidence >= {min_confidence}
                 RETURN count(r) AS edge_count
             """)
             edge_count = result.single()["edge_count"]
-            print(f"[✓] 当前 EVENT_CAUSES 边数量：{edge_count}")
+            print(f"[✓] 当前满足条件的 EVENT_CAUSES 边数量：{edge_count}")
+
+
 
     
     def create_subgraph(
@@ -1161,72 +1168,95 @@ class Neo4jUtils:
 
     def create_plot_node(self, plot_data: Dict[str, Any]) -> bool:
         """
-        创建Plot节点
+        创建 Plot 节点
         
         Args:
-            plot_data: Plot数据字典
-            
+            plot_data: Plot 数据字典
+                必须包含：
+                - id: Plot ID
+                - name: Plot 名称（原 title）
+                - description: Plot 描述（原 summary）
+                - main_characters, locations, time, reason: 其他属性
+        
         Returns:
             bool: 创建是否成功
         """
         cypher = """
         CREATE (p:Plot {
             id: $plot_id,
-            title: $title,
-            summary: $summary,
-            structure_type: $structure_type,
-            narrative_roles: $narrative_roles,
-            created_at: datetime()
+            name: $name,
+            description: $description,
+            properties: $properties
         })
-        RETURN p.id as plot_id
+        RETURN p.id AS plot_id
         """
+        
+        # 统一收集附加属性到 properties
+        properties = {
+            "main_characters": plot_data.get("main_characters"),
+            "locations": plot_data.get("locations"),
+            "time": plot_data.get("time"),
+            "reason": plot_data.get("reason")
+        }
         
         params = {
             "plot_id": plot_data["id"],
-            "title": plot_data["title"],
-            "summary": plot_data["summary"],
-            "structure_type": plot_data.get("structure", {}).get("type", "起承转合"),
-            "narrative_roles": str(plot_data.get("structure", {}).get("narrative_roles", {}))
+            "name": plot_data["title"],  # 原 title
+            "description": plot_data["summary"],  # 原 summary
+            "properties": json.dumps(properties, ensure_ascii=False)
         }
         
         try:
             result = self.execute_query(cypher, params)
             return len(list(result)) > 0
         except Exception as e:
-            print(f"创建Plot节点失败: {e}")
+            print(f"创建 Plot 节点失败: {e}")
             return False
 
-    def create_has_event_relationships(self, plot_id: str, event_ids: List[str]) -> bool:
+
+    def create_plot_relationships(self, plot_id: str, event_ids: List[str]) -> bool:
         """
-        创建HAS_EVENT关系
+        创建 HAS_EVENT 关系，并为每条关系设置:
+        - id: 根据 Plot ID 和 Event ID 生成的哈希值
+        - predicate: 固定为 'HAS_EVENT'
         
         Args:
             plot_id: Plot ID
-            event_ids: 事件ID列表
+            event_ids: 事件 ID 列表
             
         Returns:
             bool: 创建是否成功
         """
+        # 生成每条关系的数据
+        rel_data = []
+        for event_id in event_ids:
+            rel_id = f"rel_{hash(f'{plot_id}-HAS_EVENT-{event_id}') % 1_000_000}"
+            rel_data.append({
+                "src_id": plot_id,
+                "tgt_id": event_id,
+                "rel_id": rel_id,
+                "predicate": "HAS_EVENT"
+            })
+
         cypher = """
-        MATCH (p:Plot {id: $plot_id})
-        MATCH (e:Event)
-        WHERE e.id IN $event_ids
-        CREATE (p)-[:HAS_EVENT]->(e)
-        RETURN count(*) as relationships_created
+        UNWIND $data AS row
+        MATCH (p:Plot {id: row.src_id})
+        MATCH (e:Event {id: row.tgt_id})
+        CREATE (p)-[r:HAS_EVENT {
+            id: row.rel_id,
+            predicate: row.predicate
+        }]->(e)
+        RETURN count(r) AS relationships_created
         """
         
-        params = {
-            "plot_id": plot_id,
-            "event_ids": event_ids
-        }
-        
         try:
-            result = self.execute_query(cypher, params)
+            result = self.execute_query(cypher, {"data": rel_data})
             count = list(result)[0]['relationships_created']
             return count == len(event_ids)
         except Exception as e:
-            print(f"创建HAS_EVENT关系失败: {e}")
+            print(f"创建 HAS_EVENT 关系失败: {e}")
             return False
+
 
     def write_plot_to_neo4j(self, plot_data: Dict[str, Any]) -> bool:
         """
@@ -1245,10 +1275,10 @@ class Neo4jUtils:
             
             # 2. 创建HAS_EVENT关系
             event_ids = plot_data.get("event_ids", [])
-            if event_ids and not self.create_has_event_relationships(plot_data["id"], event_ids):
+            if event_ids and not self.create_plot_relationships(plot_data["id"], event_ids):
                 return False
             
-            print(f"成功写入Plot: {plot_data['id']}")
+            # print(f"成功写入Plot: {plot_data['id']}")
             return True
             
         except Exception as e:
@@ -1356,26 +1386,61 @@ class Neo4jUtils:
         result = [e["event_id"] for e in result]
         return result
     
-    def find_event_chain(self, entity_id: str, graph_name: str) -> List[List[str]]:
+    def find_event_chain(self, entity_id: str, min_weight: float = 0.0, min_confidence: float = 0.0):
         """
-        使用 GDS 的 DFS，从指定 entity_id 出发，在给定图中搜索所有因果路径（事件链）
-        
-        Args:
-            entity_id: 事件节点 ID（如 'entity_123456'）
-            graph_name: 已创建的 GDS 图名（如 'eventCausalGraph'）
-
-        Returns:
-            所有 DFS 路径构成的事件链列表，每条链是 event_id 的有序列表
+        从指定起点事件出发，返回所有到终点事件（没有出边的事件）的路径，
+        只保留满足 weight 和 confidence 阈值的边。
         """
         cypher = """
-        MATCH (e:Event {id: $entity_id})
-        WITH e AS start_node
-        CALL gds.dfs.stream($graph_name, { sourceNode: start_node })
-        YIELD nodeIds
-        RETURN [nodeId IN nodeIds | gds.util.asNode(nodeId).id] AS event_chain
+        MATCH path = (start:Event {id: $entity_id})-[
+            r:EVENT_CAUSES*
+        0..]->(end:Event)
+        WHERE ALL(rel IN relationships(path) 
+                WHERE rel.weight >= $min_weight AND rel.confidence >= $min_confidence)
+        AND NOT (end)-[:EVENT_CAUSES]->()
+        RETURN [n IN nodes(path) | n.id] AS event_chain
         """
-        
-        results = self.execute_query(cypher, {"entity_id": entity_id, "graph_name": graph_name})
+        results = self.execute_query(
+            cypher,
+            {
+                "entity_id": entity_id,
+                "min_weight": min_weight,
+                "min_confidence": min_confidence
+            }
+        )
         return [record["event_chain"] for record in results if "event_chain" in record]
-
     
+    def reset_event_plot_graph(self):
+        cypher = """
+        MATCH ()-[r:HAS_EVENT]->()
+        DELETE r
+        WITH DISTINCT 1 AS dummy
+        MATCH (p:Plot)
+        DETACH DELETE p;
+        """
+        self.execute_query(cypher)
+        print("✅ Event Plot Graph已重置")
+    # def find_event_chain(self, entity_id: str, graph_name: str) -> List[List[str]]:
+    #     """
+    #     使用 GDS 的 DFS，从指定 entity_id 出发，在给定图中搜索所有因果路径（事件链）
+
+    #     Args:
+    #         entity_id: 事件节点 ID（如 'entity_123456'）
+    #         graph_name: 已创建的 GDS 图名（如 'eventCausalGraph'）
+
+    #     Returns:
+    #         所有 DFS 路径构成的事件链列表，每条链是 event_id 的有序列表
+    #     """
+    #     cypher = """
+    #     MATCH (e:Event {id: $entity_id})
+    #     WITH e AS start_node
+    #     CALL gds.dfs.stream($graph_name, { sourceNode: start_node })
+    #     YIELD nodeIds
+    #     RETURN [nodeId IN nodeIds | gds.util.asNode(nodeId).id] AS event_chain
+    #     """
+        
+    #     results = self.execute_query(
+    #         cypher, 
+    #         {"entity_id": entity_id, "graph_name": graph_name}
+    #     )
+    #     return [record["event_chain"] for record in results if "event_chain" in record]

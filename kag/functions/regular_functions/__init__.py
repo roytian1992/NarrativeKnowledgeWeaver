@@ -11,6 +11,7 @@ from .parse_metadata import MetadataParser
 from .paragraph_summarizer import ParagraphSummarizer
 from .redundancy_evaluation import RedundancyEvaluator
 from .entity_merge import EntityMerger
+from .plot_generation import PlotGenerator
 
 __all__ = [
     "EntityExtractor",
@@ -24,6 +25,7 @@ __all__ = [
     "MetadataParser",
     "ParagraphSummarizer",
     "RedundancyEvaluator",
-    "EntityMerger"
+    "EntityMerger",
+    "PlotGenerator"
 ]
 

@@ -7,7 +7,7 @@
 import json
 from typing import Dict, Any
 from kag.utils.config import KAGConfig
-from kag.functions.regular_functions import (EventCausalityChecker, RedundancyEvaluator)
+from kag.functions.regular_functions import (EventCausalityChecker, RedundancyEvaluator, PlotGenerator)
 # from kag.schema.kg_schema import ENTITY_TYPES, RELATION_TYPE_GROUPS
 from kag.utils.prompt_loader import PromptLoader
 import os
@@ -24,6 +24,7 @@ class GraphAnalyzer:
 
         self.event_causality_checker = EventCausalityChecker(self.prompt_loader, self.llm)  
         self.redundancy_evaluator = RedundancyEvaluator(self.prompt_loader, self.llm)
+        self.plot_generator = PlotGenerator(self.prompt_loader, self.llm)
 
     def check_event_causality(
         self,
@@ -56,5 +57,21 @@ class GraphAnalyzer:
             "related_context": related_context
         }
         result = self.redundancy_evaluator.call(params=json.dumps(params))
+        # print("[CHECK] check event causality result: ", result)
+        return result
+    
+    def generate_event_plot(
+        self,
+        event_chain_info: str,
+        system_prompt: str = "",
+        related_context: str = ""
+    ):
+        """判断两个事件是否存在因果关系"""
+        params = {
+            "event_chain_info": event_chain_info,
+            "system_prompt": system_prompt,
+            "related_context": related_context
+        }
+        result = self.plot_generator.call(params=json.dumps(params))
         # print("[CHECK] check event causality result: ", result)
         return result

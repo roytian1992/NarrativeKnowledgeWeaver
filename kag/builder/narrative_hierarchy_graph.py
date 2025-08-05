@@ -708,8 +708,8 @@ class EventCausalityBuilder:
                     chunks = list(set(chunks))
                     documents = self.vector_store.search_by_ids(chunks)
                     results = {doc.content for doc in documents}
-                    # related_context = "\n".join(list(results))
-                    related_context = "" # 为了速度
+                    related_context = "\n".join(list(results))
+                    # related_context = "" # 为了速度
 
                     output = self.graph_analyzer.evaluate_event_redundancy(
                         event_details, relation_details, self.system_prompt_text, related_context
@@ -729,7 +729,7 @@ class EventCausalityBuilder:
                     if res:
                         removed_edges.append(res)
 
-            print(f"❌ 本轮计划移除边数量：{len(set(removed_edges))}")
+            print(f"❌ 本轮待定移除边数量：{len(set(removed_edges))}")
 
             # === 删除边 ===
             for edge in removed_edges:
@@ -739,3 +739,68 @@ class EventCausalityBuilder:
             self.neo4j_utils.create_event_causality_graph("event_causality_graph", force_refresh=True)
 
             loop_count += 1
+
+    def get_all_event_chains(self, min_weight: float = 0.0, min_confidence: float = 0.0):
+        """
+        获取所有可能的事件链（从起点到没有出边的终点）
+        """
+        starting_events = self.neo4j_utils.get_starting_events()
+        chains = []
+        for event in starting_events:
+            all_chains = self.neo4j_utils.find_event_chain(event, min_weight, min_confidence)
+            chains.extend([chain for chain in all_chains if len(chain) >= 1])
+        return chains
+    
+    def prepare_chain_context(self, chain):
+        if len(chain) > 1:
+            context = "事件链：" + "->".join(chain) +"\n\n事件具体信息如下：\n"
+        else:
+            context = f"事件：{chain[0]}" +"\n\n事件具体信息如下：\n"
+        for i, event in enumerate(chain):
+            context += f"事件{i+1}：{event}\n" + self.get_event_info(event, False, True) + "\n"
+        return context
+        
+    def build_event_plot_graph(self):
+        all_chains = self.get_all_event_chains(0.5, 0.5)
+        print("[✓] 当前事件链数量：", len(all_chains))
+        self.neo4j_utils.reset_event_plot_graph()
+        def process_chain(chain):
+            try:
+                event_chain_info = self.prepare_chain_context(chain)
+                chunks = [self.neo4j_utils.get_entity_by_id(ent_id).source_chunks[0] for ent_id in chain]
+                chunks = list(set(chunks))
+                documents = self.vector_store.search_by_ids(chunks)
+                results = {doc.content for doc in documents}
+                related_context = "\n".join(list(results))
+
+                result = self.graph_analyzer.generate_event_plot(
+                    event_chain_info=event_chain_info,
+                    system_prompt=self.system_prompt_text,
+                    related_context=related_context
+                )
+                result = json.loads(correct_json_format(result))
+                if result["is_plot"]:
+                    plot_info = result["plot_info"]
+                    plot_title = plot_info["title"]
+                    plot_info["id"] = f"plot_{hash(f'{plot_title}') % 1_000_000}"
+                    plot_info["event_ids"] = chain
+                    self.neo4j_utils.write_plot_to_neo4j(plot_data=plot_info)
+                    return True
+                return False
+            except Exception as e:
+                print(f"[!] 处理事件链 {chain} 时出错: {e}")
+                return False
+
+        success_count = 0
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = [executor.submit(process_chain, chain) for chain in all_chains]
+            for future in tqdm(as_completed(futures), total=len(futures), desc="并发生成情节图谱"):
+                if future.result():
+                    success_count += 1
+
+        print(f"[✓] 成功生成情节数量：{success_count}/{len(all_chains)}")
+
+                
+                
+        
+        
