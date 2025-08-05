@@ -8,7 +8,7 @@ KAG-Builder 主程序
 import argparse
 import sys
 from pathlib import Path
-from kag.builder.narrative_hierarchy_graph import EventCausalityBuilder
+from kag.builder.narrative_graph_builder import EventCausalityBuilder
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent
