@@ -1,0 +1,21 @@
+{
+  "id": "extract_relations_prompt",
+  "category": "regular_function",
+  "name": "关系抽取工具提示",
+  "description": "用于提示 LLM 进行关系抽取",
+  "template": "从以下文本中识别实体间的关系。当前文本中已经识别的**实体(类型)**有：\n\n{entity_list}\n\n从以下文本中识别这些实体间的关系。**只能使用以下关系类型枚举值，禁止使用自然语言或其他未定义关系类型！**\n\n{relation_type_description_text}\n\n**禁止自创关系类型，禁止使用中文关系名，关系字段必须严格对应上方英文枚举值之一。**\n\n输出格式严格如下（字段名必须一致，禁止修改字段名）：\n```json\n{\n  \"relations\": [\n    {\n      \"subject\": \"主体实体\",\n      \"relation_type\": \"关系类型 (上述英文枚举值之一)\",\n      \"relation_name\": \"具体关系名称，不能为空，与关系类型区分开来\",\n      \"object\": \"客体实体\",\n      \"description\": \"关系的描述和抽取的依据（可以为空字符串）\"\n    }\n  ]\n}\n```\n\n**注意：**\n- 不要将Concept、Event、Object、Action等实体类型的表述当做实体。\n- 仅考虑已列出实体间的关系；如果没有列出任何实体，则不需要抽取。\n- 如果无法明确推断实体间有意义的关系，**宁可不抽取** \n- 禁止抽取逻辑不清、主客不明、语义含混的关系 \n- 仅输出符合 JSON 格式的内容，禁止额外添加注释或自然语言。\n- 禁止输出 JSON 之外的文本。\n- 字卡、解说等剧本特殊元素相关的内容可以忽略。\n\n文本内容：\n{text}",
+  "variables": [
+    {
+      "name": "text",
+      "description": "待抽取的文本内容"
+    },
+    {
+      "name": "entity_list",
+      "description": "该文本中已识别的实体列表"
+    },
+    {
+      "name": "relation_type_description_text",
+      "description": "关系类型列表（自动生成，英文枚举值 + 描述，换行分隔）"
+    }
+  ]
+}

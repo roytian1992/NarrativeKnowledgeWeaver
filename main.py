@@ -34,8 +34,8 @@ def main():
         help="配置文件路径"
     )
     parser.add_argument(
-        "--glossary", "-g",
-        default="WanderingEarth2",
+        "--background", "-b",
+        default="",
         help="术语列表和背景信息"
     )
     parser.add_argument(
@@ -68,17 +68,17 @@ def main():
             print("✅ 从环境变量加载配置")
     
     # 创建构建器
-    builder = KnowledgeGraphBuilder(config, doc_type="novel", glossary=args.glossary)
+    builder = KnowledgeGraphBuilder(config, doc_type=args.doc_type, background_path=args.background)
     
     # 构建知识图谱
-    builder.prepare_chunks(args.input, verbose=args.verbose)
-    builder.store_chunks(verbose=args.verbose)
-    builder.extract_entity_and_relation(verbose=args.verbose)
+    # builder.prepare_chunks(args.input, verbose=args.verbose)
+    # builder.store_chunks(verbose=args.verbose)
+    # builder.extract_entity_and_relation(verbose=args.verbose)
     builder.extract_entity_attributes(verbose=args.verbose)
     kg = builder.build_graph_from_results(verbose=args.verbose)
     builder.prepare_graph_embeddings()
     
-    event_graph_builder = EventCausalityBuilder(config, doc_type="novel")
+    event_graph_builder = EventCausalityBuilder(config, doc_type=args.doc_type, background_path=args.background)
     event_graph_builder.initialize()
     event_graph_builder.build_event_causality_graph()
     event_graph_builder.run_SABER()

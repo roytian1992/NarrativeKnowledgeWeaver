@@ -1,0 +1,117 @@
+{
+  "entities": [
+    {
+      "type": "Character",
+      "description": "剧情中的具体角色（真人或拟人化对象）",
+      "properties": {
+        "name": "姓名 / 称呼",
+        "gender": "性别（可选）",
+        "age": "年龄段或具体年龄（可选）",
+        "identity": "身份/职业（可选）",
+        "affiliation": "所属组织/阵营（可选）"
+      }
+    },
+    {
+      "type": "Event",
+      "description": "具有完整叙事意义的事件或情节片段",
+      "properties": {
+        "name": "事件标题",
+        "description": "一句完整叙述，说明发生了什么",
+        "event_type": "类别（冲突/灾难/决策等，可选）",
+        "cause": "事件的起因，说明是什么触发或导向了这个事件",
+        "process": "事件的经过，描述事件发生的主要过程或关键环节",
+        "result": "事件的结果，说明事件带来了什么后果或影响"
+      }
+    },
+    {
+      "type": "Action",
+      "description": "角色或物体执行的具体动作单元，可作为 Event 的组成部分",
+      "properties": {
+        "verb": "动作核心动词",
+        "description": "动作完整描述（如某人举枪瞄准）"
+      }
+    },
+    {
+      "type": "Location",
+      "description": "地点、场景或地理位置",
+      "properties": {
+        "name": "地名 / 场所名",
+        "loc_type": "类型（城市/房间/飞船等，可选）",
+        "description": "简要说明（可选）"
+      }
+    },
+    {
+      "type": "TimePoint",
+      "description": "具体时间点或时间段",
+      "properties": {
+        "description": "时间表达（如“黄昏”“2084-07-16 18:00”）",
+        "time_type": "精确 / 模糊 / 相对（可选）"
+      }
+    },
+    {
+      "type": "Object",
+      "description": "在剧情中具有作用的物品或装置",
+      "properties": {
+        "name": "物品名称",
+        "obj_type": "类别（武器/芯片/文书等，可选）",
+        "description": "简要说明（可选）"
+      }
+    },
+    {
+      "type": "Concept",
+      "description": "组织、阵营、学说、身份类别等抽象或群体性实体",
+      "properties": {
+        "name": "概念/组织名",
+        "category": "政治/科技/文化等（可选）",
+        "definition": "简要定义（可选）"
+      }
+    },
+    {
+      "type": "Emotion",
+      "description": "角色在叙事中表现出的情绪或心理状态",
+      "properties": {
+        "emotion_type": "情绪类别（愤怒/悲伤/恐惧等）",
+        "intensity": "情绪强度（可选）",
+        "description": "简要描述（可选）"
+      }
+    }
+  ],
+
+  "relations": {
+    "character_relations": [
+      { "type": "kinship_with",    "description": "亲属或婚姻关系（Character ↔ Character）" },
+      { "type": "social_with",     "description": "社会/朋友/同事等一般社交关系（Character ↔ Character）" },
+      { "type": "allies_with",     "description": "联盟、支持（Character / Concept ↔ Character / Concept）" },
+      { "type": "conflicts_with",  "description": "对立、敌视（Character / Concept ↔ Character / Concept）" },
+      { "type": "affiliated_with", "description": "隶属于组织或阵营（Character → Concept）" }
+    ],
+
+    "event_action_relations": [
+      { "type": "performs",        "description": "执行动作（Character / Object → Action）" },
+      { "type": "participates_in", "description": "参与事件（Character / Object → Event）" },
+      { "type": "has_action",      "description": "事件由若干动作组成（Event → Action）" },
+      { "type": "precedes",        "description": "时间或叙事顺序的直接先后（Event / Action → Event / Action）" },
+      { "type": "causes",          "description": "直接因果触发（Event / Action → Event / Action）" },
+      { "type": "affects",         "description": "动作或事件影响角色/物体（Event / Action → Character / Object）" }
+    ],
+
+    "object_relations": [
+      { "type": "possesses", "description": "持有物品（Character / Concept → Object）" },
+      { "type": "uses",      "description": "使用或操纵物品（Character / Object → Object）" }
+    ],
+
+    "semantic_relations": [
+      { "type": "part_of_event", "description": "动作或子事件属于更大事件（Action / Sub-Event → Event）" },
+      { "type": "is_a",          "description": "实体属于某抽象概念或类别（Any → Concept）" },
+      { "type": "part_of",       "description": "组成/从属层级关系（Location / Object / Action → Location / Object）" },
+      { "type": "experiences",   "description": "角色体验情绪（Character → Emotion）" }
+    ],
+
+    "spatiotemporal_relations": [
+      { "type": "occurs_at",  "description": "事件/动作发生的地点（Event / Action → Location）" },
+      { "type": "occurs_on",  "description": "事件/动作发生的时间点或时段（Event / Action → TimePoint）" },
+      { "type": "located_at", "description": "角色或物体所在/出现的地点（Character / Object → Location）" },
+      { "type": "present_on", "description": "角色或物体在特定时间点或时段存在（Character / Object → TimePoint）" }
+    ]
+  }
+}

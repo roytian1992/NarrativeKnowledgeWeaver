@@ -1,0 +1,29 @@
+{
+  "id": "extract_attributes_prompt",
+  "category": "regular_function",
+  "name": "实体属性抽取提示词（含上下文）",
+  "description": "根据文本上下文和实体描述，提取结构化属性，并给出该实体的最终简明描述，输出标准 JSON 格式。",
+  "template": "你是一名资深知识图谱工程师，任务是从文本中抽取某个实体的结构化属性信息，并为该实体撰写一个简明准确的最终描述。\n\n## 一、输入信息\n- 当前实体是：`{entity_name}`\n- 当前实体类型：`{entity_type}`\n- 当前实体类型描述如下：\n{description}\n\n- 当前实体相关的文本如下：\n{text}\n\n## 二、属性定义\n以下是该类型实体应抽取的属性及含义：\n{attribute_definitions}\n\n## 三、抽取要求\n1. 请结合上下文和类型描述，为每个属性字段提取字符串值；\n2. 若某属性未在文本中明确出现，请填写空字符串 \"\"；\n3. 所有属性值必须为字符串类型（即使是数字或时间）；\n4. 严格按提供的属性名抽取，禁止新增、改名或删减属性字段；\n5. 必须生成 `new_description` 字段，内容应简明概括实体的身份或特征，不得为空；\n6. `new_description` 建议不超过 60 个汉字或 40 个英文单词。\n\n## 四、输出格式要求\n请仅输出以下 JSON 结构（不要添加解释或 Markdown 包裹）：\n\n{{\n  \"new_description\": \"实体最终描述（必须非空）\",\n  \"attributes\": {{\n    \"属性1\": \"对应值（若无则为空字符串）\",\n    \"属性2\": \"...\"\n  }}\n}}",
+  "variables": [
+    {
+      "name": "entity_name",
+      "description": "当前实体名称"
+    },
+    {
+      "name": "entity_type",
+      "description": "当前实体类型"
+    },
+    {
+      "name": "description",
+      "description": "该实体类型的简要自然语言描述"
+    },
+    {
+      "name": "text",
+      "description": "该实体所在的上下文文本内容"
+    },
+    {
+      "name": "attribute_definitions",
+      "description": "属性及其含义的格式化列表"
+    }
+  ]
+}

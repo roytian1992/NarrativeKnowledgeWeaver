@@ -108,8 +108,8 @@ pip install -r requirements.txt
 ### 命令行使用
 
 ```bash
-python3 main.py -c configs/config_openai.yaml -i examples/我机器人.json -v -g IRobot
-python3 main.py -c configs/config_openai.yaml -i examples/流浪地球2剧本.json -v -g WanderingEarth2
+python3 main.py -c configs/config_openai.yaml -i examples/documnets/我机器人.json  -b examples/settings/irobot_settings.json -t "novel" -v
+python3 main.py -c configs/config_openai.yaml -i examples/documents/流浪地球2剧本.json -b examples/settings/we2_settings.json -t "screenplay" -v
 ```
 
 ### 参数说明
