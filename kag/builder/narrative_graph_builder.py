@@ -50,6 +50,7 @@ class EventCausalityBuilder:
         self.graph_store = GraphStore(config)
         self.vector_store = VectorStore(config)
         self.neo4j_utils = Neo4jUtils(self.graph_store.driver, doc_type)
+        self.neo4j_utils.load_emebdding_model(config.memory.embedding_model_name)
         self.event_fallback = [] # 可以加入Goal和Action
         
         if doc_type not in DOC_TYPE_META:
@@ -701,6 +702,9 @@ class EventCausalityBuilder:
         
 
     def generate_plot_relations(self):
+        
+        self.neo4j_utils.process_all_embeddings(entity_types=["Plot"])
+        
         all_plot_pairs = self.neo4j_utils.get_plot_pairs()
         edges_to_add = []
 
