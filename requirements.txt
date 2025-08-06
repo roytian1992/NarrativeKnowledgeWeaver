@@ -29,7 +29,10 @@ pyyaml>=6.0
 # ===== 进度显示 =====
 tqdm>=4.64.0
 
-# ===== 可选依赖（如需本地模型支持） =====
-# transformers>=4.21.0
-# torch>=2.0.0
+# ===== 根据自己的环境选择 =====
+# torch==2.7.1+cu128  
+torchvision==0.22.1  
+torchaudio==2.7.1 
 
+# 2️⃣ 安装 Transformers 4.53.3
+transformers==4.53.3
