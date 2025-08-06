@@ -753,6 +753,30 @@ class Neo4jUtils:
 
         return context
     
+    
+    def _get_relation_info(self, relation) -> Optional[str]:
+        """
+        获取关系信息的格式化字符串
+        
+        Args:
+            relation: 关系对象
+            
+        Returns:
+            格式化的关系信息，如果是SCENE_CONTAINS则返回None
+        """
+        if relation.predicate == self.meta["contains_pred"]:
+            return None
+            
+        subject_id = relation.subject_id
+        subject_name = self.get_entity_by_id(subject_id).name
+        object_id = relation.object_id
+        object_name = self.get_entity_by_id(object_id).name
+        relation_name = relation.properties.get("relation_name", relation.predicate)
+        description = relation.properties.get("description", "")
+        
+        return f"{subject_name}-{relation_name}->{object_name}: {description}"
+    
+    
     def create_event_causality_graph(
         self,
         graph_name: str = "event_causality_graph",
@@ -1248,7 +1272,11 @@ class Neo4jUtils:
             "time": plot_data.get("time"),
             "reason": plot_data.get("reason"),
             "related_events": plot_data.get("event_ids", []),
-            "event_chain": "->".join(plot_data.get("event_ids", []))
+            "event_chain": "->".join(plot_data.get("event_ids", [])),
+            "theme": plot_data.get("theme", ""),
+            "goal": plot_data.get("goal", ""),
+            "conflict": plot_data.get("conflict", ""),
+            "resolution": plot_data.get("theme", ""),
         }
         
         params = {
@@ -1532,9 +1560,12 @@ class Neo4jUtils:
     
     def reset_event_plot_graph(self):
         cypher = """
-        MATCH ()-[r:HAS_EVENT]->()
-        DELETE r
-        WITH DISTINCT 1 AS dummy
+        MATCH ()-[r]->()
+        WHERE type(r) IN ["HAS_EVENT", "PLOT_CONTRIBUTES_TO", "PLOT_CONFLICT_WITH"]
+        DELETE r;
+        """
+        self.execute_query(cypher)
+        cypher = """
         MATCH (p:Plot)
         DETACH DELETE p;
         """
@@ -1566,7 +1597,7 @@ class Neo4jUtils:
         neighbors = [result["common_count"] for result in results]
         for pair in results:
             sim = self.compute_semantic_similarity(pair["src"], pair["tgt"])
-            if sim >= 0.7 and pair["common_count"]>=np.quantile(neighbors, 0.25):
+            if sim >= 0.7 and pair["common_count"]>= max([np.quantile(neighbors, 0.5), 10]):
                 pair["similarity"] = sim
                 filtered_pairs.append(pair)
         return filtered_pairs

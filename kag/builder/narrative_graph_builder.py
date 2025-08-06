@@ -214,28 +214,6 @@ class EventCausalityBuilder:
         return event_list
     
     
-    def _get_relation_info(self, relation) -> Optional[str]:
-        """
-        获取关系信息的格式化字符串
-        
-        Args:
-            relation: 关系对象
-            
-        Returns:
-            格式化的关系信息，如果是SCENE_CONTAINS则返回None
-        """
-        if relation.predicate == self.meta["contains_pred"]:
-            return None
-            
-        subject_id = relation.subject_id
-        subject_name = self.neo4j_utils.get_entity_by_id(subject_id).name
-        object_id = relation.object_id
-        object_name = self.neo4j_utils.get_entity_by_id(object_id).name
-        relation_name = relation.properties.get("relation_name", relation.predicate)
-        description = relation.properties.get("description", "")
-        
-        return f"{subject_name}-{relation_name}->{object_name}: {description}"
-    
     def filter_event_pairs_by_community(
         self,
         events: List[Entity],
@@ -718,7 +696,7 @@ class EventCausalityBuilder:
         else:
             context = f"事件：{chain[0]}" +"\n\n事件具体信息如下：\n"
         for i, event in enumerate(chain):
-            context += f"事件{i+1}：{event}\n" + self.get_event_info(event, "事件", False, True) + "\n"
+            context += f"事件{i+1}：{event}\n" + self.neo4j_utils.get_entity_info(event, "事件", False, True) + "\n"
         return context
         
 
