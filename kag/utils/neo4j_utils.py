@@ -666,6 +666,14 @@ class Neo4jUtils:
         result = self.execute_query(query)
         return result[0].get("similarity")
     
+    def compute_graph_similarity(self, node_id_1, node_id_2, field):
+        query = f"""
+        MATCH (a {{id: '{node_id_1}'}}), (b {{id: '{node_id_2}'}})                                          
+        RETURN gds.similarity.cosine(a.{field}, b.{field}) AS graph_similarity
+        """
+        result = self.execute_query(query)
+        return result[0].get("graph_similarity")
+    
     def check_nodes_reachable(
         self,
         src_id: str,
@@ -812,8 +820,6 @@ class Neo4jUtils:
             """)
             edge_count = result.single()["edge_count"]
             print(f"[✓] 当前满足条件的 EVENT_CAUSES 边数量：{edge_count}")
-
-
 
     
     def create_subgraph(
@@ -1364,31 +1370,31 @@ class Neo4jUtils:
 
         for rel_type in relation_types:
             # 过滤出当前关系类型的所有边
-            rel_subset = [
-                {
+            rel_subset = []
+            for e in edges:
+                if e["relation_type"] != rel_type:
+                    continue
+                rel_id = f"rel_{hash(f'{e['src']}-{rel_type}-{e['tgt']}') % 1_000_000}"
+                rel_subset.append({
                     "src_id": e["src"],
                     "tgt_id": e["tgt"],
-                    "rel_id": f"rel_{hash(f'{e['src']}-{rel_type}-{e['tgt']}') % 1_000_000}",
+                    "rel_id": rel_id,
                     "predicate": rel_type,
                     "confidence": e.get("confidence", 1.0),
                     "reason": e.get("reason", "")
-                }
-                for e in edges if e["relation_type"] == rel_type
-            ]
+                })
 
             if not rel_subset:
                 continue
 
-            # 根据当前关系类型动态写 Cypher
+            # Cypher：批量 MERGE 防止重复关系
             cypher = f"""
             UNWIND $data AS row
             MATCH (p1:Plot {{id: row.src_id}})
             MATCH (p2:Plot {{id: row.tgt_id}})
-            MERGE (p1)-[r:{rel_type} {{
-                id: row.rel_id,
-                predicate: row.predicate
-            }}]->(p2)
-            SET r.confidence = row.confidence,
+            MERGE (p1)-[r:{rel_type} {{id: row.rel_id}}]->(p2)
+            SET r.predicate = row.predicate,
+                r.confidence = row.confidence,
                 r.reason = row.reason
             RETURN count(r) AS relationships_created
             """
@@ -1398,12 +1404,15 @@ class Neo4jUtils:
                 created_count = list(result)[0]['relationships_created']
                 if created_count != len(rel_subset):
                     all_created = False
-                print(f"[✓] {rel_type} 已创建 {created_count}/{len(rel_subset)} 条关系")
+                    print(f"[!] {rel_type} 仅创建 {created_count}/{len(rel_subset)} 条，可能存在节点缺失或重复关系")
+                else:
+                    print(f"[✓] {rel_type} 已创建 {created_count} 条关系")
             except Exception as e:
                 print(f"[❌] 创建 {rel_type} 关系失败: {e}")
                 all_created = False
 
         return all_created
+
 
 
     def write_plot_to_neo4j(self, plot_data: Dict[str, Any]) -> bool:
@@ -1558,6 +1567,75 @@ class Neo4jUtils:
         )
         return [record["event_chain"] for record in results if "event_chain" in record]
     
+    # def find_event_chain(self, entity_id: str, min_weight: float = 0.0, min_confidence: float = 0.0):
+    #     """
+    #     从指定起点事件出发，构建可达子图并计算最长事件链（DAG LongestPath）。
+    #     只保留满足 weight 和 confidence 阈值的边。
+        
+    #     返回格式:
+    #         List[List[str]]  每条链是一个事件 ID 列表
+    #     """
+    #     # 1. 找出可达节点（内部 ID）
+    #     reachable_nodes_query = """
+    #     MATCH path = (start:Event {id: $entity_id})-[
+    #         r:EVENT_CAUSES*
+    #     0..]->(end:Event)
+    #     WHERE ALL(rel IN relationships(path)
+    #             WHERE rel.weight >= $min_weight AND rel.confidence >= $min_confidence)
+    #     UNWIND nodes(path) AS n
+    #     RETURN DISTINCT id(n) AS nodeId
+    #     """
+    #     reachable_nodes = [row["nodeId"] for row in self.execute_query(
+    #         reachable_nodes_query,
+    #         {
+    #             "entity_id": entity_id,
+    #             "min_weight": min_weight,
+    #             "min_confidence": min_confidence
+    #         }
+    #     )]
+
+    #     if not reachable_nodes:
+    #         return []
+
+    #     # 2. 删除旧的子图
+    #     self.execute_query("CALL gds.graph.drop('sub_event_graph', false) YIELD graphName")
+
+    #     # 3. 用 project.cypher 创建子图（直接拼接 ID 列表，不走参数作用域）
+    #     node_id_list = ", ".join(map(str, reachable_nodes))
+    #     node_query = f"""
+    #     MATCH (e:Event) 
+    #     WHERE id(e) IN [{node_id_list}]
+    #     RETURN id(e) AS id
+    #     """
+    #     rel_query = f"""
+    #     MATCH (e1:Event)-[r:EVENT_CAUSES]->(e2:Event)
+    #     WHERE id(e1) IN [{node_id_list}] AND id(e2) IN [{node_id_list}]
+    #     AND r.weight >= {min_weight} AND r.confidence >= {min_confidence}
+    #     RETURN id(e1) AS source, id(e2) AS target, r.weight AS weight
+    #     """
+
+    #     self.execute_query("""
+    #     CALL gds.graph.project.cypher(
+    #     'sub_event_graph',
+    #     $nodeQuery,
+    #     $relQuery
+    #     )
+    #     """, {
+    #         "nodeQuery": node_query,
+    #         "relQuery": rel_query
+    #     })
+
+    #     # 4. 在子图上跑 longestPath
+    #     cypher = """
+    #     CALL gds.dag.longestPath.stream('sub_event_graph', { relationshipWeightProperty: 'weight' })
+    #     YIELD nodeIds
+    #     RETURN [nodeId IN nodeIds | gds.util.asNode(nodeId).id] AS event_chain
+    #     """
+    #     results = self.execute_query(cypher)
+    #     return [record["event_chain"] for record in results if "event_chain" in record]
+
+
+    
     def reset_event_plot_graph(self):
         cypher = """
         MATCH ()-[r]->()
@@ -1565,6 +1643,7 @@ class Neo4jUtils:
         DELETE r;
         """
         self.execute_query(cypher)
+        
         cypher = """
         MATCH (p:Plot)
         DETACH DELETE p;
@@ -1584,20 +1663,60 @@ class Neo4jUtils:
         MATCH (p1)-[*1..2]-(x)<-[*1..2]-(p2)
         WHERE NOT p1 = p2
         AND NOT x:Plot
-        WITH p1, p2, COLLECT(DISTINCT x) AS common_neighbors
-        WITH p1, p2, SIZE(common_neighbors) AS common_count, common_neighbors
-        WHERE common_count >= 2
-        RETURN p1.id AS src, p2.id AS tgt, common_count
-        ORDER BY common_count DESC
+        RETURN DISTINCT p1.id AS src, p2.id AS tgt
         """
         results = self.execute_query(
             cypher
         )
         filtered_pairs = []
-        neighbors = [result["common_count"] for result in results]
+        
         for pair in results:
             sim = self.compute_semantic_similarity(pair["src"], pair["tgt"])
-            if sim >= 0.7 and pair["common_count"]>= max([np.quantile(neighbors, 0.5), 10]):
+            graph_sim = self.compute_graph_similarity(pair["src"], pair["tgt"], 'node2vecEmbedding')
+            if sim >= 0.5 and graph_sim >=0.5:
                 pair["similarity"] = sim
                 filtered_pairs.append(pair)
         return filtered_pairs
+    
+    def create_event_plot_graph(self):
+        cypher = """
+        CALL gds.graph.drop('event_plot_graph', false);
+        """
+        self.execute_query(cypher) # 删除已有的图
+        
+        cypher = """
+        CALL gds.graph.project(
+        'event_plot_graph',
+        {
+            Plot: { properties: ['embedding'] },
+            Event: { properties: ['embedding'] },
+            Character: { properties: ['embedding'] },
+            Location: { properties: ['embedding'] },
+            Concept: { properties: ['embedding'] },
+            Object: { properties: ['embedding'] }
+        },
+        '*'
+        );
+        """
+        self.execute_query(cypher)
+        print("✅ 创建 Event Plot Graph")
+        
+    def run_node2vec(self):
+        cypher = """
+        CALL gds.node2vec.write(
+        'event_plot_graph',
+        {
+            embeddingDimension: 128,        // 向量维度
+            walkLength: 80,                  // 每条游走路径长度
+            walksPerNode: 20,                  // 每个节点起点的游走次数
+            inOutFactor: 1.0,                 // p 参数（回访概率）
+            returnFactor: 1.0,                // q 参数（前进概率）
+            concurrency: 4,                   // 并行线程数
+            writeProperty: 'node2vecEmbedding' // 写回属性名
+        }
+        )
+        YIELD nodeCount, nodePropertiesWritten;
+        """
+        self.execute_query(cypher)
+        print("✅ 创建 Node2Vec向量至属性 node2vecEmbedding")
+        

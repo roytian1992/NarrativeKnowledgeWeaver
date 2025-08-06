@@ -24,6 +24,51 @@ from collections import defaultdict
 import os
 from kag.builder.kg_builder import DOC_TYPE_META
 
+
+def remove_subset_paths(chains: List[List[str]]) -> List[List[str]]:
+    """
+    删除所有事件集合是其他链事件集合子集的链（忽略顺序、连续性）
+    """
+    filtered = []
+    for i, chain in enumerate(chains):
+        set_chain = set(chain)
+        remove = False
+        for j, other in enumerate(chains):
+            if i == j:
+                continue
+            if set_chain.issubset(set(other)) and len(set_chain) < len(set(other)):
+                remove = True
+                break
+        if not remove:
+            filtered.append(chain)
+    return filtered
+
+
+def jaccard_similarity(set1: Set[str], set2: Set[str]) -> float:
+    """计算两个集合的 Jaccard 相似度"""
+    if not set1 and not set2:
+        return 1.0
+    return len(set1 & set2) / len(set1 | set2)
+
+
+def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> List[List[str]]:
+    """
+    删除与已保留链 Jaccard 相似度 >= threshold 的链
+    """
+    filtered: List[List[str]] = []
+    for chain in chains:
+        set_chain = set(chain)
+        keep = True
+        for kept in filtered:
+            sim = jaccard_similarity(set_chain, set(kept))
+            if sim >= threshold:
+                keep = False
+                break
+        if keep:
+            filtered.append(chain)
+    return filtered
+
+
 class EventCausalityBuilder:
     """
     事件因果图构建器
@@ -688,7 +733,7 @@ class EventCausalityBuilder:
         chains = []
         for event in starting_events:
             all_chains = self.neo4j_utils.find_event_chain(event, min_weight, min_confidence)
-            chains.extend([chain for chain in all_chains if len(chain) >= 1])
+            chains.extend([chain for chain in all_chains if len(chain) >= 2])
         return chains
     
     def prepare_chain_context(self, chain):
@@ -702,10 +747,12 @@ class EventCausalityBuilder:
         
 
     def generate_plot_relations(self):
-        
-        self.neo4j_utils.process_all_embeddings(entity_types=["Plot"])
+        self.neo4j_utils.process_all_embeddings(entity_types=["Plot", self.meta["section_label"]])
+        self.neo4j_utils.create_event_plot_graph()
+        self.neo4j_utils.run_node2vec()
         
         all_plot_pairs = self.neo4j_utils.get_plot_pairs()
+        print("[✓] 待判定情节关系数量：", len(all_plot_pairs))
         edges_to_add = []
 
         def process_pair(pair):
@@ -722,7 +769,7 @@ class EventCausalityBuilder:
                         pair_edges.append({
                             "src": pair["src"],
                             "tgt": pair["tgt"],
-                            "relation_type": result["relation_type"],
+                            "relation_type": "PLOT_CONTRIBUTES_TO",
                             "confidence": result["confidence"],
                             "reason": result["reason"]
                         })
@@ -730,7 +777,7 @@ class EventCausalityBuilder:
                         pair_edges.append({
                             "src": pair["tgt"],
                             "tgt": pair["src"],
-                            "relation_type": result["relation_type"],
+                            "relation_type": "PLOT_CONTRIBUTES_TO",
                             "confidence": result["confidence"],
                             "reason": result["reason"]
                         })
@@ -738,14 +785,14 @@ class EventCausalityBuilder:
                     pair_edges.append({
                         "src": pair["src"],
                         "tgt": pair["tgt"],
-                        "relation_type": result["relation_type"],
+                        "relation_type": "PLOT_CONFLICTS_WITH",
                         "confidence": result["confidence"],
                         "reason": result["reason"]
                     })
                     pair_edges.append({
                         "src": pair["tgt"],
                         "tgt": pair["src"],
-                        "relation_type": result["relation_type"],
+                        "relation_type": "PLOT_CONFLICTS_WITH",
                         "confidence": result["confidence"],
                         "reason": result["reason"]
                     })
@@ -770,9 +817,13 @@ class EventCausalityBuilder:
 
     
     def build_event_plot_graph(self):
-        all_chains = self.get_all_event_chains(0.5, 0.5)
-        print("[✓] 当前事件链数量：", len(all_chains))
         self.neo4j_utils.reset_event_plot_graph()
+        all_chains = self.get_all_event_chains(0, 0.5)
+        print("[✓] 当前事件链总数：", len(all_chains))
+        filtered_chains = remove_subset_paths(all_chains)
+        filtered_chains = remove_similar_paths(filtered_chains, 0.7)
+        print("[✓] 过滤后事件链总数：", len( filtered_chains))
+        
         def process_chain(chain):
             try:
                 event_chain_info = self.prepare_chain_context(chain)
@@ -803,13 +854,13 @@ class EventCausalityBuilder:
 
         success_count = 0
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(process_chain, chain) for chain in all_chains]
+            futures = [executor.submit(process_chain, chain) for chain in  filtered_chains]
             for future in tqdm(as_completed(futures), total=len(futures), desc="并发生成情节图谱"):
                 if future.result():
                     success_count += 1
 
-        print(f"[✓] 成功生成情节数量：{success_count}/{len(all_chains)}")
-
+        print(f"[✓] 成功生成情节数量：{success_count}/{len(filtered_chains)}")
+        return
                 
                 
         
