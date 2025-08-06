@@ -180,7 +180,15 @@ sudo systemctl status neo4j
 
 # 8. 安装 GDS
 cp neo4j-graph-data-science-2.13.4.jar /var/lib/neo4j/plugins/
+
+# 9. 在 conf/neo4j.conf 中添加表头：
+nano /etc/neo4j/neo4j.conf
+# 然后添加：
+dbms.security.procedures.unrestricted=gds.*
+dbms.security.procedures.allowlist=gds.*
+
 ```
+
 
 ---
 
