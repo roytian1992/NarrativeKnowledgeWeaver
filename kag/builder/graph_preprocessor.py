@@ -2,7 +2,7 @@ import json
 import os
 from typing import List, Dict, Any, Optional
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from tqdm import tqdm
 from itertools import chain
 

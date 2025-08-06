@@ -611,9 +611,10 @@ class KnowledgeGraphBuilder:
             # Section contains inner entities
             # inner = [entity_map[name2id[e["name"]]]
             #          for e in res.get("entities", []) if e["name"] in name2id]
-            inner = self.section_entities_collection[se.name]
             for se in secs:
-                self._link_section_to_entities(se, inner, res["chunk_id"])
+                if se.name in self.section_entities_collection:
+                    inner = self.section_entities_collection[se.name]
+                    self._link_section_to_entities(se, inner, res["chunk_id"])
 
             # 普通关系
             for rdata in res.get("relations", []):

@@ -450,9 +450,9 @@ class Neo4jUtils:
         predicate = rel.get("predicate", rel.type)
         
         if direction == "forward":
-            relation_id_str = f"{source_id}_{predicate}_{data["id"]}"
+            relation_id_str = f"{source_id}_{predicate}_{data['id']}"
         else:
-            relation_id_str = f"{data["id"]}_{predicate}_{source_id}"
+            relation_id_str = f"{data['id']}_{predicate}_{source_id}"
             
         rel_id = f"rel_{hash(relation_id_str) % 1000000}"
         
@@ -1336,17 +1336,20 @@ class Neo4jUtils:
 
         for rel_type in relation_types:
             # 过滤出当前关系类型的所有边
-            rel_subset = [
-                {
-                    "src_id": e["src"],
-                    "tgt_id": e["tgt"],
-                    "rel_id": f"rel_{hash(f'{e['src']}-{rel_type}-{e['tgt']}') % 1_000_000}",
-                    "predicate": rel_type,
-                    "confidence": e.get("confidence", 1.0),
-                    "reason": e.get("reason", "")
-                }
-                for e in edges if e["relation_type"] == rel_type
-            ]
+            rel_subset = []
+            for e in edges:
+                if e["relation_type"] == rel_type:
+                    src = e["src"]
+                    tgt = e["tgt"]
+                    rel_id = f"rel_{hash(f'{src}-{rel_type}-{tgt}') % 1_000_000}"
+                    rel_subset.append({
+                        "src_id": src,
+                        "tgt_id": tgt,
+                        "rel_id": rel_id,
+                        "predicate": rel_type,
+                        "confidence": e.get("confidence", 1.0),
+                        "reason": e.get("reason", "")
+                    })
 
             if not rel_subset:
                 continue

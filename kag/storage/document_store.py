@@ -2,8 +2,8 @@
 import os
 import json
 from typing import List, Optional, Dict
-from langchain.schema import Document
-from langchain.retrievers import BM25Retriever
+from langchain_core.documents import Document
+from langchain_community.retrievers import BM25Retriever
 from typing import List, Union
 
 

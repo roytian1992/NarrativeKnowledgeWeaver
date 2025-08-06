@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 from typing import Dict, Optional
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 class PromptLoader:
     """提示词模板加载器 (基于 LangChain PromptTemplate + 变量声明驱动渲染)"""

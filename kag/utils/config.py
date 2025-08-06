@@ -109,7 +109,7 @@ class KAGConfig:
         # LLM配置
         config.llm.api_key = os.getenv("OPENAI_API_KEY")
         config.llm.base_url = os.getenv("OPENAI_BASE_URL")
-        config.llm.model = os.getenv("OPENAI_MODEL", config.llm.model)
+        config.llm.model_name = os.getenv("OPENAI_MODEL", config.llm.model_name)
         
         # Neo4j配置
         config.storage.neo4j_uri = os.getenv("NEO4J_URI", config.storage.neo4j_uri)
@@ -118,7 +118,7 @@ class KAGConfig:
         
         # 向量存储配置
         config.storage.vector_store_path = os.getenv("VECTOR_STORE_PATH", config.storage.vector_store_path)
-        config.storage.embedding_model = os.getenv("EMBEDDING_MODEL", config.storage.embedding_model)
+        config.storage.embedding_model_name = os.getenv("EMBEDDING_MODEL", config.storage.embedding_model_name)
         
         return config
     
@@ -173,11 +173,10 @@ class KAGConfig:
         return {
             'llm': {
                 'provider': self.llm.provider,
-                'model': self.llm.model,
+                'model_name': self.llm.model_name,
                 'temperature': self.llm.temperature,
                 'max_tokens': self.llm.max_tokens,
                 'timeout': self.llm.timeout,
-                'model_name': self.llm.model_name,
                 'model_path': self.llm.model_path,
                 'device': self.llm.device,
                 'max_new_tokens': self.llm.max_new_tokens,

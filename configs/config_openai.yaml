@@ -4,7 +4,7 @@
 llm:
   provider: openai         # 使用OpenAI API
   model_name: Qwen3-235B-A22B-FP8
-  api_key: 请替换为您的API密钥
+  api_key: sk-testAPI-8LzU7p2vZgEwrYxM3nPhQ4WkR9BaX0yDfJtCmL5oTqNhV6s1EiKdMbAgZcXYu7rQ
   base_url: http://115.190.15.46:30000/v1
   temperature: 0.0
   max_tokens: 8096
@@ -26,7 +26,7 @@ memory:
   memory_type: buffer  # buffer, vector, summary
   max_token_limit: 4000
   memory_path: ./data/memory
-  embedding_model_name: /root/RoyTian/Embeddings/all-MiniLM-L6-v2
+  embedding_model_name: ../Embeddings/all-MiniLM-L6-v2
 
 
 
@@ -40,7 +40,7 @@ storage:
   # 向量数据库
   vector_store_type: chroma
   vector_store_path: data/vector_store
-  embedding_model_name: /root/RoyTian/Embeddings/all-MiniLM-L6-v2
+  embedding_model_name: ../Embeddings/all-MiniLM-L6-v2
   # 关键词检索
   document_store_path: data/document_store
 

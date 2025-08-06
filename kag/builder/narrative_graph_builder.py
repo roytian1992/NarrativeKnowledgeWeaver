@@ -608,7 +608,9 @@ class EventCausalityBuilder:
         for i, relation_info in enumerate(relation_details):
             src, tgt = relation_info["edge"]
             background = f"{i+1}. " + self.neo4j_utils.get_relation_summary(src, tgt, "EVENT_CAUSES")
-            background += f"\n关系的语义相似度为：{round(relation_info["similarity"], 4)}，置信度为：{relation_info["confidence"]}。"
+            similarity = round(relation_info["similarity"], 4)
+            confidence = relation_info["confidence"]
+            background += f"\n关系的语义相似度为：{similarity}，置信度为：{confidence}。"
             if i+1 !=  len(relation_details):
                 background += "\n\n"
             full_relation_details += background
@@ -718,7 +720,7 @@ class EventCausalityBuilder:
         else:
             context = f"事件：{chain[0]}" +"\n\n事件具体信息如下：\n"
         for i, event in enumerate(chain):
-            context += f"事件{i+1}：{event}\n" + self.get_event_info(event, "事件", False, True) + "\n"
+            context += f"事件{i+1}：{event}\n" + self.neo4j_utils.get_entity_info(event, "事件", False, True) + "\n"
         return context
         
 
