@@ -150,3 +150,31 @@ python main.py build_plot_graph --config config/plot_config.yaml
 - 对长文档建议开启多进程并分配 GPU，提升并发推理性能
 - 对低置信度抽取结果，可通过 `DynamicReflector` 进行二次抽取
 - 配合 Neo4j Bloom 或 GraphXR 可视化探索结果
+
+
+## 安装neo4j
+1. 更新系统
+sudo apt update && sudo apt upgrade -y
+
+2. 安装依赖
+sudo apt install wget apt-transport-https gnupg lsb-release -y
+
+3. 添加 Neo4j 官方 GPG key
+wget -O - https://debian.neo4j.com/neotechnology.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/neo4j.gpg
+
+4. 添加 Neo4j 源（以 Neo4j 5.x 为例）
+echo "deb [signed-by=/usr/share/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" | sudo tee /etc/apt/sources.list.d/neo4j.list
+
+5. 安装 Neo4j
+sudo apt update
+sudo apt install neo4j -y
+
+6. 启动服务并设置开机自启
+sudo systemctl enable neo4j
+sudo systemctl start neo4j
+
+7. 查看运行状态
+sudo systemctl status neo4j
+
+8. 安装gds
+cp neo4j-graph-data-science-2.13.4.jar /var/lib/neo4j/plugins/
