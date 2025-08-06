@@ -8,6 +8,7 @@ import pickle
 import networkx as nx
 from typing import List, Dict, Tuple, Optional, Any, Set
 from tqdm import tqdm
+from collections import Counter
 from pathlib import Path
 from kag.llm.llm_manager import LLMManager
 from kag.utils.neo4j_utils import Neo4jUtils
@@ -67,6 +68,33 @@ def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> Lis
         if keep:
             filtered.append(chain)
     return filtered
+
+def get_frequent_subchains(chains: List[List[str]], min_length: int = 2, min_count: int = 2):
+    """
+    统计事件链中出现频率较高的连续子链
+    Args:
+        chains: 事件链列表
+        min_length: 最短子链长度
+        min_count: 最少出现次数（频率阈值）
+    Returns:
+        List[Tuple[List[str], int]]  子链及其出现次数
+    """
+    counter = Counter()
+
+    for chain in chains:
+        n = len(chain)
+        # 枚举所有连续子链
+        for i in range(n):
+            for j in range(i + min_length, n + 1):
+                sub = tuple(chain[i:j])
+                counter[sub] += 1
+
+    # 过滤低频
+    results = [(list(sub), cnt) for sub, cnt in counter.items() if cnt >= min_count]
+    # 按频率排序
+    results.sort(key=lambda x: (-x[1], -len(x[0]), x[0]))
+    
+    return [pair[0] for pair in results]
 
 
 class EventCausalityBuilder:
@@ -751,7 +779,7 @@ class EventCausalityBuilder:
         self.neo4j_utils.create_event_plot_graph()
         self.neo4j_utils.run_node2vec()
         
-        all_plot_pairs = self.neo4j_utils.get_plot_pairs()
+        all_plot_pairs = self.neo4j_utils.get_plot_pairs(threshold=0.75)
         print("[✓] 待判定情节关系数量：", len(all_plot_pairs))
         edges_to_add = []
 
@@ -818,11 +846,13 @@ class EventCausalityBuilder:
     
     def build_event_plot_graph(self):
         self.neo4j_utils.reset_event_plot_graph()
-        all_chains = self.get_all_event_chains(0, 0.5)
+        all_chains = self.get_all_event_chains(0.3, 0.5)
         print("[✓] 当前事件链总数：", len(all_chains))
-        filtered_chains = remove_subset_paths(all_chains)
+        filtered_chains = get_frequent_subchains(all_chains, 2, 1)
+        filtered_chains = remove_subset_paths(filtered_chains)
         filtered_chains = remove_similar_paths(filtered_chains, 0.7)
-        print("[✓] 过滤后事件链总数：", len( filtered_chains))
+        
+        print("[✓] 过滤后事件链总数：", len(filtered_chains))
         
         def process_chain(chain):
             try:

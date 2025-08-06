@@ -1652,17 +1652,24 @@ class Neo4jUtils:
         print("✅ Event Plot Graph已重置")
     
     
-    def get_plot_pairs(self):
+    def get_plot_pairs(self, threshold=0.5):
         """
         从指定起点事件出发，返回所有到终点事件（没有出边的事件）的路径，
         只保留满足 weight 和 confidence 阈值的边。
         """
+        # cypher = """
+        # MATCH (p1:Plot), (p2:Plot)
+        # WHERE id(p1) < id(p2)
+        # MATCH (p1)-[*1..2]-(x)-[*1..2]-(p2)
+        # WHERE NOT p1 = p2
+        # AND NOT x:Plot
+        # RETURN DISTINCT p1.id AS src, p2.id AS tgt
+        # """
         cypher = """
         MATCH (p1:Plot), (p2:Plot)
         WHERE id(p1) < id(p2)
-        MATCH (p1)-[*1..2]-(x)<-[*1..2]-(p2)
+        MATCH path = (p1)-[*2..4]-(p2)
         WHERE NOT p1 = p2
-        AND NOT x:Plot
         RETURN DISTINCT p1.id AS src, p2.id AS tgt
         """
         results = self.execute_query(
@@ -1673,8 +1680,7 @@ class Neo4jUtils:
         for pair in results:
             sim = self.compute_semantic_similarity(pair["src"], pair["tgt"])
             graph_sim = self.compute_graph_similarity(pair["src"], pair["tgt"], 'node2vecEmbedding')
-            if sim >= 0.5 and graph_sim >=0.5:
-                pair["similarity"] = sim
+            if sim >= threshold and graph_sim >=threshold:
                 filtered_pairs.append(pair)
         return filtered_pairs
     
