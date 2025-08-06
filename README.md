@@ -178,14 +178,19 @@ sudo systemctl start neo4j
 # 7. 查看运行状态
 sudo systemctl status neo4j
 
-# 8. 安装 GDS
-cp neo4j-graph-data-science-2.13.4.jar /var/lib/neo4j/plugins/
+# 8. 安装 GDS，寻找兼容的版本
+cd /var/lib/neo4j/plugins/
+wget https://graphdatascience.ninja/neo4j-graph-data-science-2.20.0.zip
+unzip neo4j-graph-data-science-2.20.0.zip
 
 # 9. 在 conf/neo4j.conf 中添加表头：
 nano /etc/neo4j/neo4j.conf
 # 然后添加：
 dbms.security.procedures.unrestricted=gds.*
 dbms.security.procedures.allowlist=gds.*
+
+# 10. 重启服务
+sudo systemctl start neo4j
 
 ```
 
