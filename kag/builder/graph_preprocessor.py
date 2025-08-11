@@ -17,7 +17,6 @@ from sklearn.cluster import KMeans
 import numpy as np
 from collections import defaultdict
 from kag.utils.format import correct_json_format
-from sentence_transformers import SentenceTransformer
 
 
 def compute_weighted_similarity_and_laplacian(entity_dict, alpha=0.8, knn_k=40, top_k=10):
@@ -99,8 +98,12 @@ class GraphPreprocessor:
         # self.rename = dict()
             
     def load_embedding_model(self, model_name):
-        model = SentenceTransformer(model_name)
-        # self.dim = self.model.get_sentence_embedding_dimension()
+        if self.config.embedding.provider == "openai":
+            from kag.model_providers.openai_embedding import OpenAIEmbeddingModel
+            model = OpenAIEmbeddingModel(self.config)
+        else:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer(model_name)
         return model
         
     def collect_global_entities(self, extraction_results):                

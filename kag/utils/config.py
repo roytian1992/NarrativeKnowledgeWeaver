@@ -1,5 +1,5 @@
 """
-配置管理模块
+配置管理模块（支持 LLM / Embedding / Rerank）
 """
 
 import os
@@ -10,23 +10,47 @@ import yaml
 from dotenv import load_dotenv
 
 
+# ============ 单项配置 ============
+
 @dataclass
 class LLMConfig:
-    """LLM配置"""
+    """LLM配置（OpenAI 兼容或本地）"""
     provider: str = "openai"
-    
-    # OpenAI专用字段
+
+    # OpenAI 兼容字段
     model_name: str = "gpt-3.5-turbo"
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     temperature: float = 0.1
     max_tokens: int = 2000
     timeout: int = 60
-    
-    # Local LLM字段
+    enable_thinking: bool = False  # 你 YAML 里有该字段
+
+    # 本地 LLM 字段
     model_path: Optional[str] = None
     device: str = "auto"
     max_new_tokens: int = 2000
+
+
+@dataclass
+class EmbeddingConfig:
+    """Embedding 服务配置（OpenAI /v1/embeddings）"""
+    provider: str = "openai"
+    model_name: str = "Qwen3-Embedding-8B"
+    api_key: Optional[str] = None     # vLLM 默认不校验，可随便给
+    base_url: Optional[str] = None    # 例如 http://<IP>:8009/v1
+    timeout: int = 60
+    dimensions: Optional[int] = 4096  # 嵌入维度（可选）
+
+
+@dataclass
+class RerankConfig:
+    """Rerank 服务配置（Cohere 风格 /v1/rerank）"""
+    provider: str = "cohere"
+    model_name: str = "Qwen3-Reranker-8B"
+    api_key: Optional[str] = None     # vLLM 默认不校验，可随便给
+    base_url: Optional[str] = None    # 例如 http://<IP>:8012  （注意：不用带 /v1）
+    timeout: int = 60
 
 
 @dataclass
@@ -40,7 +64,6 @@ class ExtractionConfig:
     max_workers: int = 1
 
 
-
 @dataclass
 class StorageConfig:
     """存储配置"""
@@ -48,13 +71,13 @@ class StorageConfig:
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_username: str = "neo4j"
     neo4j_password: str = "password"
-    
+
     # 向量数据库配置
     vector_store_type: str = "chroma"
     vector_store_path: str = "./data/vector_store"
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
 
-     # 知识图谱抽取结果存储路径
+    # 其它存储路径
     knowledge_graph_path: str = "./data/knowledge_graph"
     sql_database_path: str = "./data/sql"
     document_store_path: str = "data/document_store"
@@ -78,7 +101,7 @@ class MemoryConfig:
     max_token_limit: int = 4000
     memory_path: str = "./data/memory"
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
-    
+
 
 @dataclass
 class ReflectionConfig:
@@ -89,98 +112,142 @@ class ReflectionConfig:
     max_reflections: int = 10  # 最多保存多少条反思
 
 
+# ============ 总配置 ============
+
 @dataclass
 class KAGConfig:
     """KAG主配置类"""
     llm: LLMConfig = field(default_factory=LLMConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    rerank: RerankConfig = field(default_factory=RerankConfig)
     extraction: ExtractionConfig = field(default_factory=ExtractionConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     processing: ProcessingConfig = field(default_factory=ProcessingConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
-    
+
     @classmethod
     def from_env(cls) -> "KAGConfig":
         """从环境变量创建配置"""
         load_dotenv()
-        
         config = cls()
-        
+
         # LLM配置
-        config.llm.api_key = os.getenv("OPENAI_API_KEY")
-        config.llm.base_url = os.getenv("OPENAI_BASE_URL")
-        config.llm.model = os.getenv("OPENAI_MODEL", config.llm.model)
-        
+        config.llm.api_key = os.getenv("OPENAI_API_KEY", config.llm.api_key)
+        config.llm.base_url = os.getenv("OPENAI_BASE_URL", config.llm.base_url)
+        config.llm.model_name = os.getenv("OPENAI_MODEL", config.llm.model_name)
+
+        # Embedding（可选环境变量）
+        config.embedding.api_key = os.getenv("EMBEDDING_API_KEY", config.embedding.api_key)
+        config.embedding.base_url = os.getenv("EMBEDDING_BASE_URL", config.embedding.base_url)
+        config.embedding.model_name = os.getenv("EMBEDDING_MODEL_NAME", config.embedding.model_name)
+        config.embedding.provider = os.getenv("EMBEDDING_PROVIDER", config.embedding.provider)
+
+        # Rerank（可选环境变量）
+        config.rerank.api_key = os.getenv("RERANK_API_KEY", config.rerank.api_key)
+        config.rerank.base_url = os.getenv("RERANK_BASE_URL", config.rerank.base_url)
+        config.rerank.model_name = os.getenv("RERANK_MODEL_NAME", config.rerank.model_name)
+        config.rerank.provider = os.getenv("RERANK_PROVIDER", config.rerank.provider)
+
         # Neo4j配置
         config.storage.neo4j_uri = os.getenv("NEO4J_URI", config.storage.neo4j_uri)
         config.storage.neo4j_username = os.getenv("NEO4J_USERNAME", config.storage.neo4j_username)
         config.storage.neo4j_password = os.getenv("NEO4J_PASSWORD", config.storage.neo4j_password)
-        
+
         # 向量存储配置
         config.storage.vector_store_path = os.getenv("VECTOR_STORE_PATH", config.storage.vector_store_path)
-        config.storage.embedding_model = os.getenv("EMBEDDING_MODEL", config.storage.embedding_model)
-        
+        config.storage.embedding_model_name = os.getenv("EMBEDDING_MODEL", config.storage.embedding_model_name)
+
         return config
-    
+
     @classmethod
     def from_yaml(cls, yaml_path: str) -> "KAGConfig":
         """从YAML文件创建配置"""
         with open(yaml_path, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
-        
+            data = yaml.safe_load(f) or {}
+
         config = cls()
-        
+
         # 更新LLM配置
         if 'llm' in data:
             for key, value in data['llm'].items():
                 if hasattr(config.llm, key):
                     setattr(config.llm, key, value)
-        
+
+        # 更新 Embedding 配置
+        if 'embedding' in data:
+            for key, value in data['embedding'].items():
+                if hasattr(config.embedding, key):
+                    setattr(config.embedding, key, value)
+
+        # 更新 Rerank 配置
+        if 'rerank' in data:
+            for key, value in data['rerank'].items():
+                if hasattr(config.rerank, key):
+                    setattr(config.rerank, key, value)
+
         # 更新抽取配置
         if 'extraction' in data:
             for key, value in data['extraction'].items():
                 if hasattr(config.extraction, key):
                     setattr(config.extraction, key, value)
-        
+
         # 更新存储配置
         if 'storage' in data:
             for key, value in data['storage'].items():
                 if hasattr(config.storage, key):
                     setattr(config.storage, key, value)
-        
+
         # 更新处理配置
         if 'processing' in data:
             for key, value in data['processing'].items():
                 if hasattr(config.processing, key):
                     setattr(config.processing, key, value)
-                    
+
         # 更新记忆配置
         if 'memory' in data:
             for key, value in data['memory'].items():
                 if hasattr(config.memory, key):
                     setattr(config.memory, key, value)
-                    
+
         # 更新反思配置
         if 'reflection' in data:
             for key, value in data['reflection'].items():
                 if hasattr(config.reflection, key):
                     setattr(config.reflection, key, value)
-        
+
         return config
-    
+
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """转换为字典（用于保存为 YAML）"""
         return {
             'llm': {
                 'provider': self.llm.provider,
-                'model': self.llm.model,
+                'model_name': self.llm.model_name,
+                'api_key': self.llm.api_key,
+                'base_url': self.llm.base_url,
                 'temperature': self.llm.temperature,
                 'max_tokens': self.llm.max_tokens,
                 'timeout': self.llm.timeout,
-                'model_name': self.llm.model_name,
+                'enable_thinking': self.llm.enable_thinking,
                 'model_path': self.llm.model_path,
                 'device': self.llm.device,
                 'max_new_tokens': self.llm.max_new_tokens,
+            },
+            'embedding': {
+                'provider': self.embedding.provider,
+                'model_name': self.embedding.model_name,
+                'api_key': self.embedding.api_key,
+                'base_url': self.embedding.base_url,
+                'timeout': self.embedding.timeout,
+                'dimensions': self.embedding.dimensions,
+            },
+            'rerank': {
+                'provider': self.rerank.provider,
+                'model_name': self.rerank.model_name,
+                'api_key': self.rerank.api_key,
+                'base_url': self.rerank.base_url,
+                'timeout': self.rerank.timeout,
             },
             'extraction': {
                 'chunk_size': self.extraction.chunk_size,
@@ -193,10 +260,12 @@ class KAGConfig:
             'storage': {
                 'neo4j_uri': self.storage.neo4j_uri,
                 'neo4j_username': self.storage.neo4j_username,
+                'neo4j_password': self.storage.neo4j_password,
                 'vector_store_type': self.storage.vector_store_type,
                 'vector_store_path': self.storage.vector_store_path,
                 'embedding_model_name': self.storage.embedding_model_name,
                 'knowledge_graph_path': self.storage.knowledge_graph_path,
+                'sql_database_path': self.storage.sql_database_path,
                 'document_store_path': self.storage.document_store_path
             },
             'processing': {
@@ -212,7 +281,6 @@ class KAGConfig:
                 'max_token_limit': self.memory.max_token_limit,
                 'memory_path': self.memory.memory_path,
                 'embedding_model_name': self.memory.embedding_model_name,
-                
             },
             'reflection': {
                 'enabled': self.reflection.enabled,
@@ -221,7 +289,7 @@ class KAGConfig:
                 'max_reflections': self.reflection.max_reflections,
             }
         }
-    
+
     def save_yaml(self, yaml_path: str) -> None:
         """保存为YAML文件"""
         with open(yaml_path, 'w', encoding='utf-8') as f:
@@ -229,6 +297,5 @@ class KAGConfig:
 
 
 def get_config() -> KAGConfig:
-    """获取默认配置"""
+    """获取默认配置（优先环境变量）"""
     return KAGConfig.from_env()
-

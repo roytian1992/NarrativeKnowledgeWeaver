@@ -53,7 +53,7 @@ class ExtractionReflector:
             error_result = {
                 "error": f"参数解析失败: {str(e)}", 
                 "current_issues": [],
-                "suggestions": [],
+                "insights": [],
                 "score": 0
             }
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
@@ -114,7 +114,7 @@ class ExtractionReflector:
                 error_result = {
                     "error": f"提取反思失败",
                     "current_issues": [],
-                    "suggestions": [],
+                    "insights": [],
                     "score": 0
                 }
                 return correct_json_format(json.dumps(error_result, ensure_ascii=False))
@@ -125,7 +125,7 @@ class ExtractionReflector:
             error_result = {
                 "error": f"提取反思失败: {str(e)}",
                 "current_issues": [],
-                "suggestions": [],
+                "insights": [],
                 "score": 0
             }
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))

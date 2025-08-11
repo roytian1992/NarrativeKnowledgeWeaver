@@ -7,7 +7,6 @@
 from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
 from kag.models.data import Document
 from ..utils.config import KAGConfig
 
@@ -38,8 +37,13 @@ class VectorStore:
             )
             
             # 初始化嵌入模型
-            self.embedding_model = SentenceTransformer(
-                self.config.storage.embedding_model_name
+            if self.config.embedding.provider == "openai":
+                from kag.model_providers.openai_embedding import OpenAIEmbeddingModel
+                self.embedding_model = OpenAIEmbeddingModel(self.config)
+            else:
+                from sentence_transformers import SentenceTransformer
+                self.embedding_model = SentenceTransformer(
+                    self.config.embedding.model_name
             )
             
             print("✅ 向量数据库初始化成功")
@@ -90,7 +94,8 @@ class VectorStore:
                 metadatas.append(metadata)
             
             # 生成嵌入向量
-            embeddings = self.embedding_model.encode(texts).tolist()
+            embeddings = self.embedding_model.encode(texts)
+            embeddings = embeddings.tolist() if hasattr(embeddings, "tolist") else embeddings
             
             # 存储到ChromaDB
             self.collection.upsert(
@@ -113,7 +118,8 @@ class VectorStore:
         
         try:
             # 生成查询向量
-            query_embedding = self.embedding_model.encode([query]).tolist()[0]
+            query_embedding = self.embedding_model.encode(query) # .tolist()[0]
+            embeddings = embeddings.tolist() if hasattr(embeddings, "tolist") else embeddings
             
             # 执行搜索
             results = self.collection.query(

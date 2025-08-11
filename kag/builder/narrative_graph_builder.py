@@ -10,7 +10,8 @@ from typing import List, Dict, Tuple, Optional, Any, Set
 from tqdm import tqdm
 from collections import Counter
 from pathlib import Path
-from kag.llm.llm_manager import LLMManager
+# from kag.llm.llm_manager import LLMManager
+from kag.model_providers.openai_llm import OpenAILLM
 from kag.utils.neo4j_utils import Neo4jUtils
 from kag.models.data import Entity
 from kag.builder.graph_analyzer import GraphAnalyzer
@@ -23,7 +24,7 @@ from kag.utils.format import correct_json_format
 import logging
 from collections import defaultdict
 import os
-from kag.builder.kg_builder import DOC_TYPE_META
+from kag.builder.graph_builder import DOC_TYPE_META
 
 
 def remove_subset_paths(chains: List[List[str]]) -> List[List[str]]:
@@ -49,7 +50,7 @@ def jaccard_similarity(set1: Set[str], set2: Set[str]) -> float:
     """计算两个集合的 Jaccard 相似度"""
     if not set1 and not set2:
         return 1.0
-    return len(set1 & set2) / len(set1 | set2)
+    return len(set1 & set2) / max([len(set1), len(set2)])
 
 
 def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> List[List[str]]:
@@ -118,8 +119,9 @@ class EventCausalityBuilder:
             config: KAG配置对象
         """
         self.config = config
-        self.llm_manager = LLMManager(config)
-        self.llm = self.llm_manager.get_llm()
+        # self.llm_manager = LLMManager(config)
+        # self.llm = self.llm_manager.get_llm()
+        self.llm = OpenAILLM(config)
         self.graph_store = GraphStore(config)
         self.vector_store = VectorStore(config)
         self.neo4j_utils = Neo4jUtils(self.graph_store.driver, doc_type)
@@ -435,7 +437,7 @@ class EventCausalityBuilder:
         filtered_pairs = []
         for pair in tqdm(pairs, desc="筛选节点对"):
             src_id, tgt_id = pair[0].id, pair[1].id
-            reachable = self.neo4j_utils.check_nodes_reachable(src_id, tgt_id, excluded_rels=[self.meta["contains_pred"], "EVENT_CAUSES"])
+            reachable = self.neo4j_utils.check_nodes_reachable(src_id, tgt_id, excluded_rels=[self.meta["contains_pred"], "EVENT_CAUSES"], max_depth=2)
             if reachable: # 如果节点间距离小于3，保留。
                 filtered_pairs.append(pair)
             else:
@@ -481,7 +483,7 @@ class EventCausalityBuilder:
         # 6. 写回 EVENT_CAUSES
         print("\n🔗 写回 EVENT_CAUSES 关系...")
         self.write_event_cause_edges(causality_results)
-        self.neo4j_utils.create_event_causality_graph("event_causality_graph", force_refresh=True)
+        self.neo4j_utils.create_event_causality_graph("event_causality_graph", force_refresh=True, min_weight=0.5, min_confidence=0.5)
 
     def detect_flattened_causal_patterns(self, edges: List[Dict]) -> List[Dict]:
         """
@@ -697,11 +699,15 @@ class EventCausalityBuilder:
                 edge_map_global.update(edge_map)
 
                 old_patterns = self.detect_flattened_causal_patterns(edges)
-                new_patterns = self.filter_weak_edges_in_patterns(old_patterns, edge_map)
+                new_patterns = self.filter_weak_edges_in_patterns(old_patterns, edge_map, weight_threshold=0.6)
                 for pattern in new_patterns:
                     all_triangles += self.filter_pattern(pattern, edge_map)
 
             print(f"🔺 本轮需判断的三元因果结构数量：{len(all_triangles)}")
+            if len(all_triangles) >= 2000:
+                print("⚠️ 检测到三元结构数量过多，只选择前2000个进行处理。")
+                all_triangles = all_triangles[:2000]
+                return
 
             # === ✅ 提前退出条件 ===
             if loop_count >= 1:
@@ -749,8 +755,8 @@ class EventCausalityBuilder:
                 self.neo4j_utils.delete_relation_by_ids(edge[0], edge[1], "EVENT_CAUSES")
 
             # === 刷新 GDS 图 ===
-            # self.neo4j_utils.create_event_causality_graph("event_causality_graph", min_confidence=0.5, min_weight=0.5, force_refresh=True)
-            self.neo4j_utils.create_event_causality_graph("event_causality_graph", force_refresh=True)
+            self.neo4j_utils.create_event_causality_graph("event_causality_graph", min_confidence=0.5, min_weight=0.5, force_refresh=True)
+            # self.neo4j_utils.create_event_causality_graph("event_causality_graph", force_refresh=True)
             loop_count += 1
 
     def get_all_event_chains(self, min_weight: float = 0.0, min_confidence: float = 0.0):
@@ -846,10 +852,11 @@ class EventCausalityBuilder:
     
     def build_event_plot_graph(self):
         self.neo4j_utils.reset_event_plot_graph()
-        all_chains = self.get_all_event_chains(0.3, 0.5)
+        all_chains = self.get_all_event_chains(0.5, 0.5)
         print("[✓] 当前事件链总数：", len(all_chains))
-        filtered_chains = get_frequent_subchains(all_chains, 2, 1)
-        filtered_chains = remove_subset_paths(filtered_chains)
+        filtered_chains = remove_subset_paths(all_chains)
+        filtered_chains = get_frequent_subchains(filtered_chains, 2, 1)
+        # filtered_chains = remove_subset_paths(filtered_chains)
         filtered_chains = remove_similar_paths(filtered_chains, 0.7)
         
         print("[✓] 过滤后事件链总数：", len(filtered_chains))

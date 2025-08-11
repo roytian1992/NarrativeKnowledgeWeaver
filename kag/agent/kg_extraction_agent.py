@@ -6,6 +6,16 @@ from kag.builder.reflection import DynamicReflector
 from kag.builder.knowledge_extractor import InformationExtractor
 import asyncio  
 
+
+def generate_suggestions(related_insights, related_history):
+    suggestions = ""
+    if related_insights:
+        suggestions += "之前的阅读的过程中有以下这些发现：\n" + "\n".join(related_insights) + "\n"
+        
+    if related_history:
+        suggestions += "之前的一些抽取示例：\n" + "\n".join(related_history)
+    return suggestions
+
 class InformationExtractionAgent:
     def __init__(self, config, llm, system_prompt):
         self.config = config
@@ -42,8 +52,15 @@ class InformationExtractionAgent:
     def search_relevant_experience(self, state):
         content = state["content"].strip()
 
-        issues, suggestions = self.reflector._search_relevant_reflections(content, k=5)
-        reflection_results = {"issues": issues, "suggestions": suggestions}
+        related_history, related_insights = self.reflector._search_relevant_reflections(content, k=3)
+        
+        suggestions = generate_suggestions(related_insights, related_history)
+
+        reflection_results = {"suggestions": suggestions, 
+                              "related_insights": related_insights,
+                              "related_history": related_history,
+                              "issues": []
+                              }
 
         return {
             "reflection_results": reflection_results,
@@ -127,22 +144,26 @@ class InformationExtractionAgent:
         best_score = state.get("best_score", 0)
         
         reflection_results["score"] = score
-        reflection_results["suggestions"] = result.get("suggestions", [])
+        reflection_results.setdefault("related_insights", []).extend(result.get("insights", []))
+
+        reflection_results["suggestions"] = generate_suggestions(reflection_results.get("related_insights", []), reflection_results.get("history", []))
         reflection_results["issues"] = result.get("current_issues", [])
+        
+        current_result = {
+            "entities": state.get("entities", []),
+            "relations": state.get("relations", []),
+            "score": score,
+            "insights": result.get("insights", []),
+            "issues": result.get("current_issues", [])
+        }
         
         # 如果本轮更优则更新 best_result
         if score > best_score:
-            best_result = {
-                "entities": state.get("entities", []),
-                "relations": state.get("relations", []),
-                "score": score,
-                "suggestions": result.get("suggestions", []),
-                "issues": result.get("current_issues", [])
-            }
+            best_result = current_result
         else:
             best_result = state.get("best_result", {})
 
-        self.reflector._store_memory(state["content"], result)
+        self.reflector._store_memory(state["content"], current_result)
         
         return {
             "score": int(score),

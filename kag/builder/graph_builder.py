@@ -20,7 +20,8 @@ from ..storage.graph_store import GraphStore
 from ..storage.vector_store import VectorStore
 from ..utils.config import KAGConfig
 from ..utils.neo4j_utils import Neo4jUtils
-from kag.llm.llm_manager import LLMManager
+# from kag.llm.llm_manager import LLMManager
+from kag.model_providers.openai_llm import OpenAILLM
 from kag.agent.kg_extraction_agent import InformationExtractionAgent
 from kag.agent.attribute_extraction_agent import AttributeExtractionAgent
 from .document_processor import DocumentProcessor
@@ -67,8 +68,8 @@ class KnowledgeGraphBuilder:
         self.prompt_loader = PromptLoader(prompt_dir)
             
         # LLM & Processor
-        self.llm_manager = LLMManager(config)
-        self.llm = self.llm_manager.get_llm()
+        # self.llm_manager = LLMManager(config)
+        self.llm = OpenAILLM(config)
         self.processor = DocumentProcessor(config, self.llm, doc_type, max_worker=self.max_workers)
 
         # 存储 / 数据库
@@ -97,6 +98,7 @@ class KnowledgeGraphBuilder:
         
         # 抽取 agent
         self.information_extraction_agent = InformationExtractionAgent(config, self.llm, self.system_prompt_text)
+        self.information_extraction_agent.reflector.clear_memory() # 清空历史的记忆
         self.attribute_extraction_agent = AttributeExtractionAgent(config, self.llm, self.system_prompt_text)
         self.graph_preprocessor = GraphPreprocessor(config, self.llm, system_prompt=self.system_prompt_text)
 
@@ -199,75 +201,6 @@ class KnowledgeGraphBuilder:
         if verbose:
             print(f"✅ 生成 {len(all_docs)} 个文本块")
             
-    # def prepare_chunks(
-    #     self,
-    #     json_file_path: str,
-    #     verbose: bool = True,
-    #     per_task_timeout: int = 120,
-    #     max_workers: int = None
-    # ):
-    #     max_workers = max_workers or self.max_workers
-    #     if verbose:
-    #         print(f"🚀 开始构建知识图谱: {json_file_path}")
-    #         print("📖 加载文档...")
-    #     documents = self.processor.load_from_json(json_file_path, extract_metadata=True)
-    #     if verbose:
-    #         print(f"✅ 成功加载 {len(documents)} 个文档")
-
-    #     # 1) 并发尝试
-    #     all_docs = []
-    #     timed_out_docs = []
-    #     failed_docs = []
-
-    #     with ThreadPoolExecutor(max_workers=max_workers) as exe:
-    #         futures = {exe.submit(self.processor.prepare_chunk, doc): doc for doc in documents}
-
-    #         # 等待全部完成或单个超时，但不阻塞到永久
-    #         done, not_done = wait(futures, timeout=None)  # 不设置 overall timeout
-
-    #         # 收集已完成
-    #         for fut in tqdm(done, total=len(done), desc="并发拆分处理中"):
-    #             doc = futures[fut]
-    #             try:
-    #                 grp = fut.result(timeout=per_task_timeout)
-    #                 all_docs.extend(grp["document_chunks"])
-    #             except TimeoutError:
-    #                 if verbose:
-    #                     print(f"⚠️ 文档 {getattr(doc,'id',None)} 并发超时，稍后回退同步切分")
-    #                 timed_out_docs.append(doc)
-    #             except Exception as e:
-    #                 if verbose:
-    #                     print(f"❌ 文档 {getattr(doc,'id',None)} 并发失败：{e}，稍后回退同步切分")
-    #                 failed_docs.append(doc)
-
-    #         # 剩下没 done 的，也当作超时
-    #         for fut in not_done:
-    #             doc = futures[fut]
-    #             if verbose:
-    #                 print(f"⚠️ 文档 {getattr(doc,'id',None)} 未完成，稍后回退同步切分")
-    #             timed_out_docs.append(doc)
-
-    #     # 2) 同步保底：对所有超时／失败文档逐个切分（无超时限制）
-    #     fallback = timed_out_docs + failed_docs
-    #     if fallback and verbose:
-    #         print(f"🔄 开始同步保底切分 {len(fallback)} 个文档（无超时限制）")
-    #     for doc in tqdm(fallback, desc="同步保底切分中"):
-    #         try:
-    #             grp = self.processor.prepare_chunk(doc)
-    #             all_docs.extend(grp["document_chunks"])
-    #         except Exception as e:
-    #             # 真正卡住或其他异常，这里抛出让你看到具体是哪个文档
-    #             raise RuntimeError(f"文档 {getattr(doc,'id',None)} 同步保底切分失败: {e}")
-
-    #     # 3) 落盘
-    #     base = self.config.storage.knowledge_graph_path
-    #     os.makedirs(base, exist_ok=True)
-    #     out_file = os.path.join(base, "all_document_chunks.json")
-    #     with open(out_file, "w", encoding="utf-8") as f:
-    #         json.dump([c.dict() for c in all_docs], f, ensure_ascii=False, indent=2)
-
-    #     if verbose:
-    #         print(f"✅ 共生成 {len(all_docs)} 个文本块，保存在 {out_file}")
         
     # ═════════════════════════════════════════════════════════════════════
     #  2) 存储 Chunk（RDB + VDB）
@@ -807,8 +740,8 @@ class KnowledgeGraphBuilder:
     def _create_relation_from_data(d: Dict, chunk_id: str,
                                    entity_map: Dict[str, Entity],
                                    name2id: Dict[str, str]) -> Optional[Relation]:
-        subj = d.get("subject") or d.get("source") or d.get("head") or d.get("head_entity")
-        obj = d.get("object") or d.get("target") or d.get("tail") or d.get("tail_entity")
+        subj = d.get("subject") or d.get("source") or d.get("head") or d.get("relation_subject")
+        obj = d.get("object") or d.get("target") or d.get("tail") or d.get("relation_object")
         pred = d.get("predicate") or d.get("relation") or d.get("relation_type")
         if not subj or not obj or not pred:
             return None
@@ -871,7 +804,7 @@ class KnowledgeGraphBuilder:
     #  Embedding & Stats
     # ═════════════════════════════════════════════════════════════════════
     def prepare_graph_embeddings(self):
-        self.neo4j_utils.load_emebdding_model(self.config.memory.embedding_model_name)
+        self.neo4j_utils.load_embedding_model(self.config)
         self.neo4j_utils.create_vector_index()
         self.neo4j_utils.process_all_embeddings(
             exclude_entity_types=[self.meta["section_label"]]

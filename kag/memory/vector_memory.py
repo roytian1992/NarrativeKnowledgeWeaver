@@ -6,7 +6,8 @@ import time
 from typing import Dict, Any, List, Optional
 
 from kag.memory.base_memory import BaseMemory
-from kag.utils.config import MemoryConfig
+from langchain_community.vectorstores import Chroma
+from kag.utils.config import KAGConfig
 
 class VectorMemory(BaseMemory):
     """向量记忆
@@ -14,7 +15,7 @@ class VectorMemory(BaseMemory):
     使用向量数据库存储记忆，支持语义检索。
     """
     
-    def __init__(self, config: MemoryConfig, category: str = None):
+    def __init__(self, config: KAGConfig, category: str = None):
         """初始化向量记忆
         
         Args:
@@ -22,7 +23,7 @@ class VectorMemory(BaseMemory):
         """
         super().__init__(config)
         self.config = config
-        self.memory_path = os.path.join(self.config.memory_path, category)
+        self.memory_path = os.path.join(self.config.memory.memory_path, category)
         # self.memory_path = os.path.join(memory_path, "vector_memory")
         
         # 确保目录存在
@@ -34,18 +35,23 @@ class VectorMemory(BaseMemory):
     def _init_vector_db(self) -> None:
         """初始化向量数据库"""
         try:
-            from langchain_community.vectorstores import Chroma
-            from langchain_community.embeddings import HuggingFaceEmbeddings
+            if self.config.embedding.provider == "openai":
+                from kag.model_providers.openai_embedding import OpenAIEmbeddingModel
+                self.embedding_model = OpenAIEmbeddingModel(self.config)
+                
+                
+            else:
+                from langchain_community.embeddings import HuggingFaceEmbeddings
             
-            # 初始化嵌入模型
-            self.embeddings = HuggingFaceEmbeddings(
-                model_name=self.config.embedding_model_name
-            )
+                # 初始化嵌入模型
+                self.embedding_model = HuggingFaceEmbeddings(
+                    model_name=self.config.embedding.model_name,
+                )
             
             # 初始化向量数据库
             self.vector_db = Chroma(
                 collection_name="memory",
-                embedding_function=self.embeddings,
+                embedding_function=self.embedding_model.model,
                 persist_directory=self.memory_path
             )
             

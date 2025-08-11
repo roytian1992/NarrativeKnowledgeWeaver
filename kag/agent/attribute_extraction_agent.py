@@ -4,8 +4,10 @@ from typing import Dict
 from langgraph.graph import StateGraph, END
 from kag.utils.format import correct_json_format
 from ..storage.vector_store import VectorStore
+from kag.memory.vector_memory import VectorMemory
 from kag.builder.knowledge_extractor import InformationExtractor
 import asyncio 
+from kag.model_providers.openai_rerank import OpenAIRerankModel
 
 def format_property_definitions(properties: Dict[str, str]) -> str:
     return "\n".join([f"- **{key}**：{desc}" for key, desc in properties.items()])
@@ -16,9 +18,12 @@ class AttributeExtractionAgent:
         self.config = config
         self.extractor = InformationExtractor(config, llm)
         self.vector_store = VectorStore(config)
+        self.history_memory = VectorMemory(config, "history_memory")
         self.load_schema("kag/schema/graph_schema.json")
         self.graph = self._build_graph()
         self.system_prompt = system_prompt
+        self.reranker = OpenAIRerankModel(config)
+        
 
     def load_schema(self, path):
         with open(path, "r", encoding="utf-8") as f:
@@ -92,16 +97,23 @@ class AttributeExtractionAgent:
         if entity_type in ["Event", "Action", "Emotion", "Goal"]:
             documents = self.vector_store.search_by_ids(source_chunks)
             if not documents:
-                documents = self.vector_store.search(query=entity_name, limit=1)
+                results = [doc.page_content for doc in self.history_memory.get(entity_name, 10)]
             # print("[CHECK] entity_name: ", entity_name)
             # print("[CHECK] source_chunks: ", source_chunks)
             # print("[CHECK] source chunk result: ", documents)
         else:
-            documents_by_id = self.vector_store.search_by_ids(source_chunks)
-            documents_by_vec = self.vector_store.search(query=entity_name, limit=5)
-            documents = documents_by_id + documents_by_vec
-        results = {doc.content for doc in documents}
-        new_text = "\n".join(list(results))
+            documents_by_id = self.vector_store.search_by_ids(source_chunks) # 原文
+            # documents_by_vec_chunk = self.vector_store.search(query=entity_name, limit=3) # 语义相关
+            documents = documents_by_id # + documents_by_vec_chunk
+            results = list({doc.content for doc in documents})
+            results += [doc.page_content for doc in self.history_memory.get(entity_name, 20)]
+
+        
+        query = f"以下哪些内容与实体{entity_name}的属性：" + "、".join(attributes_to_retry) + "相关？"
+        retrieved_docs = self.reranker.rerank(query=query, documents=results)
+        retrieved_docs = [doc["document"]["text"] for doc in retrieved_docs if doc["relevance_score"] >= 0.5]
+        
+        new_text = "\n".join(retrieved_docs)
 
         return {
             **state,

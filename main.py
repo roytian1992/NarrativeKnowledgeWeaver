@@ -15,7 +15,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from kag import KAGConfig
-from kag.builder.kg_builder import KnowledgeGraphBuilder
+from kag.builder.graph_builder import KnowledgeGraphBuilder
 import os
 import logging
 
@@ -77,18 +77,18 @@ def main():
     
     # 构建知识图谱
     # builder.prepare_chunks(args.input, verbose=args.verbose) # 文本准备阶段：长文本拆分和元数据标注
-    # builder.store_chunks(verbose=args.verbose) # 保存近向量数据库和本地json
-    # builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
-    # builder.extract_entity_attributes(verbose=args.verbose) # 实体消歧和属性抽取
-    # kg = builder.build_graph_from_results(verbose=args.verbose)
-    # builder.prepare_graph_embeddings()
+    builder.store_chunks(verbose=args.verbose) # 保存近向量数据库和本地json
+    builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
+    builder.extract_entity_attributes(verbose=args.verbose) # 实体消歧和属性抽取
+    kg = builder.build_graph_from_results(verbose=args.verbose)
+    builder.prepare_graph_embeddings()
     
-    event_graph_builder = EventCausalityBuilder(config, doc_type=args.doc_type, background_path=args.background)
+    # event_graph_builder = EventCausalityBuilder(config, doc_type=args.doc_type, background_path=args.background)
     # event_graph_builder.initialize() # 初始化事件情节图
     # event_graph_builder.build_event_causality_graph() # 开始构建事件因果图
     # event_graph_builder.run_SABER() # 运行断环、去冗余算法
-    event_graph_builder.build_event_plot_graph() # 构建情节-事件图
-    event_graph_builder.generate_plot_relations() # 抽取情节间关系
+    # event_graph_builder.build_event_plot_graph() # 构建情节-事件图
+    # event_graph_builder.generate_plot_relations() # 抽取情节间关系
     
     # # 输出统计信息
     # stats = builder.get_stats()

@@ -23,7 +23,7 @@ ROLE_MAP = {
 
 
 
-class OpenAIQwenLLM(ChatOpenAI):
+class OpenAILLM(ChatOpenAI):
     """仅接收 cfg 的 Qwen 封装（/no_think 注入 & <think> 清洗）"""
 
     _default_thinking: bool = PrivateAttr(default=True)

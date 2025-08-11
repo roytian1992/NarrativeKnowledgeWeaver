@@ -83,7 +83,7 @@ extraction_refletion_repair_template = """
 请确保返回的JSON包含：
 1. "score"字段，包含最终评分
 2. "current_issues"字段，包含发现的问题列表
-3. "suggestions"字段，包含改进建议列表
+3. "insights"字段，包含阅读心得与发现
 
 必要的时候可以直接原始响应抽取字段里面的信息进行重组。
 

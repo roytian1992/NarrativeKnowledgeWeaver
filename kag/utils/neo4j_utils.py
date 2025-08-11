@@ -7,7 +7,6 @@ from typing import List, Optional, Union, Tuple, Dict, Any, Set
 import json
 from neo4j import Driver
 from kag.models.data import Entity, Relation
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 import numpy as np
 # from kag.builder.kg_builder_2 import DOC_TYPE_META
@@ -56,10 +55,14 @@ class Neo4jUtils:
         self.dim = 768
         # self.load_emebdding_model()
         
-    def load_emebdding_model(self, model_name):
-        self.model = SentenceTransformer(model_name)
-        self.dim = self.model.get_sentence_embedding_dimension()
-        print("向量模型已加载")
+    def load_embedding_model(self, config):
+        if config.embedding.provider == "openai":
+            from kag.model_providers.openai_embedding import OpenAIEmbeddingModel
+            model = OpenAIEmbeddingModel(config)
+        else:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer(config.embedding.model_name)
+        return model
     
     def execute_query(self, cypher: str, params: Dict[str, Any] = None) -> List[Dict]:
         """

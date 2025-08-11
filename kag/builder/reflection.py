@@ -2,16 +2,22 @@ from typing import Optional, List
 from kag.utils.config import KAGConfig
 from kag.memory.vector_memory import VectorMemory
 from ..utils.format import correct_json_format
+from kag.model_providers.openai_rerank import OpenAIRerankModel
 import json
-
+import re
 
 class DynamicReflector:
     def __init__(self, config: KAGConfig):
-        self.config = config.memory
-        self.issue_memory = VectorMemory(self.config, "issue_memory")
-        self.issue_memory.clear()
-        self.suggestion_memory = VectorMemory(self.config, "suggestion_memory")
-        self.suggestion_memory.clear()
+        self.config = config
+        self.history_memory = VectorMemory(self.config, "history_memory")
+        # self.history_memory.clear()
+        self.insight_memory = VectorMemory(self.config, "insight_memory")
+        # self.insight_memory.clear()
+        self.reranker = OpenAIRerankModel(self.config)
+        
+    def clear_memory(self):
+        self.history_memory.clear()
+        self.insight_memory.clear()
         
     def generate_logs(self, extraction_result):
         """
@@ -20,7 +26,7 @@ class DynamicReflector:
         logs = []
 
         # 1) 处理实体
-        entities = extraction_result.get("entities", [])
+        entities = extraction_result.get("entities", []) # 
         if not entities:
             logs.append("无可识别实体或者实体抽取失败，无相关日志。")
         else:
@@ -49,23 +55,69 @@ class DynamicReflector:
                 )
 
         return logs
-
+      
     def _store_memory(self, content, reflections):
-        issues = reflections.get("current_issues", []) 
-        suggestions = reflections.get("suggestions", []) 
-        for item in issues:
-            _content = f"建议:{item}\n供以下内容参考:\n{content}"
-            self.issue_memory.add(text=_content, metadata={"issue": item})
-        for item in suggestions:
-            _content = f"建议:{item}\n供以下内容参考:\n{content}"
-            self.suggestion_memory.add(text=_content, metadata={"suggestion": item})
+        insights = reflections.get("insights", []) 
+        
+        for item in insights:
+            self.insight_memory.add(text=item, metadata={})
+        
+        sentences = re.split(r'(?<=[。！？])', content)
+        
+        entities = reflections.get("entities", [])
+        relations = reflections.get("relations", [])
+        score = reflections.get("score", 0)
+        
+        documents = dict()
+        
+        for entity in entities:
+            entity_name = entity.get("name", "")
+            entity_type = entity.get("type", "")
+            matches = [s.strip() for s in sentences if entity_name in s]
+            if entity_name and entity_type:
+                for match in matches:
+                    if match in documents:
+                        documents[match] += f"- 抽取了实体: {entity_name} (实体类型: {entity_type})\n"
+                    else:
+                        documents[match] = f"- 抽取了实体: {entity_name} (实体类型: {entity_type})\n"
+
+        for relation in relations:
+            subject = relation.get("subject", "")
+            object_ = relation.get("object", "")
+            relation_name = relation.get("relation_name", "")
+            relation_type = relation.get("relation_type", "")
+            matches = [s.strip() for s in sentences if subject in s and object_ in s]
+            if subject and object_ and relation_name:
+                for match in matches:
+                    if match in documents:
+                        documents[match] += f"- 抽取了关系: {subject}-{relation_name}->{object_} (关系类型: {relation_type})\n"
+                    else:
+                        documents[match] = f"- 抽取了关系: {subject}-{relation_name}->{object_} (关系类型: {relation_type})\n"
+
+        for match in documents:
+            documents[match] += f"当前抽取得分为{score}"
+            self.history_memory.add(text=match, metadata={"history": documents[match]})
             
-    def _search_relevant_reflections(self, context, k=5):
-        related_issues = self.issue_memory.get(context, k)
-        # print("[CHECK]: related_issues", related_issues)
-        related_issues = [doc.metadata.get("issue") for doc in related_issues]
-        related_suggestions = self.suggestion_memory.get(context, k)
-        related_suggestions = [doc.metadata.get("suggestion") for doc in related_suggestions]
-        return related_issues, related_suggestions
+
+    def _search_relevant_reflections(self, context, k):
+        def create_record(content, history):
+            return f"原文如下：\n{content}\n{history}"
+        
+        sentences = re.split(r'(?<=[。！？])', context)
+        related_history = []
+        for sentence in sentences:
+            results = self.history_memory.get(sentence, k)
+            retrieved_docs = [create_record(doc.page_content, doc.metadata.get("history")) for doc in results]
+            query = f"从下面的文中抽取实体和关系：\n{sentence}"
+            retrieved_docs = self.reranker.rerank(query=query, documents=retrieved_docs)
+            retrieved_docs = [doc["document"]["text"] for doc in retrieved_docs if doc["relevance_score"] >= 0.5]
+            related_history.extend(retrieved_docs)
+            
+        documents = self.insight_memory.get(context, 20)
+        documents = [doc.page_content for doc in documents]
+        related_insights = self.reranker.rerank(query=context, documents=documents, top_n=10)
+        related_insights = [insight["document"]["text"] for insight in related_insights]
+        
+        return related_history, related_insights
             
 
