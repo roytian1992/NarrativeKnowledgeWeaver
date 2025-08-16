@@ -1,0 +1,17 @@
+{
+  "id": "extract_plot_relation_prompt",
+  "category": "regular_function",
+  "name": "情节关系判定提示词（正向推动 & 冲突，含方向）",
+  "description": "判断两个情节之间是否存在正向推动（PLOT_CONTRIBUTES_TO）或目标冲突（PLOT_CONFLICTS_WITH）关系，并给出原因说明与方向信息。",
+  "template": "你是一位叙事结构分析专家，任务是根据提供的两个情节信息，判断它们之间是否存在以下关系：\n\n1. **PLOT_CONTRIBUTES_TO**（有向）：情节A的结果或部分事件，对情节B的发生起到正向推动或促进作用（直接因果或关键条件提供均可）。\n2. **PLOT_CONFLICTS_WITH**（无向）：情节A与情节B在目标、利益、立场上存在直接对立，互相阻碍（例如A的目标等于B的冲突，或两者目标方向相反）。\n\n---\n\n## 输入信息\n【情节A】\n{plot_A_info}\n\n【情节B】\n{plot_B_info}\n\n---\n\n## 判定步骤（请严格按顺序推理）：\n1. **分析目标、冲突、主题、结局**：\n   - 判断它们的目标是否一致、互补、相反或无关。\n   - 判断它们的冲突是否与对方的目标相关。\n\n2. **检查事件因果关系**：\n   - 情节A中的事件是否为情节B的事件提供条件、资源或情境推动？\n   - 如果没有直接因果，但在叙事逻辑上B依赖于A的结果，也可判为推动关系。\n\n3. **冲突性分析**：\n   - 如果A和B的目标在方向上对立，或一方的目标是另一方的障碍，则为冲突关系。\n\n4. **方向判断**（仅适用于 PLOT_CONTRIBUTES_TO）：\n   - 如果是推动关系，请判断方向应为 A→B 还是 B→A。\n   - 如果是冲突关系，方向填 null。\n\n5. **最终判定**：\n   - `relation_type` 必须是 `PLOT_CONTRIBUTES_TO`、`PLOT_CONFLICTS_WITH` 或 `None`（无明显推动或冲突关系）。\n\n---\n\n## 输出格式（严格遵循）：\n```json\n{\n  \"relation_type\": \"PLOT_CONTRIBUTES_TO / PLOT_CONFLICTS_WITH / None\",\n  \"direction\": \"A->B / B->A / null\",\n  \"reason\": \"简要说明判定理由，基于goal、conflict、事件因果等信息。\",\n  \"confidence\": 0.85\n}\n```\n\n注意事项：\n- `relation_type` 严格取三种值之一。\n- `direction` 在 `PLOT_CONTRIBUTES_TO` 时为 \"A->B\" 或 \"B->A\"，`PLOT_CONFLICTS_WITH` 或 `None` 时为 null。\n- `confidence` 为 0 到 1 的小数。\n- 严格输出 JSON 对象，不输出额外文字。",
+  "variables": [
+    {
+      "name": "plot_A_info",
+      "description": "情节A的完整信息（包括标题、摘要、goal、conflict、theme、resolution、主要事件简述等）"
+    },
+    {
+      "name": "plot_B_info",
+      "description": "情节B的完整信息（包括标题、摘要、goal、conflict、theme、resolution、主要事件简述等）"
+    }
+  ]
+}

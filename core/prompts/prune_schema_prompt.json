@@ -1,0 +1,25 @@
+{
+  "id": "prune_schema_prompt",
+  "category": "decision",
+  "name": "Schema精简：删除不再需要的类型",
+  "description": "根据实体/关系的使用分布与定义描述，给出“应删除”的实体或关系类型清单。只输出必要删除项，不提合并/重命名/新增方案。",
+  "template": "请阅读下述分布与定义，判断是否有**必须删除**的实体类型或关系类型。只在证据充分时提出删除建议；边界不清或可改可不改的项一律不写。\n\n【可删判据（满足其一即可；保守执行）】\n- **零使用**：计数=0 或文档覆盖=0。\n- **近零且非关键**：总体占比极低且仅出现在极少数文档，且语义可被更通用/更清晰的类型稳定覆盖。\n- **系统性失配**：大量使用与定义的域/值域或方向不符，且这些用法已被其它类型正确承载；继续保留只会引发混淆。\n- **冗余同义**：与另一高频且定义更清晰的类型语义等价或高度重叠，且历史用法可无损映射到该高频类型。\n- **不可操作**：定义过于笼统或自相矛盾，长期无法稳定标注/抽取。\n\n【输出要求】\n- 仅输出一个 JSON：{{\"feedbacks\": [ ... ]}}\n- 每条为**自然语言一句话**：写“删除 + 类型名 + 简短理由（含关键数字，如计数、覆盖、重叠目标）”。用<entity>和<relation>作为前缀来代表该建议是针对实体还是关系的。\n- 只列**关系类型或实体类型**的名称；不写分组名；不提供替代方案。\n- 若没有必须删除的项，返回空列表：{{\"feedbacks\": []}}\n\n【实体类型分布】\n{entity_type_distribution}\n\n【关系类型分布】\n{relation_type_distribution}\n\n【实体类型描述】\n{entity_type_description_text}\n\n【关系类型描述】\n{relation_type_description_text}\n\n【输出格式（仅此 JSON）】\n```json\n{{\n  \"feedbacks\": [\n    \"删除 relation_type 'supports'，语义已被 'allies_with' 稳定覆盖。\",\n    \"删除 entity_type 'Artifact'，与 'Object' 定义重合且用法可替代。\"\n  ]\n}}\n```",
+  "variables": [
+    {
+      "name": "entity_type_distribution",
+      "description": "实体类型使用分布（建议包含：type→count、ratio、doc_coverage 等）"
+    },
+    {
+      "name": "relation_type_distribution",
+      "description": "关系类型使用分布（建议包含：type→count、ratio、doc_coverage、方向/域值域误用率等）"
+    },
+    {
+      "name": "entity_type_description_text",
+      "description": "实体类型及其定义描述（文本或表格转文本）"
+    },
+    {
+      "name": "relation_type_description_text",
+      "description": "关系类型及其定义描述（文本或表格转文本）"
+    }
+  ]
+}

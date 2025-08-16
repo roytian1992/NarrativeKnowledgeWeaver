@@ -1,0 +1,13 @@
+{
+  "id": "parse_entity_schema_prompt",
+  "category": "regular_function",
+  "name": "背景驱动实体Schema生成（含精简最小示例）",
+  "description": "读取背景信息，自主设计贴合语境的实体类型与属性；可合理猜测常见属性但避免过度专业。内含精简最小示例（Character/Object/Event/Location/Concept）作为参考。只返回包含 entities 的 JSON。",
+  "template": "请阅读洞见文本和【背景信息】，根据你的理解设计一套实体 Schema，并仅输出一个包含 `entities` 键的 JSON 对象（不要输出解释或 Markdown）。\n\n【原则】\n- 类型命名：英文单数、TitleCase（如 Character、Organization、Event）。\n- 属性命名：英文小写+下划线（如 name, category, status, start_time）。\n- 每个类型包含：`type`、`description`（一句中文定义）、`properties`（为该类型设计 3–6 个常见属性；优先通用、日常化字段名；不确定可在中文说明末尾标注“（可选）”）。\n- 避免实现细节字段（如 id/embedding/vector），不输出关系或嵌套结构。\n- 背景信息很少时，至少覆盖最小示例中的五类（Character/Object/Event/Location/Concept）；信息充分时可增补贴合语境的新类型，但避免同义冗余。\n\n【Minimal Example（示意，勿照抄；属性精简版）】\n```json\n{{\n  \"entities\": [\n    {{\n      \"type\": \"Character\",\n      \"description\": \"在设定中可被识别并参与行动的个人或群体代表。\",\n      \"properties\": {{ \"name\": \"姓名/称呼\", \"role\": \"角色/身份（可选）\" }}\n    }},\n    {{\n      \"type\": \"Object\",\n      \"description\": \"在背景中产生作用的物品、装备或系统。\",\n      \"properties\": {{ \"name\": \"名称\", \"category\": \"类别（可选）\" }}\n    }},\n    {{\n      \"type\": \"Event\",\n      \"description\": \"影响进程的事件或节点，具有时间与影响。\",\n      \"properties\": {{ \"title\": \"事件标题\", \"summary\": \"一句话概述\" }}\n    }},\n    {{\n      \"type\": \"Location\",\n      \"description\": \"背景中的地点、场景或设施。\",\n      \"properties\": {{ \"name\": \"地点名称\", \"category\": \"类型（可选）\" }}\n    }},\n    {{\n      \"type\": \"Concept\",\n      \"description\": \"抽象或群体性概念，如组织/计划/学说等。\",\n      \"properties\": {{ \"name\": \"名称\", \"definition\": \"一句话定义\" }}\n    }}\n  ]\n}}\n```\n\n【当前的背景信息】\n{current_background}\n\n【输出格式（仅此 JSON）】\n```json\n{{\n  \"entities\": [\n    {{ \"type\": \"...\", \"description\": \"...\", \"properties\": {{ \"name\": \"...\", \"...\": \"...\" }} }}\n  ]\n}}\n```",
+  "variables": [
+	  {
+      "name": "current_background",
+      "description": "当前的背景信息。"
+    }
+  ]
+}

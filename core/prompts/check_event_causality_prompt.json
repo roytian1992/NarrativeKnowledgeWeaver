@@ -1,0 +1,17 @@
+{
+  "id": "check_event_relation_min3_cot_v2",
+  "category": "cot_reasoning",
+  "name": "事件关系判定（3类+时间顺序，思维链严格版）",
+  "description": "在 CAUSES / INDIRECT_CAUSES / PART_OF / NONE 四选一的极简边型下进行严格的思维链判定；推理仅用于内部，最终只输出 JSON。",
+  "template": "你是一位事件图建模专家。请进行严谨的逐步推理，但把推理全部保留在内部，最终只输出规范 JSON（不要外显推理过程）。\n\n【任务目标】\n- 在以下关系中做出唯一判定：CAUSES、INDIRECT_CAUSE、PART_OF，或 NONE（证据不足/无关）。\n- 单独给出时间先后（E1_before_E2 / E2_before_E1 / Overlap_or_Simultaneous / Unknown）。\n\n【输入】\n【事件一】\n{event_1_info}\n\n【事件二】\n{event_2_info}\n\n【思维链草稿】\n步骤0｜信息对齐：归纳两事件的名称、时间线索、地点、参与者与关键语句；若时间缺失，标记为未知。\n步骤1｜时间先后初判：依据明确时间点、相对词（先/后/随后/期间/同时）、叙事顺序，得到四态之一；若证据冲突，标记为 Unknown。\n步骤2｜从属/阶段判定（优先门）：若E1为E2的步骤/环节/阶段，或时间包络显示E1高度被E2覆盖，或出现“期间/步骤/阶段/环节/过程/实施/准备/收尾”等强阶段标记，则决策=PART_OF，停止后续因果判定。\n步骤3｜间接因果判定：若E1与E2的关联必须依赖独立中介/条件才能成立（去掉中介则不成立），或E1仅提供许可/资源而非直接触发，则倾向INDIRECT_CAUSE；若同时存在强直接触发线索，转入步骤4比对强弱。\n步骤4｜直接因果判定：若出现“导致/引发/使得/从而/以致/阻止/避免”等触发/抑制词，且时间呈前后相继，并且不依赖关键中介，则决策=CAUSES。\n步骤5｜非因果替代理由排查：若更像共同上游、并列/相关、对比/转折，或仅为解释/回顾信息，则判NONE。\n步骤6｜冲突消解与唯一性：若多条路径同时成立，按优先级裁决：PART_OF ＞ INDIRECT_CAUSE ＞ CAUSES ＞ NONE。若证据弱且不确定，选NONE。\n步骤7｜置信度标定：以证据强度（触发词、时间清晰度、语义一致性）正向计分；以冲突/缺失/含糊负向计分，得到0–1区间的confidence。\n步骤8｜输出准备：用20–40字撰写reason（只给结论性依据，不暴露推理细节）。然后停止思考，只输出JSON。\n\n【输出格式（严格遵循）】\n{{\n  \"relation\": \"CAUSES | INDIRECT_CAUSES | PART_OF | NONE\",\n  \"temporal_order\": \"E1_before_E2 | E2_before_E1 | Overlap_or_Simultaneous | Unknown\",\n  \"reason\": \"20–40字结论性依据，不外显推理细节\",\n  \"confidence\": 0.0\n}}\n\n只输出上述 JSON，不输出额外文字。",
+  "variables": [
+    {
+      "name": "event_1_info",
+      "description": "事件一的描述信息（名称、时间、地点、参与者、背景、类型、证据片段等）"
+    },
+    {
+      "name": "event_2_info",
+      "description": "事件二的描述信息（名称、时间、地点、参与者、背景、类型、证据片段等）"
+    }
+  ]
+}

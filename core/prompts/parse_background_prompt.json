@@ -1,0 +1,10 @@
+{
+  "id": "parse_background_only",
+  "category": "regular_function",
+  "name": "抽取背景信息（叙事风格·支持增量更新）",
+  "description": "生成一段叙事风格的背景简介",
+  "template": "阅读洞见文本，按要求生成一个 JSON。\n\n【目标】\n- 产出书籍/剧本简介风格的背景摘要（120–220字），单段落、行文连贯，突出核心计划/冲突与关键线索。\n- 如提供上一版背景（previous_background），在不违背本次文本事实的前提下进行最小修改更新：保留有效信息、合并冗余、统一术语。\n\n【规则】\n1) 规范化上一版：若 previous_background 为空、仅空白，或为“无/NULL/None”（大小写不敏感），视为未提供上一版。\n2) 事实优先：不得捏造两方都未出现的信息。\n3) 风格约束：避免罗列和口号化表达；减少时间线堆砌；保持专有名词一致。\n\n仅输出顶层键 background。\n\n【上一版背景（可为空或“无”）】\n{current_background}\n\n【输出格式】\n```json\n{\n  \"background\": \"...\"\n}\n```",
+  "variables": [
+    { "name": "current_background", "description": "上一版背景文本；可为空串或“无”，表示没有上一版。" }
+  ]
+}

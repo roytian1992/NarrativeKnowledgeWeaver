@@ -1,0 +1,17 @@
+{
+  "id": "extract_entities_prompt",
+  "category": "regular_function",
+  "name": "实体抽取提示",
+  "description": "用于提示LLM进行实体抽取",
+  "template": "从以下文本中识别并抽取实体，按照以下格式严格返回：\n\n**实体类型 (type 字段) 只能使用以下英文枚举值，禁止自定义、翻译或扩展，禁止使用中文类型名：**\n\n{entity_type_description_text}\n\n**严格要求：**\n- type 字段必须完全等于上述枚举值之一，大小写敏感。\n- 如果不确定实体类型，默认使用 Concept。\n- 禁止生成非枚举值、拼音、中文类型名、首字母小写、驼峰拼写等错误。\n\n**scope 字段说明：**\n- scope 字段用于标注该实体的语义范围，仅可为 \"global\" 或 \"local\"，必须包含。\n  - 若该实体具有明确的语义身份、具名、跨章节/场景复现的可能性（如具体的出现名字的人物、概念），则 scope 为 \"global\"；\n  - 若该实体为一次性泛指、依赖上下文、不具备独立身份（如“一名研究员”、“一位乘客”、“一个箱子”），则 scope 为 \"local\"。\n\n**其他要求：**\n- 若无别名，可返回空数组 aliases: []。\n- 抽取时应围绕事件展开，优先识别参与事件的角色、使用的物体、涉及的组织与地点。\n- 忽略无效物体、环境描写或自然现象（如“海浪”、“尘土”、“光芒”）。\n- 禁止添加自然语言解释、注释或额外说明。\n\n文本内容：\n{text}\n\n请严格按以下 JSON 格式返回：\n```json\n{\n  \"entities\": [\n    {\n      \"name\": \"实体名称\",\n      \"type\": \"实体类型 (英文枚举值之一)\",\n      \"scope\": \"global 或 local\",\n      \"description\": \"实体的简单描述和抽取的依据\",\n      \"aliases\": [\"别名1\", \"别名2\"]\n    }\n  ]\n}\n```",
+  "variables": [
+    {
+      "name": "text",
+      "description": "待抽取的文本内容"
+    },
+    {
+      "name": "entity_type_description_text",
+      "description": "实体类型列表（自动生成，英文枚举值 + 描述，换行分隔）"
+    }
+  ]
+}

@@ -8,14 +8,14 @@ KAG-Builder 主程序
 import argparse
 import sys
 from pathlib import Path
-from kag.builder.narrative_graph_builder import EventCausalityBuilder
+from core.builder.narrative_graph_builder import EventCausalityBuilder
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from kag import KAGConfig
-from kag.builder.graph_builder import KnowledgeGraphBuilder
+from core import KAGConfig
+from core.builder.graph_builder import KnowledgeGraphBuilder
 import os
 import logging
 
@@ -39,16 +39,6 @@ def main():
         help="配置文件路径"
     )
     parser.add_argument(
-        "--background", "-b",
-        default="",
-        help="术语列表和背景信息"
-    )
-    parser.add_argument(
-        "--doc_type", "-t",
-        default="novel",
-        help="文本类型"
-    )
-    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="显示详细输出"
@@ -62,32 +52,31 @@ def main():
     
     # try:
     # 加载配置
-    if Path(args.config).exists():
-        config = KAGConfig.from_yaml(args.config)
-        print(f"🔧 使用配置文件: {config}")
-        if args.verbose:
-            print(f"✅ 从 {args.config} 加载配置")
-    else:
-        config = KAGConfig.from_env()
-        if args.verbose:
-            print("✅ 从环境变量加载配置")
+    config = KAGConfig.from_yaml(args.config)
+    print(f"🔧 使用配置文件: {config}")
+    if args.verbose:
+        print(f"✅ 从 {args.config} 加载配置")
+
     
     # 创建构建器
-    builder = KnowledgeGraphBuilder(config, doc_type=args.doc_type, background_path=args.background)
+    builder = KnowledgeGraphBuilder(config)
     
     # 构建知识图谱
     # builder.prepare_chunks(args.input, verbose=args.verbose) # 文本准备阶段：长文本拆分和元数据标注
-    builder.store_chunks(verbose=args.verbose) # 保存近向量数据库和本地json
-    builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
-    builder.extract_entity_attributes(verbose=args.verbose) # 实体消歧和属性抽取
-    kg = builder.build_graph_from_results(verbose=args.verbose)
-    builder.prepare_graph_embeddings()
+    # builder.store_chunks(verbose=args.verbose) # 保存近向量数据库和本地json
+    # builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.3) # from_scratch 的时候建议 0.35
+    # builder.initialize_agents()
+    # builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
+    # builder.run_extraction_refinement(verbose=args.verbose)
+    # builder.extract_entity_attributes(verbose=args.verbose) # 实体消歧和属性抽取
+    # kg = builder.build_graph_from_results(verbose=args.verbose)
+    # builder.prepare_graph_embeddings()
     
-    # event_graph_builder = EventCausalityBuilder(config, doc_type=args.doc_type, background_path=args.background)
-    # event_graph_builder.initialize() # 初始化事件情节图
-    # event_graph_builder.build_event_causality_graph() # 开始构建事件因果图
-    # event_graph_builder.run_SABER() # 运行断环、去冗余算法
-    # event_graph_builder.build_event_plot_graph() # 构建情节-事件图
+    event_graph_builder = EventCausalityBuilder(config)
+    event_graph_builder.initialize() # 初始化事件情节图
+    event_graph_builder.build_event_causality_graph() # 开始构建事件因果图
+    event_graph_builder.run_SABER() # 运行断环、去冗余算法
+    event_graph_builder.build_event_plot_graph() # 构建情节-事件图
     # event_graph_builder.generate_plot_relations() # 抽取情节间关系
     
     # # 输出统计信息
