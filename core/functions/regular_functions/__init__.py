@@ -10,7 +10,7 @@ from .metadata_parser import MetadataParser
 from .paragraph_summarizer import ParagraphSummarizer
 from .redundancy_evaluation import RedundancyEvaluator
 from .entity_merge import EntityMerger
-from .plot_generation import PlotGenerator
+from .plot_unit_extraction import PlotUnitExtractor
 from .plot_relation_extraction import PlotRelationExtractor
 from .insight_extraction import InsightExtractor
 from .schema_pruning import SchemaPruner
@@ -22,6 +22,7 @@ from .abbreviation_parser import AbbreviationParser
 from .entity_type_validation import EntityTypeValidator
 from .entity_scope_validation import EntityScopeValidator
 from .event_context_generation import EventContextGenerator
+from .schema_feedback_summarizer import FeedbackSummarizer
 
 
 __all__ = [
@@ -36,7 +37,7 @@ __all__ = [
     "ParagraphSummarizer",
     "RedundancyEvaluator",
     "EntityMerger",
-    "PlotGenerator",
+    "PlotUnitExtractor",
     "PlotRelationExtractor",
     "InsightExtractor",
     "SchemaPruner",
@@ -47,6 +48,7 @@ __all__ = [
     "EntitySchemaParser",
     "EntityTypeValidator",
     "EntityScopeValidator",
-    "EventContextGenerator"
+    "EventContextGenerator",
+    "FeedbackSummarizer"
 ]
 

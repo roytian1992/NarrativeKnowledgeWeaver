@@ -1,17 +1,17 @@
 {
-  "id": "extract_plot_relation_prompt",
+  "id": "extract_plot_relation_prompt_v2",
   "category": "regular_function",
-  "name": "情节关系判定提示词（正向推动 & 冲突，含方向）",
-  "description": "判断两个情节之间是否存在正向推动（PLOT_CONTRIBUTES_TO）或目标冲突（PLOT_CONFLICTS_WITH）关系，并给出原因说明与方向信息。",
-  "template": "你是一位叙事结构分析专家，任务是根据提供的两个情节信息，判断它们之间是否存在以下关系：\n\n1. **PLOT_CONTRIBUTES_TO**（有向）：情节A的结果或部分事件，对情节B的发生起到正向推动或促进作用（直接因果或关键条件提供均可）。\n2. **PLOT_CONFLICTS_WITH**（无向）：情节A与情节B在目标、利益、立场上存在直接对立，互相阻碍（例如A的目标等于B的冲突，或两者目标方向相反）。\n\n---\n\n## 输入信息\n【情节A】\n{plot_A_info}\n\n【情节B】\n{plot_B_info}\n\n---\n\n## 判定步骤（请严格按顺序推理）：\n1. **分析目标、冲突、主题、结局**：\n   - 判断它们的目标是否一致、互补、相反或无关。\n   - 判断它们的冲突是否与对方的目标相关。\n\n2. **检查事件因果关系**：\n   - 情节A中的事件是否为情节B的事件提供条件、资源或情境推动？\n   - 如果没有直接因果，但在叙事逻辑上B依赖于A的结果，也可判为推动关系。\n\n3. **冲突性分析**：\n   - 如果A和B的目标在方向上对立，或一方的目标是另一方的障碍，则为冲突关系。\n\n4. **方向判断**（仅适用于 PLOT_CONTRIBUTES_TO）：\n   - 如果是推动关系，请判断方向应为 A→B 还是 B→A。\n   - 如果是冲突关系，方向填 null。\n\n5. **最终判定**：\n   - `relation_type` 必须是 `PLOT_CONTRIBUTES_TO`、`PLOT_CONFLICTS_WITH` 或 `None`（无明显推动或冲突关系）。\n\n---\n\n## 输出格式（严格遵循）：\n```json\n{\n  \"relation_type\": \"PLOT_CONTRIBUTES_TO / PLOT_CONFLICTS_WITH / None\",\n  \"direction\": \"A->B / B->A / null\",\n  \"reason\": \"简要说明判定理由，基于goal、conflict、事件因果等信息。\",\n  \"confidence\": 0.85\n}\n```\n\n注意事项：\n- `relation_type` 严格取三种值之一。\n- `direction` 在 `PLOT_CONTRIBUTES_TO` 时为 \"A->B\" 或 \"B->A\"，`PLOT_CONFLICTS_WITH` 或 `None` 时为 null。\n- `confidence` 为 0 到 1 的小数。\n- 严格输出 JSON 对象，不输出额外文字。",
+  "name": "情节关系判定提示词（必要/推进/阻断/化解/冲突/平行，含方向）",
+  "description": "判断两个情节之间是否存在：PLOT_PREREQUISITE_FOR、PLOT_ADVANCES、PLOT_BLOCKS、PLOT_RESOLVES（均有向），以及 PLOT_CONFLICTS_WITH、PLOT_PARALLELS（均无向）；输出原因、方向与置信度。",
+  "template": "你是一位叙事结构分析专家。任务：基于给定的两个情节信息，判断二者之间的关系，并严格按要求输出 JSON。禁止臆测输入外信息；证据不足时请返回 None。\n\n【关系定义】\n- PLOT_PREREQUISITE_FOR（有向）：情节A的结果是情节B的必要条件；没有A，B无法成立。\n- PLOT_ADVANCES（有向）：情节A推动/促进情节B（提供线索/资源/局面/合理化），但非必要条件。\n- PLOT_BLOCKS（有向）：情节A对情节B造成障碍/延迟/破坏，使其目标更难实现。\n- PLOT_RESOLVES（有向）：情节A化解/解决情节B的主要冲突。\n- PLOT_CONFLICTS_WITH（无向）：两情节在目标/利益/立场上直接对立，互为阻力。\n- PLOT_PARALLELS（无向）：两情节在主题/结构上相似，但人物/地点/因果联系较弱，无明显相互作用。\n\n【输入】\n【情节A】\n{plot_A_info}\n\n【情节B】\n{plot_B_info}\n\n【判定步骤（请按顺序思考并据此得出结论）】\n1) 要素对齐：抽取双方的 goal、conflict、theme、resolution、时间范围、主要人物/地点。\n2) 有向关系检测：\n   - PREREQUISITE_FOR：B 对 A 的结果存在必要依赖；去掉A则B无法进行/成立。\n   - ADVANCES：A 的结果/信息/局面提升 B 的发生概率或合理性（非必要）。\n   - BLOCKS：A 的结果与 B 的 goal 冲突或提高难度（资源损失、规则变化、时间受限等）。\n   - RESOLVES：A 的 resolution 正面对应并消解 B 的 conflict。\n3) 无向关系检测：\n   - CONFLICTS_WITH：目标对立或一方目标≈另一方冲突。\n   - PARALLELS：主题/结构高相似，且人物/地点重叠低、无明显因果。\n4) 方向判定：仅当结论为有向关系时给出 A->B 或 B->A；无向关系或 None 时 direction 为 null。\n5) 优先级去歧义（如多条同时成立，取优先级最高者）：\n   PREREQUISITE_FOR > RESOLVES > BLOCKS > ADVANCES > CONFLICTS_WITH > PARALLELS > None。\n\n【输出格式（严格遵循）】\n请只输出以下 JSON 对象，不要包含任何额外文字：\n```json\n{\n  \"relation_type\": \"PLOT_PREREQUISITE_FOR / PLOT_ADVANCES / PLOT_BLOCKS / PLOT_RESOLVES / PLOT_CONFLICTS_WITH / PLOT_PARALLELS / None\",\n  \"direction\": \"A->B / B->A / null\",\n  \"reason\": \"3-5句简要说明关键依据，引用双方的goal/conflict/resolution/时间或人物地点证据。只用输入信息，不要臆测。\",\n  \"confidence\": 0.0\n}\n```\n注意事项：\n- 当选择 PLOT_CONFLICTS_WITH 或 PLOT_PARALLELS 或 None 时，direction 必须为 null（JSON 的 null）。\n- 证据不足或无法判定时，relation_type= \"None\"、direction=null，并在 reason 中说明不足之处。\n- 严格输出 JSON 对象；confidence 为 [0,1] 的小数。",
   "variables": [
     {
       "name": "plot_A_info",
-      "description": "情节A的完整信息（包括标题、摘要、goal、conflict、theme、resolution、主要事件简述等）"
+      "description": "情节A的完整信息（标题、摘要、goal、conflict、theme、resolution、主要事件/时间/人物/地点等）"
     },
     {
       "name": "plot_B_info",
-      "description": "情节B的完整信息（包括标题、摘要、goal、conflict、theme、resolution、主要事件简述等）"
+      "description": "情节B的完整信息（标题、摘要、goal、conflict、theme、resolution、主要事件/时间/人物/地点等）"
     }
   ]
 }

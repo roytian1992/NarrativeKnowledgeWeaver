@@ -1,3 +1,7 @@
+"""
+语义分割器
+使用增强的JSON处理工具
+"""
 from typing import Dict, Any, List
 import json
 import logging
@@ -7,8 +11,9 @@ from core.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
-class EntitySchemaParser:
+class FeedbackSummarizer:
     """
+    语义分割器
     确保最终返回的是correct_json_format处理后的结果
     """
     
@@ -17,7 +22,7 @@ class EntitySchemaParser:
         self.llm = llm
         
         # 定义验证规则
-        self.required_fields = ["entities"]
+        self.required_fields = ["feedbacks"]
         self.field_validators = {}
         
         # 修复提示词模板
@@ -25,7 +30,7 @@ class EntitySchemaParser:
     
     def call(self, params: str, **kwargs) -> str:
         """
-        调用实体提取，保证返回correct_json_format处理后的结果
+        调用语义分割，保证返回correct_json_format处理后的结果
         
         Args:
             params: 参数字符串
@@ -37,68 +42,56 @@ class EntitySchemaParser:
         try:
             # 解析参数
             params_dict = json.loads(params)
-            text = params_dict.get("text", "")
-            current_schema = params_dict.get("current_schema", "")
-            feedbacks = params_dict.get("feedbacks", "")
-            task_goals = params_dict.get("task_goals", "")
-            
+            context = params_dict.get("context", "")
+            max_items = params_dict.get("max_items", 20)
+
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
             # 即使是错误结果，也要经过correct_json_format处理
-            error_result = {"error": f"参数解析失败: {str(e)}", "entities":{}}
+            error_result = {"error": f"参数解析失败: {str(e)}", "feedbacks": []}
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-                
+        
         try:
-            # 构造初始消息
+            # 构建提示词变量
+            variables = {
+                'context': context,
+                'max_items': max_items,
+            }
             messages = []
-            background_info = ""
-            if task_goals:
-                background_info += f"你是一个构建知识图谱的专家，请你基于以下一些任务（仅供参考，非硬性要求），思考一下我们的图谱所需要的schema：\n{task_goals}"
-            
-            if current_schema:
-                background_info += f"这是当前使用的schema：\n{current_schema}\n请在后续的任务中，基于这个进行调整。"
-                if feedbacks:
-                    background_info += f"\n这是针对当前schema的一些建议：\n{feedbacks}"
-            if not background_info:
-                background_info = "无"
-                
-            messages.append({"role": "user", "content": f"以下是阅读时的一些相关的洞见：\n{text}"})
-                
-            prompt_id = "parse_entity_schema_prompt"
-            variables = {"current_background": background_info}
-                
-            prompt_text = self.prompt_loader.render_prompt(
-                prompt_id=prompt_id,
-                variables=variables
-            )
+            # print("[CHECK]读入参数： ", variables)
+            # 渲染提示词
+            prompt_text = self.prompt_loader.render_prompt('summarize_feedbacks_prompt', variables)
             # print("[CHECK] prompt_text: ", prompt_text)
-
+            # 构建消息
             messages.append({"role": "user", "content": prompt_text})
-            
+            # print("[CHECK] prompt_text: ", prompt_text)
             # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
             corrected_json, status = process_with_format_guarantee(
                 llm_client=self.llm,
                 messages=messages,
                 required_fields=self.required_fields,
                 field_validators=self.field_validators,
-                max_retries=2,
-                repair_template=self.repair_template
+                max_retries=1,
+                repair_template=self.repair_template,
+                enable_thinking=False
             )
+            
+            # print("[CHECK] 检查结果： ", corrected_json)
+            logger.info("提取摘要完成，返回格式化后的JSON")
             if status == "success":
-                logger.info("entity schema提取完成，返回格式化后的JSON")
                 return corrected_json
             else:
                 error_result = {
-                    "error": f"entity schema提取失败",
-                    "entities":{}
+                    "error": f"提取摘要失败，返回整段文本",
+                    "feedbacks": []
                 }
                 return correct_json_format(json.dumps(error_result, ensure_ascii=False))
             
         except Exception as e:
-            logger.error(f"entity schema提取过程中出现异常: {e}")
+            logger.error(f"提取摘要过程中出现异常: {e}")
             error_result = {
-                "error": f"entity schema提取失败: {str(e)}",
-                "entities":{}
+                "error": f"提取摘要失败: {str(e)}",
+                "feedbacks": []
             }
             return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 

@@ -8,7 +8,7 @@ from core.utils.format import correct_json_format
 logger = logging.getLogger(__name__)
 
 
-class PlotGenerator:
+class PlotUnitExtractor:
     """
     事件因果关系检查工具：输入两个事件的描述，判断是否存在因果关系，并输出置信度分类结果。
     输出 JSON 格式：
@@ -62,7 +62,7 @@ class PlotGenerator:
 
             # 用户提示词（任务具体内容）
             prompt_text = self.prompt_loader.render_prompt(
-                prompt_id="generate_plot_prompt",
+                prompt_id="extract_plot_unit_prompt",
                 variables={
                     "event_chain_info": event_chain_info,
                 }

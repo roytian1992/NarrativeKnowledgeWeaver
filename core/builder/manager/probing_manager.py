@@ -6,7 +6,7 @@
 import json
 from typing import Dict, Any
 from core.utils.config import KAGConfig
-from core.functions.regular_functions import SchemaPruner, SchemaReflector, BackgroundParser, RelationSchemaParser, EntitySchemaParser, AbbreviationParser
+from core.functions.regular_functions import SchemaPruner, SchemaReflector, BackgroundParser, RelationSchemaParser, EntitySchemaParser, AbbreviationParser, FeedbackSummarizer
 
 from core.utils.prompt_loader import PromptLoader
 import os
@@ -25,6 +25,7 @@ class GraphProber:
         self.abbreviation_parser = AbbreviationParser(self.prompt_loader, self.llm)
         self.relation_schema_parser = RelationSchemaParser(self.prompt_loader, self.llm)
         self.entity_schema_parser = EntitySchemaParser(self.prompt_loader, self.llm)
+        self.feedback_summarizer = FeedbackSummarizer(self.prompt_loader, self.llm)
 
     def update_background(
         self,
@@ -62,12 +63,14 @@ class GraphProber:
         text: str,
         current_schema: str = None,
         feedbacks: str = None,
+        task_goals: str = None,
     ) -> str:
         result = self.entity_schema_parser.call(
             params=json.dumps({
                 "text": text,
                 "current_schema": current_schema,
-                "feedbacks": feedbacks
+                "feedbacks": feedbacks,
+                "task_goals": task_goals,
             })
         )
         # print("[CHECK] entity_schema: ", result)
@@ -79,12 +82,14 @@ class GraphProber:
         entity_schema: str = None,
         current_schema: str = None, 
         feedbacks: str = None,
+        task_goals: str = None,
     ) -> str:
         params = {
             "text": text,
             "entity_schema": entity_schema,
             "current_schema": current_schema,
-            "feedbacks": feedbacks
+            "feedbacks": feedbacks,
+            "task_goals": task_goals,
         }
         result = self.relation_schema_parser.call(
             params=json.dumps(params)
@@ -120,4 +125,17 @@ class GraphProber:
             "feedbacks": feedbacks
         }
         result = self.schema_reflector.call(params=json.dumps(params))
+        return result
+    
+    def summarize_feedbacks(
+        self,
+        context: str,
+        max_items: int = 8,
+    ) -> str:
+   
+        params = {
+            "context": context,
+            "max_items": max_items
+        }
+        result = self.feedback_summarizer.call(params=json.dumps(params))
         return result

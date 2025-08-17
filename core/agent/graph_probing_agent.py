@@ -11,8 +11,10 @@ from core.model_providers.openai_rerank import OpenAIRerankModel
 from collections import Counter
 from core.utils.prompt_loader import PromptLoader
 import os
+from pathlib import Path
 from tqdm import tqdm
 from ..utils.config import KAGConfig
+import re
 
 class GraphProbingAgent:
     def __init__(self, config: KAGConfig, llm, reflector):
@@ -28,11 +30,17 @@ class GraphProbingAgent:
         self.graph = self._build_graph()
         self.feedbacks = []
         self.score_threshold = self.config.agent.score_threshold
+        self.relation_prune_threshold = self.config.probing.relation_prune_threshold
+        self.entity_prune_threshold = self.config.probing.entity_prune_threshold
         self.max_workers = self.config.probing.max_workers
-        self.max_retries = self.config.agent.max_retries
+        self.max_retries = self.config.probing.max_retries
         self.experience_limit = self.config.probing.experience_limit
         self.probing_mode = self.config.probing.probing_mode
         self.refine_background = self.config.probing.refine_background
+        if self.config.probing.task_goal:
+            self.task_goals = "\n".join(self.load_goals(self.config.probing.task_goal))
+        else:
+            self.task_goals = ""
        
     def construct_system_prompt(self, background, abbreviations):
         
@@ -45,6 +53,20 @@ class GraphProbingAgent:
             
         system_prompt_text = self.prompt_loader.render_prompt(system_prompt_id, {"background_info": background_info})
         return system_prompt_text
+    
+    def load_goals(self, path: str):
+        # 读文本（utf-8-sig 兼容带 BOM 的文件）
+        text = Path(path).read_text(encoding="utf-8-sig")
+        goals = []
+        for line in text.splitlines():
+            s = line.strip()
+            if not s or s.startswith("#"):  # 跳过空行/注释
+                continue
+            # 去掉行首序号/符号（如：1. / 2) / 3、/ 4: / - ）
+            s = re.sub(r'^\s*(?:[-•]+|\d+[.)、:：]?)\s*', '', s)
+            goals.append(s)
+        # 去重且保序
+        return list(dict.fromkeys(goals))
     
     def get_background_info(self, background, abbreviations):
         """将背景与术语列表渲染为 Markdown。
@@ -102,7 +124,6 @@ class GraphProbingAgent:
             return bg_block or abbr_block
 
 
-
     def load_schema(self, schema):
         entity_types = schema.get("entities")
         relation_type_groups = schema.get("relations")
@@ -124,8 +145,10 @@ class GraphProbingAgent:
         
         related_insights_for_background = self.reranker.rerank(query="背景信息、故事、情节、事件", 
                                                                documents=documents, top_n=min(self.experience_limit, len(documents)))
+        
         related_insights_for_background = [insight["document"]["text"] for insight in related_insights_for_background \
                                                 if insight["relevance_score"] >= 0.3]
+        related_insights_for_background += ["情节/Plot这种实体类型不需要抽取，会在后续的任务中基于抽取的事件/Event进行构建。"]
         
         documents = self.reflector.insight_memory.get(query="术语、缩写", k=2*self.experience_limit)
         documents = [doc.page_content for doc in documents]
@@ -149,10 +172,10 @@ class GraphProbingAgent:
         related_insights_for_relation_schema = [insight["document"]["text"] for insight in related_insights_for_relation_schema \
                                                 if insight["relevance_score"] >= 0.5]
         
-        print({"background_insights": len(related_insights_for_background),
-            "abbreviation_insights":  len(related_insights_for_abbreviations),
-            "entity_schema_insights": len(related_insights_for_entity_schema),
-            "relation_schema_insights": len(related_insights_for_relation_schema)})
+        # print({"background_insights": len(related_insights_for_background),
+        #     "abbreviation_insights":  len(related_insights_for_abbreviations),
+        #     "entity_schema_insights": len(related_insights_for_entity_schema),
+        #     "relation_schema_insights": len(related_insights_for_relation_schema)})
         
         return {
             **state,
@@ -191,37 +214,42 @@ class GraphProbingAgent:
             # print("[CHECK] new_abbreviations: ", new_abbreviations)
                     
         else:
-            new_background = current_background_info
-            new_abbreviations = current_abbreviations
+            new_background = state.get("background", "")
+            new_abbreviations = state.get("abbreviations", [])
             
         current_schema = state.get("schema", {})
         # 更新实体schema
         entity_schema_insights = state.get("entity_schema_insights", "")
         current_entity_schema = current_schema.get("entities", {})
-        if self.feedbacks: 
-            entity_schema_feedbacks = self.reranker.rerank(query="寻找与entity schema相关的建议", documents=self.feedbacks, top_n=100)
-            entity_schema_feedbacks = [state.get("reason", "")] + [doc["document"]["text"] for doc in entity_schema_feedbacks if doc["relevance_score"] >= 0.5]
-            entity_schema_feedbacks = "\n".join(entity_schema_feedbacks)
-        else: 
-            entity_schema_feedbacks = ""
+        # if self.feedbacks: 
+        #     entity_schema_feedbacks = self.reranker.rerank(query="寻找与entity schema相关的建议", documents=self.feedbacks, top_n=100)
+        #     entity_schema_feedbacks = [state.get("reason", "")] + [doc["document"]["text"] for doc in entity_schema_feedbacks if doc["relevance_score"] >= 0.5]
+        #     entity_schema_feedbacks = "\n".join(entity_schema_feedbacks)
+        # else: 
+        #     entity_schema_feedbacks = ""
+        entity_schema_feedbacks = "\n".join(self.feedbacks)
+            
         result = self.prober.update_entity_schema(text=entity_schema_insights, 
                                                   feedbacks=entity_schema_feedbacks, 
-                                                  current_schema=json.dumps(current_entity_schema, indent=2, ensure_ascii=False))
+                                                  current_schema=json.dumps(current_entity_schema, indent=2, ensure_ascii=False),
+                                                  task_goals=self.task_goals)
         result = json.loads(correct_json_format(result))
         new_entity_schema = result.get("entities", [])
               
         # 更新关系schema
         relation_schema_insights = state.get("relation_schema_insights", "")
         current_relation_schema = current_schema.get("relations", {})
-        if self.feedbacks: 
-            relation_schema_feedbacks = self.reranker.rerank(query="寻找与relation schema相关的建议", documents=self.feedbacks, top_n=100)
-            relation_schema_feedbacks = [state.get("reason", "")] + [doc["document"]["text"] for doc in relation_schema_feedbacks if doc["relevance_score"] >= 0.5]
-            relation_schema_feedbacks = "\n".join(relation_schema_feedbacks)
-        else: 
-            relation_schema_feedbacks = ""
+        # if self.feedbacks: 
+        #     relation_schema_feedbacks = self.reranker.rerank(query="寻找与relation schema相关的建议", documents=self.feedbacks, top_n=100)
+        #     relation_schema_feedbacks = [state.get("reason", "")] + [doc["document"]["text"] for doc in relation_schema_feedbacks if doc["relevance_score"] >= 0.5]
+        #     relation_schema_feedbacks = "\n".join(relation_schema_feedbacks)
+        # else: 
+        #     relation_schema_feedbacks = ""
+        relation_schema_feedbacks = "\n".join(self.feedbacks)
         result = self.prober.update_relation_schema(text=relation_schema_insights, 
                                                     feedbacks=relation_schema_feedbacks, 
-                                                    current_schema=json.dumps(current_relation_schema, indent=2, ensure_ascii=False))
+                                                    current_schema=json.dumps(current_relation_schema, indent=2, ensure_ascii=False),
+                                                    task_goals=self.task_goals)
         result = json.loads(correct_json_format(result))
         new_relation_schema = result.get("relations", [])
         
@@ -259,17 +287,56 @@ class GraphProbingAgent:
                 
         entity_type_counter = Counter(entity_types)
         relation_type_counter = Counter(relation_types)
+
+        entity_total = len(entity_types)
+        relation_total = len(relation_types)
+
+        # THRESHOLD = self.prune_threshold  # 少于 5% 的类型将被丢弃
+
+        # ------- 计算需丢弃的类型（按占比而非次数） -------
+        if entity_total > 0:
+            entity_types_to_drop = [
+                key for key, cnt in entity_type_counter.items()
+                if (cnt / entity_total) < self.entity_prune_threshold
+            ]
+        else:
+            entity_types_to_drop = []
+
+        if relation_total > 0:
+            relation_types_to_drop = [
+                key for key, cnt in relation_type_counter.items()
+                if (cnt / relation_total) < self.relation_prune_threshold
+            ]
+        else:
+            relation_types_to_drop = []
+
+        # ------- 分布文本（维持你原有的比例=小数形式）-------
         entity_type_distribution = ""
-        for _type in entity_type_counter:
-            entity_type_distribution += f"实体类型 {_type} 数量为：{entity_type_counter[_type]}  比例为：{round(entity_type_counter[_type]/len(entity_types), 3)}\n"            
+        if entity_total > 0:
+            for _type, cnt in entity_type_counter.items():
+                entity_type_distribution += (
+                    f"实体类型 {_type} 数量为：{cnt}  比例为：{round(cnt / entity_total, 3)}\n"
+                )
+
         relation_type_distribution = ""
-        for _type in relation_type_counter:
-            relation_type_distribution += f"关系类型 {_type} 数量为：{relation_type_counter[_type]}  比例为：{round(relation_type_counter[_type]/len(relation_types), 3)}\n"            
+        if relation_total > 0:
+            for _type, cnt in relation_type_counter.items():
+                relation_type_distribution += (
+                    f"关系类型 {_type} 数量为：{cnt}  比例为：{round(cnt / relation_total, 3)}\n"
+                )
+        
+        print("entity_types_to_drop：")
+        print(entity_types_to_drop)
+        print("relation_types_to_drop")
+        print(relation_types_to_drop)
+
         
         return {
             **state,
             "entity_type_distribution": entity_type_distribution,
-            "relation_type_distribution": relation_type_distribution
+            "relation_type_distribution": relation_type_distribution,
+            "entity_types_to_drop": entity_types_to_drop,
+            "relation_types_to_drop": relation_types_to_drop,
         }
 
     async def test_extractions_(self, all_documents, system_prompt, schema):
@@ -315,9 +382,28 @@ class GraphProbingAgent:
         score = float(result["score"])
         reason = result["reason"]
         
+        # 删除部分数量小于5%的节点类型和关系类型
+        
+        entities = current_schema.get("entities", [])
+        new_entities = []
+        for ent in entities:
+            if ent["type"] not in state.get("entity_types_to_drop", []):
+                new_entities.append(ent)
+        
+        relations = current_schema.get("relations", {})
+        new_relations = dict()
+        for rel_type in relations:
+            rels = relations[rel_type]
+            new_rels = []
+            for rel in rels:
+                if rel["type"] not in state.get("relation_types_to_drop", []):
+                    new_rels.append(rel)
+            new_relations[rel_type] = new_rels
+        
+        new_schema = {"entities": new_entities, "relations": new_relations}
         best_score = state.get("best_score", 0)
         current_output = {
-            "schema": state["schema"],
+            "schema": new_schema,
             "settings": {"background": state["background"], "abbreviations": state["abbreviations"]}
         }
         
@@ -325,6 +411,16 @@ class GraphProbingAgent:
             best_output = current_output
         else:
             best_output = state.get("best_output", {})
+        
+        
+        # print("[CHECK] 中途产生的建议的数量： ", len(self.feedbacks))
+        all_feadbacks = "\n".join(self.feedbacks)
+        result = self.prober.summarize_feedbacks(context=all_feadbacks, max_items=20)
+        # print("[CHECK]: ", result)
+        self.feedbacks = json.loads(correct_json_format(result)).get("feedbacks", [])
+        # print("[CHECK] 最终建议的数量： ", len(self.feedbacks))
+        self.feedbacks.append(state.get("entity_type_distribution",""))
+        self.feedbacks.append(state.get("relation_type_distribution",""))
         
         return {
             **state,

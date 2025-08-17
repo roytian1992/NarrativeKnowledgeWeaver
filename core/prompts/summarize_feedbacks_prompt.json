@@ -1,0 +1,17 @@
+{
+  "id": "schema_feedback_merge_topn_min",
+  "category": "regular_function",
+  "name": "Schema建议合并TOPN（仅feedbacks）",
+  "description": "对与图Schema相关的大量建议进行筛选、合并、去重与排序",
+  "template": "你是知识图谱构建专家。从输入中提取所有与图Schema（即实体类型和关系类型）相关的建议，完成筛选与合并，但不要在输出中展示任何推理过程。规则：仅聚焦Schema层（实体/关系/属性/约束/命名/粒度/域-值域/方向/基数/不相交/继承等）；将同义或重复项合并为一句话；若存在冲突，保留覆盖更广且可落地者；每条为可执行的精炼句，不含实例级细节或新概念，总数不超过 {max_items} 条。\n\n【输入】\n{context}\n\n【只输出如下JSON，且顶层仅包含 feedbacks】\n```json\n{{\"feedbacks\": [\"问题或建议1\", \"问题或建议2\", \"问题或建议3\", ...]}}```",
+  "variables": [
+    {
+      "name": "context",
+      "description": "原始建议集合文本或JSON（每条建议应含唯一id与文本）"
+    },
+    {
+      "name": "max_items",
+      "description": "需要输出的合并后条目数量（整数）"
+    }
+  ]
+}

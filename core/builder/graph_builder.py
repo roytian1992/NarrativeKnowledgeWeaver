@@ -483,7 +483,7 @@ class KnowledgeGraphBuilder:
         
         base = self.config.storage.knowledge_graph_path
         with open(os.path.join(base, "extraction_results_refined.json"), "w") as f:
-            json.dump(extraction_results, f, ensure_ascii=False)
+            json.dump(extraction_results, f, ensure_ascii=False, indent=2)
         
 
     def extract_entity_attributes(self, verbose: bool = True) -> Dict[str, Entity]:

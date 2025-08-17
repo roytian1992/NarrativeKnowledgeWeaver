@@ -42,6 +42,7 @@ class RelationSchemaParser:
             entity_schema = params_dict.get("entity_chema", "")
             current_schema = params_dict.get("current_schema", "")
             feedbacks = params_dict.get("feedbacks", "")
+            task_goals = params_dict.get("task_goals", "")
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
@@ -53,6 +54,9 @@ class RelationSchemaParser:
             # 构造初始消息
             messages = []
             background_info = ""
+            if task_goals:
+                background_info += f"你是一个构建知识图谱的专家，请你基于以下一些任务（仅供参考，非硬性要求），思考一下我们的图谱所需要的schema：\n{task_goals}"
+            
             if current_schema:
                 background_info += f"这是当前使用的schema：\n{current_schema}\n请在后续的任务中，基于这个进行调整。"
                 if feedbacks:

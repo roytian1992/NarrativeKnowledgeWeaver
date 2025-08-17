@@ -6,6 +6,7 @@
 import json
 import pickle
 import networkx as nx
+import hashlib
 from typing import List, Dict, Tuple, Optional, Any, Set
 from tqdm import tqdm
 import time
@@ -24,7 +25,7 @@ import logging
 from collections import defaultdict
 import os
 from core.builder.graph_builder import DOC_TYPE_META
-import pickle
+
 
 def remove_subset_paths(chains: List[List[str]]) -> List[List[str]]:
     """
@@ -46,7 +47,7 @@ def remove_subset_paths(chains: List[List[str]]) -> List[List[str]]:
 
 
 def jaccard_similarity(set1: Set[str], set2: Set[str]) -> float:
-    """计算两个集合的 Jaccard 相似度"""
+    """计算两个集合的 Jaccard 相似度（用户自定义：|A∩B| / max(|A|, |B|)）"""
     if not set1 and not set2:
         return 1.0
     return len(set1 & set2) / max([len(set1), len(set2)])
@@ -69,6 +70,7 @@ def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> Lis
             filtered.append(chain)
     return filtered
 
+
 def get_frequent_subchains(chains: List[List[str]], min_length: int = 2, min_count: int = 2):
     """
     统计事件链中出现频率较高的连续子链
@@ -77,7 +79,7 @@ def get_frequent_subchains(chains: List[List[str]], min_length: int = 2, min_cou
         min_length: 最短子链长度
         min_count: 最少出现次数（频率阈值）
     Returns:
-        List[Tuple[List[str], int]]  子链及其出现次数
+        List[List[str]]  子链列表（按频率与长度降序）
     """
     counter = Counter()
 
@@ -93,14 +95,14 @@ def get_frequent_subchains(chains: List[List[str]], min_length: int = 2, min_cou
     results = [(list(sub), cnt) for sub, cnt in counter.items() if cnt >= min_count]
     # 按频率排序
     results.sort(key=lambda x: (-x[1], -len(x[0]), x[0]))
-    
+
     return [pair[0] for pair in results]
 
 
 class EventCausalityBuilder:
     """
     事件因果图构建器
-    
+
     主要功能：
     1. 从Neo4j加载和排序事件
     2. 通过连通体和社区过滤事件对
@@ -109,50 +111,48 @@ class EventCausalityBuilder:
     5. 保存和加载图数据
     6. 构建Plot情节单元图谱
     """
-    
+
     def __init__(self, config):
         """
         初始化事件因果图构建器
-        
+
         Args:
             config: KAG配置对象
         """
         self.config = config
-        # self.llm_manager = LLMManager(config)
-        # self.llm = self.llm_manager.get_llm()
         self.llm = OpenAILLM(config)
         self.graph_store = GraphStore(config)
         self.vector_store = VectorStore(config, "documents")
-        self.event_fallback = [] # 可以加入Goal和Action
-        
+        self.event_fallback = []  # 可以加入Goal和Action
+
         self.doc_type = config.knowledge_graph_builder.doc_type
-        
+
         if self.doc_type not in DOC_TYPE_META:
             raise ValueError(f"Unsupported doc_type: {self.doc_type}")
         self.meta = DOC_TYPE_META[self.doc_type]
-        
+
         self.neo4j_utils = Neo4jUtils(self.graph_store.driver, self.doc_type)
         self.neo4j_utils.load_embedding_model(config.graph_embedding)
 
         # 初始化Plot相关组件
         prompt_dir = config.knowledge_graph_builder.prompt_dir
         self.prompt_loader = PromptLoader(prompt_dir)
-        settings_path = os.path.join(self.config.storage.graph_schema_path , "settings.json")
-        if not os.path.exists:
+        settings_path = os.path.join(self.config.storage.graph_schema_path, "settings.json")
+        if not os.path.exists(settings_path):
             settings_path = self.config.probing.default_background_path
-            
-        settings = json.load(open(os.path.join(settings_path), "r", encoding="utf-8"))
-        
+
+        settings = json.load(open(settings_path, "r", encoding="utf-8"))
+
         self.system_prompt_text = self.construct_system_prompt(
             background=settings["background"],
             abbreviations=settings["abbreviations"]
         )
-        
+
         self.graph_analyzer = GraphManager(config, self.llm)
-        
+
         # Plot构建配置参数（默认值）
         self.causality_threshold = "Medium"
-        self.logger = logging.getLogger(__name__)        
+        self.logger = logging.getLogger(__name__)
         self.sorted_scenes = []
         self.event_list = []
         self.event2section_map = {}
@@ -162,31 +162,26 @@ class EventCausalityBuilder:
         self.max_workers = config.event_plot_graph_builder.max_workers
         self.max_iteration = config.event_plot_graph_builder.max_iterations
         self.check_weakly_connected_components = config.event_plot_graph_builder.check_weakly_connected_components
-        self.max_num_triangles = config.event_plot_graph_builder.max_num_triangles 
-        
+        self.max_num_triangles = config.event_plot_graph_builder.max_num_triangles
+
         # 因果关系强度到权重的映射
-        self.causality_weight_map = {
-            "High": 1.0,
-            "Medium": 0.6,
-            "Low": 0.3
-        }
-        
+        self.event_cards: Dict[str, Dict[str, Any]] = {}
+
         self.logger.info("EventCausalityBuilder初始化完成")
-    
+
     def construct_system_prompt(self, background, abbreviations):
-        
         background_info = self.get_background_info(background, abbreviations)
-        
+
         if self.doc_type == "screenplay":
             system_prompt_id = "agent_prompt_screenplay"
         else:
             system_prompt_id = "agent_prompt_novel"
-            
+
         system_prompt_text = self.prompt_loader.render_prompt(system_prompt_id, {"background_info": background_info})
         return system_prompt_text
-    
+
     def get_background_info(self, background, abbreviations):
-        bg_block = f"**背景设定**：{background}\n" 
+        bg_block = f"**背景设定**：{background}\n" if background else ""
 
         # ---------- 2) 缩写表（键名宽容） ----------
         def fmt(item: dict) -> str:
@@ -220,65 +215,236 @@ class EventCausalityBuilder:
             background_info = f"{bg_block}\n{abbr_block}"
         else:
             background_info = bg_block or abbr_block
-            
+
         return background_info
-        
-        
+
     def build_event_list(self) -> List[Entity]:
         """
         构建排序后的事件列表
-        
+
         Returns:
             排序后的事件列表
         """
         print("🔍 开始构建事件列表...")
-        
+
         # 1. 获取所有场景并排序
         section_entities = self.neo4j_utils.search_entities_by_type(
             entity_type=self.meta["section_label"]
         )
-        
+
         self.sorted_sections = sorted(
             section_entities,
             key=lambda e: int(e.properties.get("order", 99999))
         )
-        
-        print(f"✅ 找到 {len(self.sorted_sections )} 个section")
-        
+
+        print(f"✅ 找到 {len(self.sorted_sections)} 个section")
+
         # 2. 从场景中提取事件
         event_list = []
         event2section_map = {}
-        
-        for scene in tqdm(self.sorted_sections, desc="提取场景中的事件"):
+
+        for section in tqdm(self.sorted_sections, desc="提取场景中的事件"):
             # 优先查找事件
             results = self.neo4j_utils.search_related_entities(
-                source_id=scene.id, 
-                predicate=self.meta["contains_pred"], 
-                entity_types=["Event"], 
+                source_id=section.id,
+                predicate=self.meta["contains_pred"],
+                entity_types=["Event"],
                 return_relations=False
             )
-            
-            # 如果场景中没有事件，则用动作或者目标来填充
+
+            # 如果场景中没有事件，则用动作或者目标来填充（如果你启用了 fallback）
             if not results and self.event_fallback:
                 results = self.neo4j_utils.search_related_entities(
-                    source_id=scene.id, 
-                    relation_type=self.meta["contains_pred"], 
-                    entity_types=self.event_fallback, 
+                    source_id=section.id,
+                    relation_type=self.meta["contains_pred"],  # 若方法兼容 alias，这里可保留
+                    entity_types=self.event_fallback,
                     return_relations=False
                 )
-            
+
             for result in results:
                 if result.id not in event2section_map:
-                    event2section_map[result.id] = scene.id
+                    event2section_map[result.id] = section.id
                     event_list.append(result)
-        
+
         self.event_list = event_list
         self.event2section_map = event2section_map
-        
+
         print(f"✅ 构建完成，共找到 {len(event_list)} 个事件")
         return event_list
-    
-    
+
+    # =========================
+    # 事件卡片并发预生成（新增）
+    # =========================
+    def precompute_event_cards(
+        self,
+        events: List[Entity],
+        per_task_timeout: float = 180.0,
+        max_retries: int = 2,
+        retry_timeout: float = 90.0,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        并发为所有事件生成 event_card：
+        - 软超时 + 多轮重试（仅对失败项）
+        - 生成结果写入 self.event_cards 并落盘
+        返回：{event_id: event_card}
+        """
+        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+        import time
+
+        def _collect_related_context_by_section(ev: Entity) -> str:
+            """
+            优先通过所属 section 的 title 召回文档；若失败，回退到事件的 source_chunks。
+            """
+            ctx_set = set()
+
+            # 1) 通过 section 标题检索
+            sec_id = self.event2section_map.get(ev.id)
+            if sec_id:
+                sec = self.neo4j_utils.get_entity_by_id(sec_id)
+                titles = sec.properties.get(self.meta["title"], [])
+                if isinstance(titles, str):
+                    titles = [titles]
+                for t in titles or []:
+                    try:
+                        docs = self.vector_store.search_by_metadata({"title": t})
+                        for d in docs:
+                            if getattr(d, "content", None):
+                                ctx_set.add(d.content)
+                    except Exception:
+                        pass
+
+            # 2) 回退：事件自己的 source_chunks
+            if not ctx_set:
+                try:
+                    node = self.neo4j_utils.get_entity_by_id(ev.id)
+                    chunk_ids = set((node.source_chunks or [])[:50])  # 安全上限
+                    if chunk_ids:
+                        docs = self.vector_store.search_by_ids(list(chunk_ids))
+                        for d in docs:
+                            if getattr(d, "content", None):
+                                ctx_set.add(d.content)
+                except Exception:
+                    pass
+
+            return "\n".join(ctx_set)
+
+        def _build_one(ev: Entity) -> Tuple[str, Dict[str, Any]]:
+            # 事件自身结构化信息（含属性/关系）
+            info = self.neo4j_utils.get_entity_info(
+                ev.id, entity_type="事件",
+                contain_properties=True, contain_relations=True
+            )
+            related_ctx = _collect_related_context_by_section(ev)
+
+            # 生成卡片
+            out = self.graph_analyzer.generate_event_context(info, related_ctx)
+            card = json.loads(correct_json_format(out))["event_card"]
+            card = format_event_card(card)
+            return ev.id, card
+
+        def _run_batch(evts: List[Entity], timeout: float, allow_placeholder: bool, desc: str):
+            """通用并发跑一批；返回 (batch_map, failed_ids)。"""
+            results: Dict[str, Dict[str, Any]] = {}
+            failed: Set[str] = set()
+
+            executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="card")
+            try:
+                fut_info = {}
+                for ev in evts:
+                    f = executor.submit(_build_one, ev)
+                    fut_info[f] = {"start": time.monotonic(), "event": ev}
+
+                pbar = tqdm(total=len(fut_info), desc=desc, ncols=100)
+                pending = set(fut_info.keys())
+
+                while pending:
+                    done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+
+                    # 收集已完成
+                    for f in done:
+                        ev = fut_info[f]["event"]
+                        try:
+                            eid, card = f.result()
+                            results[eid] = card
+                        except Exception:
+                            failed.add(ev.id)
+                        pbar.update(1)
+                        fut_info.pop(f, None)
+
+                    # 软超时
+                    now = time.monotonic()
+                    to_forget = []
+                    for f in list(pending):
+                        start = fut_info[f]["start"]
+                        if now - start >= timeout:
+                            ev = fut_info[f]["event"]
+                            f.cancel()
+                            if allow_placeholder:
+                                # 占位：给一个最小 skeleton，防止后续流程卡住
+                                results[ev.id] = {
+                                    "name": ev.properties.get("name") or ev.name or f"event_{ev.id}",
+                                    "summary": "",
+                                    "time_hint": "unknown",
+                                    "locations": [],
+                                    "participants": [],
+                                    "action": "",
+                                    "outcomes": [],
+                                    "evidence": ""
+                                }
+                            failed.add(ev.id)
+                            pbar.update(1)
+                            to_forget.append(f)
+
+                    for f in to_forget:
+                        pending.remove(f)
+                        fut_info.pop(f, None)
+
+                pbar.close()
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+
+            return results, failed
+
+        # === 首轮：允许占位 ===
+        head_map, failed_ids = _run_batch(
+            events, timeout=per_task_timeout, allow_placeholder=True, desc="预生成事件卡片（首轮）"
+        )
+        card_map = dict(head_map)
+
+        # === 重试：仅对失败项，成功则覆盖占位 ===
+        need_ids = list(failed_ids)
+        for attempt in range(1, max_retries + 1):
+            if not need_ids:
+                break
+            # 轻微退避
+            try:
+                time.sleep(min(2 ** (attempt - 1), 5.0))
+            except Exception:
+                pass
+
+            id2evt = {e.id: e for e in events}
+            retry_evts = [id2evt[i] for i in need_ids if i in id2evt]
+            retry_map, retry_failed = _run_batch(
+                retry_evts, timeout=retry_timeout, allow_placeholder=False,
+                desc=f"预生成事件卡片（重试 {attempt}/{max_retries}）"
+            )
+
+            # 覆盖成功项
+            for eid, card in retry_map.items():
+                card_map[eid] = card
+
+            need_ids = list(retry_failed)
+
+        # 写入内存 + 落盘
+        self.event_cards = card_map
+        base = self.config.storage.knowledge_graph_path
+        os.makedirs(base, exist_ok=True)
+        with open(os.path.join(base, "event_cards.json"), "w", encoding="utf-8") as f:
+            json.dump(self.event_cards, f, ensure_ascii=False, indent=2)
+
+        print(f"🗂️ 事件卡片生成完成：成功 {len(card_map)} / 总计 {len(events)}；仍缺失 {len(need_ids)}")
+        return card_map
+
     def filter_event_pairs_by_community(
         self,
         events: List[Entity],
@@ -291,7 +457,6 @@ class EventCausalityBuilder:
         id2entity = {e.id: e for e in events}
 
         pairs = self.neo4j_utils.fetch_event_pairs_same_community()
-        # print("[CHECK]: ", pairs)
         filtered_pairs = []
         for row in pairs:
             src_id, dst_id = row["srcId"], row["dstId"]
@@ -304,25 +469,25 @@ class EventCausalityBuilder:
     def write_event_cause_edges(self, causality_results):
         rows = []
         for (src_id, dst_id), res in causality_results.items():
-            if res["relation"] != "NONE" or res["relation"] != "None":
-                confidence = res.get("confidence", 0.3)
+            rel = (res.get("relation") or "").upper()
+            if rel != "NONE":
+                confidence = float(res.get("confidence", 0.3) or 0.0)
                 rows.append({
                     "srcId": src_id,
                     "dstId": dst_id,
-                    # "weight": weight,
                     "confidence": confidence,
-                    "reason": res["reason"],
-                    "predicate": res["relation"]
+                    "reason": res.get("reason", ""),
+                    "predicate": res.get("relation", "NONE")
                 })
         self.neo4j_utils.write_event_causes(rows)
 
-    
     def check_causality_batch(
-            self,
-            pairs: List[Tuple[Entity, Entity]]
-        ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+        self,
+        pairs: List[Tuple[Entity, Entity]]
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """
         并发检查事件对的因果关系（软超时 + 失败收集 + 末尾多轮重试）
+        - 依赖 self.event_cards（在主流程预生成），缺失项会兜底即时补建一次
         - 首轮：完成即收集；超时/异常 -> 先占位 + 记入重试队列
         - 末尾：仅对失败项做 N 轮重试；成功即覆盖旧结果
         - 返回：{(src_id, tgt_id): result_dict}
@@ -334,12 +499,12 @@ class EventCausalityBuilder:
         RETRY_TIMEOUT = 600      # 重试轮的单任务软超时（可比首轮更短/更长）
 
         def _make_result(src_event, tgt_event,
-                        relation="NONE",
-                        reason="",
-                        temporal_order="Unknown",
-                        confidence=0.0,
-                        raw_result="",
-                        timeout=False) -> Dict[str, Any]:
+                         relation="NONE",
+                         reason="",
+                         temporal_order="Unknown",
+                         confidence=0.0,
+                         raw_result="",
+                         timeout=False) -> Dict[str, Any]:
             res = {
                 "src_event": src_event,
                 "tgt_event": tgt_event,
@@ -353,36 +518,34 @@ class EventCausalityBuilder:
                 res["causality_timeout"] = True
             return res
 
-        def _get_node_context(node):
-            documents = []
-            section_titles = node.properties[self.meta["title"]]
-            for title in section_titles:
-                documents.extend(self.vector_store.search_by_metadata({"title": title}))
-
-            ctx_set = set()
-            for doc in documents:
-                try:
-                    if getattr(doc, "content", None):
-                        ctx_set.add(doc.content)
-                except Exception:
-                    pass
-            related_context = "\n".join(ctx_set)
-            return related_context
-
         def _get_common_neighbor_info(src_id, tgt_id):
             commons = self.neo4j_utils.get_common_neighbors(src_id, tgt_id, limit=50)
             info = "两个事件具有的共同邻居的信息为：\n"
             if not commons:
                 return info + "无"
             for ent_ in commons:
-                info += f"- 实体名称：{ent_.name}，实体类型：{"/".join(ent_.type)}，相关描述为：{ent_.description}\n"
+                try:
+                    ent_type = "/".join(ent_.type) if isinstance(ent_.type, (list, set, tuple)) else str(ent_.type)
+                except Exception:
+                    ent_type = "Unknown"
+                info += f"- 实体名称：{ent_.name}，实体类型：{ent_type}，相关描述为：{ent_.description}\n"
             return info
+
+        def _ensure_card(e: Entity, info_text: str) -> Dict[str, Any]:
+            """优先读缓存；缺失时兜底构建一次并写回缓存（极少触发）"""
+            if e.id in self.event_cards:
+                return self.event_cards[e.id]
+            out = self.graph_analyzer.generate_event_context(info_text, "")
+            card = json.loads(correct_json_format(out))["event_card"]
+            card = format_event_card(card)
+            self.event_cards[e.id] = card
+            return card
 
         def _process_pair(pair: Tuple[Entity, Entity]):
             src_event, tgt_event = pair
             pair_key = (src_event.id, tgt_event.id)
             try:
-                # 1) 获取事件信息
+                # 1) 获取事件信息文本（含属性与关系）
                 info_1 = self.neo4j_utils.get_entity_info(
                     src_event.id, entity_type="事件",
                     contain_properties=True, contain_relations=True
@@ -392,30 +555,21 @@ class EventCausalityBuilder:
                     contain_properties=True, contain_relations=True
                 )
 
-                # 2) 相关上下文
-                src_node = self.neo4j_utils.get_entity_by_id(src_event.id)
-                tgt_node = self.neo4j_utils.get_entity_by_id(tgt_event.id)
-                src_context = _get_node_context(src_node)
-                tgt_context = _get_node_context(tgt_node)
-
-                src_event_ = self.graph_analyzer.generate_event_context(info_1, src_context)
-                src_event_card = json.loads(correct_json_format(src_event_))["event_card"]
-                src_event_card = format_event_card(src_event_card)
-
-                tgt_event_ = self.graph_analyzer.generate_event_context(info_2, tgt_context)
-                tgt_event_card = json.loads(correct_json_format(tgt_event_))["event_card"]
-                tgt_event_card = format_event_card(tgt_event_card)
-
+                # 2) 共同邻居与上下文（此处主要拼接结构化文本 + 共同邻居摘要）
                 related_context = info_1 + "\n" + info_2 + "\n" + _get_common_neighbor_info(src_event.id, tgt_event.id)
 
-                # 3) LLM 判定
+                # 3) 读取预生成的 event_card（缺失则兜底构建一次）
+                src_event_card = _ensure_card(src_event, info_1)
+                tgt_event_card = _ensure_card(tgt_event, info_2)
+
+                # 4) LLM 判定
                 result_json = self.graph_analyzer.check_event_causality(
                     src_event_card, tgt_event_card,
                     system_prompt=self.system_prompt_text,
                     related_context=related_context
                 )
 
-                # 4) 解析 JSON
+                # 5) 解析 JSON
                 if isinstance(result_json, dict):
                     result_dict = result_json
                     raw_str = json.dumps(result_json, ensure_ascii=False)
@@ -451,12 +605,8 @@ class EventCausalityBuilder:
                 )
 
         def _run_batch(pairs_to_run: List[Tuple[Entity, Entity]], per_task_timeout: float,
-                    allow_placeholders: bool, desc: str):
+                       allow_placeholders: bool, desc: str):
             """通用并发跑一批；返回 (batch_results, failed_keys)。"""
-            from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
-            import time
-            from tqdm import tqdm
-
             results_batch: Dict[Tuple[str, str], Dict[str, Any]] = {}
             failed_keys: set = set()
 
@@ -611,7 +761,6 @@ class EventCausalityBuilder:
 
         return results
 
-        
     def sort_event_pairs_by_section_order(
         self, pairs: List[Tuple[Entity, Entity]]
     ) -> List[Tuple[Entity, Entity]]:
@@ -629,9 +778,9 @@ class EventCausalityBuilder:
 
     def initialize(self):
         # 1. 创建子图和计算社区划分
-        for relation_type in ["EVENT_CAUSES", "INDIRECT_CAUSES", "PART_OF"]:
+        for relation_type in ["EVENT_CAUSES", "EVENT_INDIRECT_CAUSES", "EVENT_PART_OF"]:
             self.neo4j_utils.delete_relation_type(relation_type)
-            
+
         self.neo4j_utils.create_subgraph(
             graph_name="knowledge_graph",
             exclude_entity_types=[self.meta["section_label"]],
@@ -644,61 +793,70 @@ class EventCausalityBuilder:
             write_property="community",
             force_run=True
         )
-    
+
     def filter_pair_by_distance_and_similarity(self, pairs):
         filtered_pairs = []
         for pair in tqdm(pairs, desc="筛选节点对"):
             src_id, tgt_id = pair[0].id, pair[1].id
-            reachable = self.neo4j_utils.check_nodes_reachable(src_id, tgt_id, 
-                                                               excluded_rels=[self.meta["contains_pred"], "EVENT_CAUSES", "EVENT_INDIRECT_CAUSES", "EVENT_PART_OF"], 
-                                                               max_depth=self.max_depth)
-            if reachable: # 如果节点间距离小于3，保留。
+            reachable = self.neo4j_utils.check_nodes_reachable(
+                src_id, tgt_id,
+                excluded_rels=[self.meta["contains_pred"], "EVENT_CAUSES", "EVENT_INDIRECT_CAUSES", "EVENT_PART_OF"],
+                max_depth=self.max_depth
+            )
+            if reachable:  # 如果节点间距离 <= max_depth，保留。
                 filtered_pairs.append(pair)
             else:
                 score = self.neo4j_utils.compute_semantic_similarity(src_id, tgt_id)
-                if score >= 0.5: # 如果节点间的相似度大于等于0.7，保留。
-                    filtered_pairs.append(pair)  
+                if score >= 0.5:  # 语义相似度阈值与注释一致
+                    filtered_pairs.append(pair)
         return filtered_pairs
-    
+
     def build_event_causality_graph(
         self,
         limit_events: Optional[int] = None
     ) -> None:
         """
         完整的事件因果图构建流程
-        
+
         Args:
             limit_events: 限制处理的事件数量（用于测试）
-            
+
         Returns:
             构建完成的Neo4j有向图
         """
         print("🚀 开始完整的事件因果图构建流程...")
-        
+
         # 2. 构建事件列表
         print("\n🔍 构建事件列表...")
         event_list = self.build_event_list()
-        
+
         # 3. 限制事件数量（用于测试）
         if limit_events and limit_events < len(event_list):
             event_list = event_list[:limit_events]
             print(f"⚠️ 限制处理事件数量为: {limit_events}")
-        
+
+        # === ✅ 新增：并发预生成所有事件卡片（缓存+落盘） ===
+        print("\n🧩 并发预生成事件卡片...")
+        self.precompute_event_cards(event_list)
+
         # 4. 过滤事件对
         print("\n🔍 过滤事件对...")
         filtered_pairs = self.filter_event_pairs_by_community(event_list, max_depth=self.max_depth)
         filtered_pairs = self.filter_pair_by_distance_and_similarity(filtered_pairs)
         filtered_pairs = self.sort_event_pairs_by_section_order(filtered_pairs)
         print("     最终候选事件对数量： ", len(filtered_pairs))
-        # 5. 检查因果关系
+
+        # 5. 检查因果关系（将直接读取 self.event_cards）
         print("\n🔍 检查因果关系...")
         causality_results = self.check_causality_batch(filtered_pairs)
-        
-        # print("[CHECK] causality_results", causality_results)
+
         base = self.config.storage.knowledge_graph_path
         with open(os.path.join(base, "event_casality_results.pkl"), "wb") as f:
             pickle.dump(causality_results, f)
-        
+
+        with open(os.path.join(base, "event_cards.json"), "w", encoding="utf-8") as f:
+            json.dump(self.event_cards, f, ensure_ascii=False, indent=2)
+
         # 6. 写回 EVENT 关系
         print("\n🔗 写回Event间关系...")
         self.write_event_cause_edges(causality_results)
@@ -748,9 +906,8 @@ class EventCausalityBuilder:
                     "internal_links": internal_links
                 })
 
-        # print(f"[+] Detected {len(patterns)} flattened causal patterns")
         return patterns
-    
+
     def filter_weak_edges_in_patterns(
         self,
         patterns: List[Dict],
@@ -761,7 +918,6 @@ class EventCausalityBuilder:
         从 flattened patterns 中剔除 weight 和 confidence 都偏低的边
         """
         cleaned_patterns = []
-        # print("[CHECK] patterns: ", patterns)
         for pat in patterns:
             src = pat["source"]
             targets = pat["targets"]
@@ -771,18 +927,17 @@ class EventCausalityBuilder:
             new_targets = []
             for t in targets:
                 info = edge_map.get((src, t))
-                confidence = info.get("confidence", 0) or 0
-                # print("[CHECK] confidence: ", confidence)
+                confidence = info.get("confidence", 0) if info else 0
                 if not info:
                     continue
-                if confidence  < conf_threshold:
+                if confidence < conf_threshold:
                     new_targets.append(t)
 
             # 过滤 internal 边
             new_internals = []
             for u, v in internals:
                 info = edge_map.get((u, v))
-                confidence = info.get("confidence", 0) or 0
+                confidence = info.get("confidence", 0) if info else 0
                 if not info:
                     continue
                 if not confidence < conf_threshold:
@@ -796,13 +951,12 @@ class EventCausalityBuilder:
                     "internal_links": new_internals
                 })
 
-        # print(f"[+] Filtered to {len(cleaned_patterns)} refined patterns")
         return cleaned_patterns
-    
+
     def collect_removed_edges(self,
-        original_patterns: List[Dict],
-        filtered_patterns: List[Dict]
-    ) -> Set[Tuple[str, str]]:
+                              original_patterns: List[Dict],
+                              filtered_patterns: List[Dict]
+                              ) -> Set[Tuple[str, str]]:
         """
         比较两组 pattern 结构，收集被删除导致结构变化的边
 
@@ -824,8 +978,8 @@ class EventCausalityBuilder:
 
         removed_edges = origin_edges - filtered_edges
         print(f"[+] Found {len(removed_edges)} candidate edges removed due to pattern collapse")
-        return list(removed_edges)
-    
+        return list(removed_edges)  # 原逻辑返回 list；保持一致
+
     def filter_pattern(self, pattern, edge_map):
         source = pattern["source"]
         targets = pattern["targets"]
@@ -835,13 +989,12 @@ class EventCausalityBuilder:
             mid_tgt_sim = self.neo4j_utils.compute_semantic_similarity(link[0], link[1])
             src_mid_sim = self.neo4j_utils.compute_semantic_similarity(source, link[0])
             src_tgt_sim = self.neo4j_utils.compute_semantic_similarity(source, link[1])
-            
+
             mid_tgt_conf = edge_map.get((link[0], link[1]))["confidence"]
             src_mid_conf = edge_map.get((source, link[0]))["confidence"]
             src_tgt_conf = edge_map.get((source, link[1]))["confidence"]
-            
-            # print(source_mid_score, internal_score, source_target_score)
-            if (src_mid_sim > src_tgt_sim and mid_tgt_sim > src_tgt_sim) or (src_mid_conf > src_tgt_conf and mid_tgt_conf > src_tgt_conf) :
+
+            if (src_mid_sim > src_tgt_sim and mid_tgt_sim > src_tgt_sim) or (src_mid_conf > src_tgt_conf and mid_tgt_conf > src_tgt_conf):
                 context_to_check.append({
                     "entities": [source, link[0], link[1]],
                     "details": [
@@ -850,20 +1003,19 @@ class EventCausalityBuilder:
                         {"edge": [link[0], link[1]], "similarity": mid_tgt_sim, "confidence": mid_tgt_conf},
                     ]
                 })
-                
+
         return context_to_check
-    
-    
+
     def prepare_context(self, pattern_detail):
         event_details = self.neo4j_utils.get_event_details(pattern_detail["entities"])
         full_event_details = "三个事件实体的描述如下：\n"
         for i, event_info in enumerate(event_details):
             event_id = event_info["event_id"]
             full_event_details += f"**事件{i+1}的相关描述如下：**\n事件id：{event_id}\n"
-            
+
             background = self.neo4j_utils.get_entity_info(event_id, "事件", True, True)
             event_props = json.loads(event_info.get("event_properties"))
-            # print(event_props)
+            # 仅保留非空字符串属性
             non_empty_props = {k: v for k, v in event_props.items() if isinstance(v, str) and v.strip()}
 
             if non_empty_props:
@@ -871,27 +1023,27 @@ class EventCausalityBuilder:
                 for k, v in non_empty_props.items():
                     background += f"- {k}：{v}\n"
 
-            if i+1 !=  len(event_details):
+            if i + 1 != len(event_details):
                 background += "\n"
             full_event_details += background
-        
+
         full_relation_details = "它们之间已经存在的因果关系有：\n"
         relation_details = pattern_detail["details"]
         for i, relation_info in enumerate(relation_details):
             src, tgt = relation_info["edge"]
             background = f"{i+1}. " + self.neo4j_utils.get_relation_summary(src, tgt, "EVENT_CAUSES")
-            background += f"\n关系的语义相似度为：{round(relation_info["similarity"], 4)}，置信度为：{relation_info["confidence"]}。"
-            if i+1 !=  len(relation_details):
+            background += f"\n关系的语义相似度为：{round(relation_info['similarity'], 4)}，置信度为：{relation_info['confidence']}。"
+            if i + 1 != len(relation_details):
                 background += "\n\n"
             full_relation_details += background
         return full_event_details, full_relation_details
-    
 
     def run_SABER(self):
         """
         执行基于结构+LLM的因果边精简优化过程
         """
         loop_count = 0
+        removed_edges: List[Tuple[str, str]] = []  # 防止未定义引用
         while True:
             print(f"\n===== [第 {loop_count + 1} 轮优化] =====")
 
@@ -946,7 +1098,6 @@ class EventCausalityBuilder:
                     documents = self.vector_store.search_by_ids(chunks)
                     results = {doc.content for doc in documents}
                     related_context = "\n".join(list(results))
-                    # related_context = "" # 为了速度
 
                     output = self.graph_analyzer.evaluate_event_redundancy(
                         event_details, relation_details, self.system_prompt_text, related_context
@@ -986,78 +1137,144 @@ class EventCausalityBuilder:
             all_chains = self.neo4j_utils.find_event_chain(event, min_confidence)
             chains.extend([chain for chain in all_chains if len(chain) >= 2])
         return chains
-    
+
     def prepare_chain_context(self, chain):
         if len(chain) > 1:
-            context = "事件链：" + "->".join(chain) +"\n\n事件具体信息如下：\n"
+            context = "事件链：" + "->".join(chain) + "\n\n事件具体信息如下：\n"
         else:
-            context = f"事件：{chain[0]}" +"\n\n事件具体信息如下：\n"
+            context = f"事件：{chain[0]}" + "\n\n事件具体信息如下：\n"
         for i, event in enumerate(chain):
-            context += f"事件{i+1}：{event}\n" + self.neo4j_utils.get_entity_info(event, "事件", False, True) + "\n"
-        return context
+            # context += f"事件{i+1}：{event}\n" + self.neo4j_utils.get_entity_info(event, "事件", False, True) + "\n"
+            context += f"事件{i+1}：{event}\n" + self.event_cards[event] + "\n"
         
+        return context
 
     def generate_plot_relations(self):
+        """
+        基于候选情节对，判定并写入情节间关系。
+        关系集（最终版）：
+        - 有向：PLOT_PREREQUISITE_FOR, PLOT_ADVANCES, PLOT_BLOCKS, PLOT_RESOLVES
+        - 无向：PLOT_CONFLICTS_WITH, PLOT_PARALLELS
+        兼容旧类型：PLOT_CONTRIBUTES_TO / PLOT_SETS_UP → 统一映射为 PLOT_ADVANCES
+        """
+        # 预处理：向量、GDS 图与嵌入
         self.neo4j_utils.process_all_embeddings(entity_types=["Plot", self.meta["section_label"]])
         self.neo4j_utils.create_event_plot_graph()
         self.neo4j_utils.run_node2vec()
-        
-        all_plot_pairs = self.neo4j_utils.get_plot_pairs(threshold=0.75)
+
+        # 召回候选情节对
+        all_plot_pairs = self.neo4j_utils.get_plot_pairs(threshold=0)
         print("[✓] 待判定情节关系数量：", len(all_plot_pairs))
+
+        # 关系类型与向后兼容映射
+        LEGACY_MAP = {
+            "PLOT_CONTRIBUTES_TO": "PLOT_ADVANCES",
+            "PLOT_SETS_UP": "PLOT_ADVANCES"
+        }
+        DIRECTED = {
+            "PLOT_PREREQUISITE_FOR",
+            "PLOT_ADVANCES",
+            "PLOT_BLOCKS",
+            "PLOT_RESOLVES",
+        }
+        UNDIRECTED = {
+            "PLOT_CONFLICTS_WITH",
+            "PLOT_PARALLELS",
+        }
+        VALID_TYPES = DIRECTED | UNDIRECTED | {"None", None}
+
         edges_to_add = []
+
+        def _make_edge(src_id, tgt_id, rtype, confidence, reason):
+            return {
+                "src": src_id,
+                "tgt": tgt_id,
+                "relation_type": rtype,
+                "confidence": float(confidence) if confidence is not None else 0.0,
+                "reason": reason or ""
+            }
+
+        def _parse_direction_to_edge(pair, direction_str, rtype, confidence, reason):
+            """
+            将 A/B 方向映射为真实 src/tgt 边；返回 [edge] 或 []。
+            direction_str: "A->B" / "B->A"
+            """
+            if direction_str == "A->B":
+                return [_make_edge(pair["src"], pair["tgt"], rtype, confidence, reason)]
+            elif direction_str == "B->A":
+                return [_make_edge(pair["tgt"], pair["src"], rtype, confidence, reason)]
+            else:
+                # 无效或缺失方向，跳过该对（仅对有向关系生效）
+                print(f"[!] 跳过：有向关系缺少有效方向 direction={direction_str} pair={pair}")
+                return []
 
         def process_pair(pair):
             try:
-                plot_A_info = self.neo4j_utils.get_entity_info(pair["src"], "情节", False, True)
-                plot_B_info = self.neo4j_utils.get_entity_info(pair["tgt"], "情节", False, True)
+                plot_A_info = self.neo4j_utils.get_entity_info(pair["src"], "情节", contain_properties=True, contain_relations=True)
+                plot_B_info = self.neo4j_utils.get_entity_info(pair["tgt"], "情节", contain_properties=True, contain_relations=True)
+
+                # 调用关系判定（LLM/规则）
                 result = self.graph_analyzer.extract_plot_relation(plot_A_info, plot_B_info, self.system_prompt_text)
-                result = json.loads(correct_json_format(result))
+
+                # 尝试修正/解析 JSON
+                try:
+                    result = json.loads(correct_json_format(result))
+                except Exception:
+                    # 若直接是 dict 则保留，否则抛出
+                    if isinstance(result, dict):
+                        pass
+                    else:
+                        raise
+
+                # 读取字段
+                rtype = result.get("relation_type")
+                direction = result.get("direction", None)  # 有向时应为 "A->B" / "B->A"，无向或 None 用 null
+                confidence = result.get("confidence", 0.0)
+                reason = result.get("reason", "")
+
+                # 兼容旧枚举
+                if rtype in LEGACY_MAP:
+                    rtype = LEGACY_MAP[rtype]
+
+                # 过滤无效类型
+                if rtype not in VALID_TYPES:
+                    print(f"[!] 未知 relation_type={rtype}，跳过 pair={pair}")
+                    return []
+
+                # None 或无关系
+                if rtype in {"None", None}:
+                    return []
 
                 pair_edges = []
-                if result["relation_type"] == "PLOT_CONTRIBUTES_TO":
-                    first = result["direction"].split("->")[0]
-                    if first == "A":
-                        pair_edges.append({
-                            "src": pair["src"],
-                            "tgt": pair["tgt"],
-                            "relation_type": "PLOT_CONTRIBUTES_TO",
-                            "confidence": result["confidence"],
-                            "reason": result["reason"]
-                        })
-                    else:
-                        pair_edges.append({
-                            "src": pair["tgt"],
-                            "tgt": pair["src"],
-                            "relation_type": "PLOT_CONTRIBUTES_TO",
-                            "confidence": result["confidence"],
-                            "reason": result["reason"]
-                        })
-                elif result["relation_type"] == "PLOT_CONFLICTS_WITH":
-                    pair_edges.append({
-                        "src": pair["src"],
-                        "tgt": pair["tgt"],
-                        "relation_type": "PLOT_CONFLICTS_WITH",
-                        "confidence": result["confidence"],
-                        "reason": result["reason"]
-                    })
-                    pair_edges.append({
-                        "src": pair["tgt"],
-                        "tgt": pair["src"],
-                        "relation_type": "PLOT_CONFLICTS_WITH",
-                        "confidence": result["confidence"],
-                        "reason": result["reason"]
-                    })
+
+                # 有向关系
+                if rtype in DIRECTED:
+                    pair_edges.extend(_parse_direction_to_edge(pair, direction, rtype, confidence, reason))
+
+                # 无向关系：写双向边
+                elif rtype in UNDIRECTED:
+                    pair_edges.append(_make_edge(pair["src"], pair["tgt"], rtype, confidence, reason))
+                    pair_edges.append(_make_edge(pair["tgt"], pair["src"], rtype, confidence, reason))
+
                 return pair_edges
+
             except Exception as e:
                 print(f"[⚠] 处理情节对 {pair} 出错: {e}")
                 return []
 
         # 并发处理
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from tqdm import tqdm
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = [executor.submit(process_pair, pair) for pair in all_plot_pairs]
-            # for future in as_completed(futures):
             for future in tqdm(as_completed(futures), total=len(futures), desc="抽取情节关系"):
-                edges_to_add.extend(future.result())
+                try:
+                    res = future.result()
+                    if res:
+                        edges_to_add.extend(res)
+                except Exception as e:
+                    print(f"[⚠] future 结果处理出错: {e}")
 
         # 批量写入 Neo4j
         if edges_to_add:
@@ -1066,55 +1283,97 @@ class EventCausalityBuilder:
         else:
             print("[!] 没有生成任何情节关系")
 
-    
+
     def build_event_plot_graph(self):
+        # 清空旧的 Plot 图与关系（已适配新六种 Plot 关系 + HAS_EVENT）
         self.neo4j_utils.reset_event_plot_graph()
-        all_chains = self.get_all_event_chains(min_confidence=0)
+
+        base = self.config.storage.knowledge_graph_path
+        print("事件卡片信息...")
+        with open(os.path.join(base, "event_cards.json"), "r", encoding="utf-8") as f:
+            self.event_cards = json.load(f)
+
+        # 建议：这里的 get_all_event_chains 内部请确认已使用三类事件关系 + confidence 过滤
+        all_chains = self.get_all_event_chains(min_confidence=0.0)
+
         print("[✓] 当前事件链总数：", len(all_chains))
         filtered_chains = get_frequent_subchains(all_chains, 2, 1)
         filtered_chains = remove_subset_paths(filtered_chains)
         filtered_chains = remove_similar_paths(filtered_chains, 0.7)
-        
         print("[✓] 过滤后事件链总数：", len(filtered_chains))
-        
+
+        def _stable_plot_id(title: str, chain: list[str]) -> str:
+            key = f"{title}||{'->'.join(chain)}"
+            return "plot_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+
+        def _to_bool(v) -> bool:
+            if isinstance(v, bool):
+                return v
+            if v is None:
+                return False
+            return str(v).strip().lower() in ("true", "yes", "1")
+
         def process_chain(chain):
             try:
+                # 组织上下文
                 event_chain_info = self.prepare_chain_context(chain)
-                chunks = [self.neo4j_utils.get_entity_by_id(ent_id).source_chunks[0] for ent_id in chain]
-                chunks = list(set(chunks))
-                documents = self.vector_store.search_by_ids(chunks)
-                results = {doc.content for doc in documents}
-                related_context = "\n".join(list(results))
 
-                result = self.graph_analyzer.generate_event_plot(
+                # 取相关文档片段（容错空值）
+                chunk_ids = []
+                for ent_id in chain:
+                    ent = self.neo4j_utils.get_entity_by_id(ent_id)
+                    if not ent:
+                        continue
+                    sc = ent.source_chunks or []
+                    if sc:
+                        chunk_ids.append(sc[0])
+                chunk_ids = list(set(chunk_ids))
+
+                related_context = ""
+                if chunk_ids:
+                    documents = self.vector_store.search_by_ids(chunk_ids)
+                    contents = {getattr(doc, "content", "") for doc in documents if getattr(doc, "content", "")}
+                    related_context = "\n".join(list(contents))
+
+                # 生成情节判定
+                raw = self.graph_analyzer.generate_event_plot(
                     event_chain_info=event_chain_info,
                     system_prompt=self.system_prompt_text,
                     related_context=related_context
                 )
-                result = json.loads(correct_json_format(result))
-                if result["is_plot"]:
-                    plot_info = result["plot_info"]
-                    plot_title = plot_info["title"]
-                    plot_info["id"] = f"plot_{hash(f'{plot_title}') % 1_000_000}"
-                    plot_info["event_ids"] = chain
-                    plot_info["reason"] = result.get("reason", "")
-                    self.neo4j_utils.write_plot_to_neo4j(plot_data=plot_info)
-                    return True
-                return False
+                result = json.loads(correct_json_format(raw))
+
+                if not _to_bool(result.get("is_plot")):
+                    return False
+
+                plot_info = result.get("plot_info") or {}
+                title = (plot_info.get("title") or "").strip()
+                if not title:
+                    # 兜底标题：首尾事件名或ID
+                    title = f"情节链：{chain[0]}→{chain[-1]}"
+
+                plot_info["id"] = _stable_plot_id(title, chain)
+                plot_info["event_ids"] = chain
+                plot_info["reason"] = result.get("reason", "")
+
+                # 写入 Neo4j（已在 Neo4jUtils 内适配新关系/字段）
+                self.neo4j_utils.write_plot_to_neo4j(plot_data=plot_info)
+                return True
+
             except Exception as e:
                 print(f"[!] 处理事件链 {chain} 时出错: {e}")
                 return False
 
         success_count = 0
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(process_chain, chain) for chain in  filtered_chains]
+            futures = [executor.submit(process_chain, chain) for chain in filtered_chains]
             for future in tqdm(as_completed(futures), total=len(futures), desc="并发生成情节图谱"):
-                if future.result():
-                    success_count += 1
+                try:
+                    if future.result():
+                        success_count += 1
+                except Exception as e:
+                    print(f"[!] 子任务异常：{e}")
 
         print(f"[✓] 成功生成情节数量：{success_count}/{len(filtered_chains)}")
         return
-                
-                
-        
-        
+

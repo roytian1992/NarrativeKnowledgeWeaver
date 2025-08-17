@@ -1,7 +1,7 @@
 import json
 import os
-from typing import List, Dict, Any, Optional
-
+from typing import List, Dict, Any, Optional, Tuple
+from collections import deque
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from tqdm import tqdm
 from itertools import chain
@@ -126,92 +126,172 @@ class DocumentProcessor:
         return result_tracker
     
 
-    def extract_insights(self, chunks: List[TextChunk]) -> List[TextChunk]:
-        """
-        并发为每个 TextChunk 生成 metadata['insights']，
-        以【完成顺序】返回；单任务软超时=120s（可改），超时则降级占位并继续。
-        """
+    def extract_insights(
+        self,
+        chunks: List[TextChunk],
+        *,
+        per_task_timeout: float = 120.0,
+        max_retry_rounds: int = 1,
+        treat_empty_as_failure: bool = False,
+        max_in_flight: int = None,   # 并发窗口；默认用 self.max_workers
+    ) -> List[TextChunk]:
 
-        PER_TASK_TIMEOUT = 120.0  # 秒；你可以保持 180
+        if max_in_flight is None:
+            max_in_flight = int(self.max_workers)
 
-        def _make_with_insights(ch: TextChunk, insights, timeout=False) -> TextChunk:
+        def _stamp_result(
+            ch: TextChunk,
+            insights: List[str],
+            attempt: int,
+            status: str = "ok",   # ok | timeout | exception | empty_failed
+            reason: str = "",
+        ) -> TextChunk:
             new_meta = dict(ch.metadata or {})
             new_meta["insights"] = insights or []
-            if timeout:
+            new_meta["insights_attempt"] = attempt
+            if status == "timeout":
                 new_meta["insights_timeout"] = True
-            if hasattr(ch, "model_copy"):  # pydantic v2
+            if status != "ok":
+                new_meta["insights_failed"] = True
+                if reason:
+                    new_meta["insights_failed_reason"] = reason
+            # 兼容 pydantic v1/v2
+            if hasattr(ch, "model_copy"):
                 return ch.model_copy(update={"metadata": new_meta})
-            else:  # pydantic v1
+            else:
                 return ch.copy(update={"metadata": new_meta}, deep=True)
 
-        def _run(ch: TextChunk) -> TextChunk:
-            insights = []
+        def _parse_insights(raw: Any) -> List[str]:
+            data = raw if isinstance(raw, dict) else json.loads(correct_json_format(raw))
+            ins = data.get("insights", [])
+            if ins is None:
+                return []
+            if isinstance(ins, list):
+                return [x for x in ins if isinstance(x, str)]
+            return [str(ins)]
+
+        # 用 wrapper 把“真正开始时间”写入可变字典，让主循环能看到
+        def _run_wrapper(ch: TextChunk, start_box: Dict[str, float]) -> List[str]:
+            # 这行一执行，说明任务真的开始跑了
+            start_box["t"] = time.monotonic()
+            # 如果底层支持，请尽量在这里也传一个“硬超时”（HTTP/SDK 的超时）
+            raw = self.document_parser.extract_insights(ch.content or "")
+            return _parse_insights(raw)
+
+        def _run_round(round_chunks: List[TextChunk], attempt_idx: int) -> Tuple[List[TextChunk], List[TextChunk]]:
+            """
+            窗口化调度一轮：保持 <= max_in_flight 的在跑任务；
+            每个任务的软超时从其 start_box['t'] 计时；
+            返回 (本轮完成顺序的结果, 本轮失败需要重试的 chunks)。
+            """
+            results_in_order: List[TextChunk] = []
+            failures: List[TextChunk] = []
+            todo = deque(round_chunks)
+
+            executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix=f"insight_a{attempt_idx}")
+            fut_info: Dict[Any, Dict[str, Any]] = {}
+            pending = set()
+
+            # 先填满窗口
+            def _submit_one(ch: TextChunk):
+                start_box = {"t": None}  # 由工作线程设置为真正开始的时刻
+                f = executor.submit(_run_wrapper, ch, start_box)
+                fut_info[f] = {
+                    "ch": ch,
+                    "attempt": attempt_idx,
+                    "start_box": start_box,
+                }
+                pending.add(f)
+
+            # 尝试填满窗口
+            while todo and len(pending) < max_in_flight:
+                _submit_one(todo.popleft())
+
+            pbar = tqdm(total=len(round_chunks), desc=f"洞见抽取 第{attempt_idx+1}轮", ncols=100)
+
             try:
-                raw = self.document_parser.extract_insights(ch.content or "")
-                data = raw if isinstance(raw, dict) else json.loads(correct_json_format(raw))
-                ins = data.get("insights", [])
-                if ins is None:
-                    insights = []
-                elif isinstance(ins, list):
-                    insights = [x for x in ins if isinstance(x, str)]
-                else:
-                    insights = [str(ins)]
-            except Exception:
-                insights = []
-            return _make_with_insights(ch, insights, timeout=False)
-
-        results: List[TextChunk] = []
-
-        # 不用 with，上下文会等待所有任务完成；我们要能不等待地脱身
-        executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="insight")
-        try:
-            fut_info = {}  # future -> {"start": float, "ch": TextChunk}
-            for ch in chunks:
-                f = executor.submit(_run, ch)
-                fut_info[f] = {"start": time.time(), "ch": ch}
-
-            pbar = tqdm(total=len(fut_info), desc="并发抽取洞见中", ncols=100)
-
-            pending = set(fut_info.keys())
-            # 循环直到我们“收集”够所有结果（包括超时占位）
-            while pending:
-                # 1) 先收集已经完成的
-                done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
-                for f in done:
-                    try:
-                        res = f.result()  # 这里不会阻塞，已完成
-                    except Exception:
-                        # 失败也降级
-                        ch = fut_info[f]["ch"]
-                        res = _make_with_insights(ch, [], timeout=True)
-                    results.append(res)
-                    pbar.update(1)
-                    fut_info.pop(f, None)
-
-                # 2) 再检查还在跑的：是否超过软超时？超过就降级并不再等待
-                now = time.time()
-                to_forget = []
-                for f in pending:
-                    start = fut_info[f]["start"]
-                    if now - start >= PER_TASK_TIMEOUT:
-                        ch = fut_info[f]["ch"]
-                        # 尝试取消（若已在运行会返回 False），但我们不再等待它
-                        f.cancel()
-                        res = _make_with_insights(ch, [], timeout=True)
-                        results.append(res)
-                        pbar.update(1)
-                        to_forget.append(f)
-                if to_forget:
-                    for f in to_forget:
+                while pending:
+                    # 收集已完成
+                    done, _ = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+                    for f in done:
+                        info = fut_info.pop(f)
+                        ch = info["ch"]
+                        try:
+                            insights = f.result()
+                            if treat_empty_as_failure and not insights:
+                                failures.append(ch)
+                                results_in_order.append(_stamp_result(
+                                    ch, [], attempt=attempt_idx, status="empty_failed", reason="empty insights"
+                                ))
+                            else:
+                                results_in_order.append(_stamp_result(
+                                    ch, insights, attempt=attempt_idx, status="ok"
+                                ))
+                        except Exception as e:
+                            failures.append(ch)
+                            results_in_order.append(_stamp_result(
+                                ch, [], attempt=attempt_idx, status="exception", reason=str(e)[:200]
+                            ))
                         pending.remove(f)
-                        fut_info.pop(f, None)
+                        pbar.update(1)
 
-            pbar.close()
-        finally:
-            # 不等待未完成线程，且取消队列里尚未开始的任务，避免退出卡住
-            executor.shutdown(wait=False, cancel_futures=True)
+                        # 每完成一个就补一个，保持窗口大小
+                        if todo and len(pending) < max_in_flight:
+                            _submit_one(todo.popleft())
 
-        return results
+                    # 软超时判定：只对“已真正开始”的任务计时
+                    now = time.monotonic()
+                    to_timeout = []
+                    for f in pending:
+                        sb = fut_info[f]["start_box"]
+                        t0 = sb.get("t")
+                        if t0 is not None and (now - t0) >= per_task_timeout:
+                            to_timeout.append(f)
+
+                    for f in to_timeout:
+                        info = fut_info.pop(f)
+                        ch = info["ch"]
+                        try:
+                            f.cancel()  # 已在运行多半取消无效，但我们不再等待
+                        finally:
+                            failures.append(ch)
+                            results_in_order.append(_stamp_result(
+                                ch, [], attempt=attempt_idx, status="timeout",
+                                reason=f"soft_timeout_{per_task_timeout}s"
+                            ))
+                            pending.remove(f)
+                            pbar.update(1)
+                            # 也补位，保持窗口
+                            if todo and len(pending) < max_in_flight:
+                                _submit_one(todo.popleft())
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+                pbar.close()
+
+            return results_in_order, failures
+
+        # -------- 主流程：首轮 + 若干重试轮 --------
+        all_results: List[TextChunk] = []
+
+        # 第1轮
+        round_results, failures = _run_round(chunks, attempt_idx=0)
+        all_results.extend(round_results)
+
+        # 重试轮（窗口化 + 真正开始计时）
+        attempt = 1
+        while failures and attempt <= max_retry_rounds:
+            round_results, failures = _run_round(failures, attempt_idx=attempt)
+            all_results.extend(round_results)
+            attempt += 1
+
+        # 仍然失败的，做最终占位（已带失败标记）
+        if failures:
+            for ch in failures:
+                all_results.append(_stamp_result(
+                    ch, [], attempt=attempt-1, status="exception", reason="exhausted_retries"
+                ))
+
+        return all_results
     
     
     def load_from_json(self, json_file_path: str, extract_metadata: bool = False) -> List[Document]:

@@ -1146,27 +1146,23 @@ class Neo4jUtils:
             q += f"\nLIMIT {max_pairs}"
         return self.execute_query(q)
 
+
     def write_event_causes(self, rows: List[Dict[str, Any]]) -> None:
         """
         写入事件间关系（按 predicate 分三类）：
-        - CAUSES           -> :EVENT_CAUSES
-        - INDIRECT_CAUSES   -> :EVENT_INDIRECT_CAUSES
-        - PART_OF          -> :EVENT_PART_OF
+        - CAUSES          -> :EVENT_CAUSES      （relation_name=“导致”）
+        - INDIRECT_CAUSES -> :EVENT_INDIRECT_CAUSES（relation_name=“间接导致”）
+        - PART_OF         -> :EVENT_PART_OF     （relation_name=“属于/组成”）
 
         rows: [
-        {
-            "srcId": str,
-            "dstId": str,
-            "predicate": "CAUSES" | "INDIRECT_CAUSES" | "PART_OF",
-            "reason": str,
-            "confidence": float
-        }, ...
+        {"srcId": str, "dstId": str, "predicate": "CAUSES"|"INDIRECT_CAUSES"|"PART_OF",
+        "reason": str, "confidence": float},
+        ...
         ]
         """
         if not rows:
             return
 
-        # 仅写入我们支持的三类
         valid_rows = [r for r in rows if r.get("predicate") in ("CAUSES", "INDIRECT_CAUSES", "PART_OF")]
         if not valid_rows:
             print("[i] 无可写入的关系（全部为 NONE 或未知 predicate）")
@@ -1181,30 +1177,32 @@ class Neo4jUtils:
         // CAUSES
         FOREACH (_ IN CASE WHEN row.predicate = 'CAUSES' THEN [1] ELSE [] END |
         MERGE (s)-[r:EVENT_CAUSES]->(t)
-        SET r.reason     = row.reason,
-            r.confidence = coalesce(row.confidence, 0.0),
-            r.predicate  = row.predicate
+        SET r.predicate     = row.predicate,
+            r.reason        = row.reason,
+            r.confidence    = coalesce(row.confidence, 0.0),
+            r.relation_name = '导致'
         )
 
         // INDIRECT_CAUSES
         FOREACH (_ IN CASE WHEN row.predicate = 'INDIRECT_CAUSES' THEN [1] ELSE [] END |
         MERGE (s)-[r:EVENT_INDIRECT_CAUSES]->(t)
-        SET r.reason     = row.reason,
-            r.confidence = coalesce(row.confidence, 0.0),
-            r.predicate  = row.predicate
+        SET r.predicate     = row.predicate,
+            r.reason        = row.reason,
+            r.confidence    = coalesce(row.confidence, 0.0),
+            r.relation_name = '间接导致'
         )
 
         // PART_OF
         FOREACH (_ IN CASE WHEN row.predicate = 'PART_OF' THEN [1] ELSE [] END |
         MERGE (s)-[r:EVENT_PART_OF]->(t)
-        SET r.reason     = row.reason,
-            r.confidence = coalesce(row.confidence, 0.0),
-            r.predicate  = row.predicate
+        SET r.predicate     = row.predicate,
+            r.reason        = row.reason,
+            r.confidence    = coalesce(row.confidence, 0.0),
+            r.relation_name = '属于/组成'
         )
         """
         self.execute_query(cypher, {"rows": valid_rows})
 
-        # 小统计
         c_counts = {"CAUSES": 0, "INDIRECT_CAUSES": 0, "PART_OF": 0}
         for r in valid_rows:
             c_counts[r["predicate"]] += 1
@@ -1212,148 +1210,75 @@ class Neo4jUtils:
             f"(CAUSES={c_counts['CAUSES']}, INDIRECT_CAUSES={c_counts['INDIRECT_CAUSES']}, PART_OF={c_counts['PART_OF']})")
 
     
-    def get_all_events_with_causality(self) -> List[Dict[str, Any]]:
-        """
-        获取所有事件及其因果关系信息
-        
-        Returns:
-            List[Dict]: 包含事件ID、属性和因果关系的列表
-        """
-        cypher = """
+    def get_all_events_with_causality(self, min_confidence: float = 0.0) -> List[Dict[str, Any]]:
+        rel_types_str = '["EVENT_CAUSES","EVENT_INDIRECT_CAUSES","EVENT_PART_OF"]'
+        cypher = f"""
         MATCH (e:Event)
-        OPTIONAL MATCH (e)-[r:EVENT_CAUSES]->(target:Event)
-        OPTIONAL MATCH (source:Event)-[r2:EVENT_CAUSES]->(e)
-        RETURN e.id as event_id, 
-            e.name as event_name,
-            e.description as event_description,
-            e.participants as participants,
-            collect(DISTINCT {target: target.id, weight: r.weight}) as outgoing_causes,
-            collect(DISTINCT {source: source.id, weight: r2.weight}) as incoming_causes
+        OPTIONAL MATCH (e)-[r]->(t:Event)
+        WHERE type(r) IN {rel_types_str} AND coalesce(r.confidence,0.0) >= $min_conf
+        OPTIONAL MATCH (s:Event)-[r2]->(e)
+        WHERE type(r2) IN {rel_types_str} AND coalesce(r2.confidence,0.0) >= $min_conf
+        RETURN e.id AS event_id,
+            e.name AS event_name,
+            e.description AS event_description,
+            coalesce(e.properties, "{{}}") AS event_properties,
+            collect(DISTINCT {{target: t.id, confidence: coalesce(r.confidence,0.0), rel_type: type(r)}}) AS outgoing,
+            collect(DISTINCT {{source: s.id, confidence: coalesce(r2.confidence,0.0), rel_type: type(r2)}}) AS incoming
         """
-        
-        result = self.execute_query(cypher)
-        return [dict(record) for record in result]
+        return self.execute_query(cypher, {"min_conf": float(min_confidence)})
 
-    def get_causality_edges_by_weight(self, threshold: str = "Medium") -> List[Dict[str, Any]]:
-        """
-        根据权重阈值获取因果关系边
-        
-        Args:
-            threshold: 权重阈值 ("High", "Medium", "Low")
-            
-        Returns:
-            List[Dict]: 因果关系边列表
-        """
-        # 定义权重映射
-        weight_hierarchy = {
-            "High": 1.0,
-            "Medium": 0.6, 
-            "Low": 0.3
-        }
-        
-        weight_threshold = weight_hierarchy.get(threshold, 0.6)
-        
-        cypher = """
-        MATCH (source:Event)-[r:EVENT_CAUSES]->(target:Event)
-        WHERE r.weight >= $weight_threshold
-        RETURN source.id AS source_id, 
-            target.id AS target_id, 
-            r.weight AS weight
-        """
-        
-        params = {"weight_threshold": weight_threshold}
-        result = self.execute_query(cypher, params)
-        return [dict(record) for record in result]
 
-    def identify_event_clusters_by_connectivity(self, threshold: str = "Medium") -> List[List[str]]:
+    def get_causality_edges_by_confidence(self, min_confidence: float = 0.0) -> List[Dict[str, Any]]:
+        rel_types_str = '["EVENT_CAUSES","EVENT_INDIRECT_CAUSES","EVENT_PART_OF"]'
+        cypher = f"""
+        MATCH (source:Event)-[r]->(target:Event)
+        WHERE type(r) IN {rel_types_str} AND coalesce(r.confidence,0.0) >= $min_conf
+        RETURN source.id AS source_id,
+            target.id AS target_id,
+            coalesce(r.confidence,0.0) AS confidence,
+            type(r) AS rel_type
         """
-        使用GDS连通分量算法识别事件聚类
-        
-        Args:
-            threshold: 因果关系权重阈值
-            
-        Returns:
-            List[List[str]]: 事件聚类列表，每个聚类包含事件ID列表
-        """
-        # 1. 创建基于权重阈值的投影图
-        graph_name = f"event_causality_graph_{threshold.lower()}"
-        
-        # 删除可能存在的旧图
-        drop_cypher = f"CALL gds.graph.drop('{graph_name}') YIELD graphName"
+        return self.execute_query(cypher, {"min_conf": float(min_confidence)})
+
+
+    def identify_event_clusters_by_connectivity(self, min_confidence: float = 0.0) -> List[List[str]]:
+        graph_name = f"event_causality_graph_{str(float(min_confidence)).replace('.', '_')}"
         try:
-            self.execute_query(drop_cypher)
+            self.execute_query(f"CALL gds.graph.drop('{graph_name}') YIELD graphName")
         except:
-            pass  # 图不存在时忽略错误
-        
-        # 获取权重过滤条件
-        weight_hierarchy = {
-            "High": 1.0,
-            "Medium": 0.6, 
-            "Low": 0.3
-        }
-        weight_threshold = weight_hierarchy.get(threshold, 0.6)
-        
-        # 创建投影图 - 只包含满足权重条件的关系
+            pass
+
+        rel_types_str = '["EVENT_CAUSES","EVENT_INDIRECT_CAUSES","EVENT_PART_OF"]'
         create_graph_cypher = f"""
         CALL gds.graph.project.cypher(
             '{graph_name}',
             'MATCH (n:Event) RETURN id(n) AS id',
-            'MATCH (a:Event)-[r:EVENT_CAUSES]->(b:Event) 
-            WHERE r.weight >= {weight_threshold}
-            RETURN id(a) AS source, id(b) AS target, r.weight AS weight'
+            'MATCH (a:Event)-[r]->(b:Event)
+            WHERE type(r) IN {rel_types_str} AND coalesce(r.confidence,0.0) >= {float(min_confidence)}
+            RETURN id(a) AS source, id(b) AS target, coalesce(r.confidence,0.0) AS confidence'
         )
         """
-        # print("[CHECK] create_graph_cypher", create_graph_cypher)
-        
         self.execute_query(create_graph_cypher)
-        
-        # 2. 运行连通分量算法
-        wcc_cypher = f"""
+
+        result = self.execute_query(f"""
         CALL gds.wcc.stream('{graph_name}')
         YIELD nodeId, componentId
         RETURN gds.util.asNode(nodeId).id as event_id, componentId
         ORDER BY componentId, event_id
-        """
-        
-        result = self.execute_query(wcc_cypher)
-        # print("[CHECK] result: ", result)
-        
-        # 3. 组织结果为聚类
+        """)
+
         clusters = {}
-        for record in result:
-            component_id = record['componentId']
-            event_id = record['event_id']
-            
-            if component_id not in clusters:
-                clusters[component_id] = []
-            clusters[component_id].append(event_id)
-        
-        # print("[CHECK] clusters: ", clusters)
-        # 4. 清理图
-        # self.execute_query(drop_cypher)
-        
-        # 5. 过滤聚类 - 只保留通过权重阈值连接的事件
-        filtered_clusters = []
-        edges = self.get_causality_edges_by_weight(threshold)
-        # print("[CHECK] edges: ", edges)
-        
-        # 构建满足权重条件的连接图
-        connected_events = set()
-        for edge in edges:
-            connected_events.add(edge['source_id'])
-            connected_events.add(edge['target_id'])
-        
-        for cluster in clusters.values():
-            # 只保留有满足权重条件连接的聚类，且聚类大小大于1
-            if len(cluster) > 1:
-                cluster_has_valid_connections = any(event_id in connected_events for event_id in cluster)
-                if cluster_has_valid_connections:
-                    filtered_clusters.append(cluster)
-        
-        return filtered_clusters
+        for r in result:
+            clusters.setdefault(r["componentId"], []).append(r["event_id"])
+
+        # 仅保留 size>1 且节点确实出现在满足阈值的边中
+        edges = self.get_causality_edges_by_confidence(min_confidence)
+        connected = {e["source_id"] for e in edges} | {e["target_id"] for e in edges}
+        return [c for c in clusters.values() if len(c) > 1 and any(x in connected for x in c)]
+
             
 
-    def _fallback_clustering(self, threshold: str) -> List[List[str]]:
+    def _fallback_clustering(self, threshold: float) -> List[List[str]]:
         """
         降级聚类方法：基于直接因果关系的简单聚类
         
@@ -1363,7 +1288,7 @@ class Neo4jUtils:
         Returns:
             List[List[str]]: 事件聚类列表
         """
-        edges = self.get_causality_edges_by_weight(threshold)
+        edges = self.get_causality_edges_by_confidence(threshold)
         
         # 构建邻接表
         graph = {}
@@ -1475,36 +1400,22 @@ class Neo4jUtils:
 
 
     def get_causality_paths(self, event_ids: List[str]) -> List[Dict[str, Any]]:
-        """
-        获取事件间的因果路径
-        
-        Args:
-            event_ids: 事件ID列表
-            
-        Returns:
-            List[Dict]: 因果路径信息
-        """
-        cypher = """
-        MATCH (source:Event)-[r:EVENT_CAUSES]->(target:Event)
+        rel_types_str = '["EVENT_CAUSES","EVENT_INDIRECT_CAUSES","EVENT_PART_OF"]'
+        cypher = f"""
+        MATCH (source:Event)-[r]->(target:Event)
         WHERE source.id IN $event_ids AND target.id IN $event_ids
-        RETURN source.id as source_id,
-            source.name as source_name,
-            target.id as target_id,
-            target.name as target_name,
-            r.weight as weight,
-            r.description as causality_description
-        ORDER BY 
-            CASE r.weight 
-                WHEN 'High' THEN 1 
-                WHEN 'Medium' THEN 2 
-                WHEN 'Low' THEN 3 
-                ELSE 4 
-            END
+        AND type(r) IN {rel_types_str}
+        RETURN source.id AS source_id,
+            source.name AS source_name,
+            target.id AS target_id,
+            target.name AS target_name,
+            coalesce(r.confidence,0.0) AS confidence,
+            r.reason AS causality_reason,
+            type(r) AS rel_type
+        ORDER BY confidence DESC
         """
-        
-        params = {"event_ids": event_ids}
-        result = self.execute_query(cypher, params)
-        return [dict(record) for record in result]
+        return self.execute_query(cypher, {"event_ids": event_ids})
+
 
     def create_plot_node(self, plot_data: Dict[str, Any]) -> bool:
         """
@@ -1522,12 +1433,10 @@ class Neo4jUtils:
             bool: 创建是否成功
         """
         cypher = """
-        CREATE (p:Plot {
-            id: $plot_id,
-            name: $name,
-            description: $description,
-            properties: $properties
-        })
+        MERGE (p:Plot {id: $plot_id})
+        SET p.name = $name,
+            p.description = $description,
+            p.properties = $properties
         RETURN p.id AS plot_id
         """
         
@@ -1542,7 +1451,7 @@ class Neo4jUtils:
             "theme": plot_data.get("theme", ""),
             "goal": plot_data.get("goal", ""),
             "conflict": plot_data.get("conflict", ""),
-            "resolution": plot_data.get("theme", ""),
+            "resolution": plot_data.get("resolution", ""),
         }
         
         params = {
@@ -1562,39 +1471,30 @@ class Neo4jUtils:
 
     def create_plot_event_relationships(self, plot_id: str, event_ids: List[str]) -> bool:
         """
-        创建 HAS_EVENT 关系，并为每条关系设置:
-        - id: 根据 Plot ID 和 Event ID 生成的哈希值
-        - predicate: 固定为 'HAS_EVENT'
-        
-        Args:
-            plot_id: Plot ID
-            event_ids: 事件 ID 列表
-            
-        Returns:
-            bool: 创建是否成功
+        创建 HAS_EVENT 关系，并写入中文含义 relation_name=“包含事件”
         """
-        # 生成每条关系的数据
+        import hashlib
+
         rel_data = []
         for event_id in event_ids:
-            rel_id = f"rel_{hash(f'{plot_id}-HAS_EVENT-{event_id}') % 1_000_000}"
+            rel_id = "rel_" + hashlib.sha1(f"{plot_id}-HAS_EVENT-{event_id}".encode("utf-8")).hexdigest()[:16]
             rel_data.append({
                 "src_id": plot_id,
                 "tgt_id": event_id,
                 "rel_id": rel_id,
-                "predicate": "HAS_EVENT"
+                "predicate": "HAS_EVENT",
+                "relation_name": "包含事件",
             })
 
         cypher = """
         UNWIND $data AS row
         MATCH (p:Plot {id: row.src_id})
         MATCH (e:Event {id: row.tgt_id})
-        CREATE (p)-[r:HAS_EVENT {
-            id: row.rel_id,
-            predicate: row.predicate
-        }]->(e)
+        MERGE (p)-[r:HAS_EVENT {id: row.rel_id}]->(e)
+        SET r.predicate     = row.predicate,
+            r.relation_name = row.relation_name
         RETURN count(r) AS relationships_created
         """
-        
         try:
             result = self.execute_query(cypher, {"data": rel_data})
             count = list(result)[0]['relationships_created']
@@ -1602,76 +1502,140 @@ class Neo4jUtils:
         except Exception as e:
             print(f"创建 HAS_EVENT 关系失败: {e}")
             return False
-        
-        
+
+    
     def create_plot_relations(self, edges: List[Dict[str, Any]]) -> bool:
         """
-        批量创建情节关系（仅支持固定的关系类型：
-        PLOT_CONTRIBUTES_TO / PLOT_CONFLICTS_WITH）
+        批量创建情节关系（最终版，含中文 relation_name）：
+        - 有向：PLOT_PREREQUISITE_FOR(“前置/铺垫”) / PLOT_ADVANCES(“推进”) /
+                PLOT_BLOCKS(“阻碍”) / PLOT_RESOLVES(“解决”)
+        - 无向：PLOT_CONFLICTS_WITH(“冲突”) / PLOT_PARALLELS(“平行/呼应”)
 
-        edges 示例：
-        {
-            "src": "plot_123",
-            "tgt": "plot_456",
-            "relation_type": "PLOT_CONTRIBUTES_TO",
-            "confidence": 0.85,
-            "reason": "简要说明"
-        }
-
-        Returns:
-            bool: 是否全部创建成功
+        edges: [{"src","tgt","relation_type","confidence","reason"}, ...]
         """
         if not edges:
             print("[!] 没有传入任何情节关系，跳过创建。")
             return False
 
-        all_created = True
-        relation_types = set(e["relation_type"] for e in edges)
+        import hashlib
 
-        for rel_type in relation_types:
-            # 过滤出当前关系类型的所有边
-            rel_subset = []
-            for e in edges:
-                if e["relation_type"] != rel_type:
-                    continue
-                rel_id = f"rel_{hash(f'{e['src']}-{rel_type}-{e['tgt']}') % 1_000_000}"
-                rel_subset.append({
-                    "src_id": e["src"],
-                    "tgt_id": e["tgt"],
-                    "rel_id": rel_id,
-                    "predicate": rel_type,
-                    "confidence": e.get("confidence", 1.0),
-                    "reason": e.get("reason", "")
-                })
+        DIRECTED = {
+            "PLOT_PREREQUISITE_FOR",
+            "PLOT_ADVANCES",
+            "PLOT_BLOCKS",
+            "PLOT_RESOLVES",
+        }
+        UNDIRECTED = {
+            "PLOT_CONFLICTS_WITH",
+            "PLOT_PARALLELS",
+        }
+        ALLOWED = DIRECTED | UNDIRECTED
+        NAME_ZH = {
+            "PLOT_PREREQUISITE_FOR": "前置/铺垫",
+            "PLOT_ADVANCES": "推进",
+            "PLOT_BLOCKS": "阻碍",
+            "PLOT_RESOLVES": "解决",
+            "PLOT_CONFLICTS_WITH": "冲突",
+            "PLOT_PARALLELS": "平行/呼应",
+        }
 
-            if not rel_subset:
+        norm: List[Dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        for e in edges:
+            rtype = e.get("relation_type")
+            if rtype not in ALLOWED:
+                continue
+            src, tgt = e.get("src"), e.get("tgt")
+            if not src or not tgt or src == tgt:
                 continue
 
-            # Cypher：批量 MERGE 防止重复关系
+            # 无向关系规范化：只存 (min, max)
+            if rtype in UNDIRECTED and tgt < src:
+                src, tgt = tgt, src
+
+            key = (src, rtype, tgt)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            rel_id = "rel_" + hashlib.sha1(f"{src}|{rtype}|{tgt}".encode("utf-8")).hexdigest()[:16]
+            norm.append({
+                "src_id": src,
+                "tgt_id": tgt,
+                "rel_id": rel_id,
+                "predicate": rtype,
+                "relation_name": NAME_ZH[rtype],
+                "confidence": float(e.get("confidence") or 0.0),
+                "reason": e.get("reason", ""),
+            })
+
+        if not norm:
+            print("[!] 过滤后无可写入的情节关系。")
+            return False
+
+        all_created = True
+        for rtype in sorted({e["predicate"] for e in norm}):
+            subset = [e for e in norm if e["predicate"] == rtype]
             cypher = f"""
             UNWIND $data AS row
             MATCH (p1:Plot {{id: row.src_id}})
             MATCH (p2:Plot {{id: row.tgt_id}})
-            MERGE (p1)-[r:{rel_type} {{id: row.rel_id}}]->(p2)
-            SET r.predicate = row.predicate,
-                r.confidence = row.confidence,
-                r.reason = row.reason
+            MERGE (p1)-[r:{rtype} {{id: row.rel_id}}]->(p2)
+            SET r.predicate     = row.predicate,
+                r.relation_name = row.relation_name,
+                r.confidence    = row.confidence,
+                r.reason        = row.reason
             RETURN count(r) AS relationships_created
             """
-
             try:
-                result = self.execute_query(cypher, {"data": rel_subset})
-                created_count = list(result)[0]['relationships_created']
-                if created_count != len(rel_subset):
+                result = self.execute_query(cypher, {"data": subset})
+                created = list(result)[0]["relationships_created"]
+                if created != len(subset):
                     all_created = False
-                    print(f"[!] {rel_type} 仅创建 {created_count}/{len(rel_subset)} 条，可能存在节点缺失或重复关系")
+                    print(f"[!] {rtype} 仅创建 {created}/{len(subset)} 条，可能存在节点缺失或并发竞争。")
                 else:
-                    print(f"[✓] {rel_type} 已创建 {created_count} 条关系")
+                    print(f"[✓] {rtype} 已创建 {created} 条关系")
             except Exception as e:
-                print(f"[❌] 创建 {rel_type} 关系失败: {e}")
+                print(f"[❌] 创建 {rtype} 关系失败: {e}")
                 all_created = False
 
         return all_created
+
+        
+    def create_event_plot_graph(self):
+        """
+        用白名单关系创建 Event-Plot 专用 GDS 图：
+        - 事件三类：EVENT_CAUSES / EVENT_INDIRECT_CAUSES / EVENT_PART_OF
+        - Plot 六类：PLOT_PREREQUISITE_FOR / PLOT_ADVANCES / PLOT_BLOCKS / PLOT_RESOLVES / PLOT_CONFLICTS_WITH / PLOT_PARALLELS
+        - HAS_EVENT
+        """
+        # 先删旧图
+        try:
+            self.execute_query("CALL gds.graph.drop('event_plot_graph', false)")
+        except Exception:
+            pass
+
+        allowed = [
+            "EVENT_CAUSES","EVENT_INDIRECT_CAUSES","EVENT_PART_OF",
+            "HAS_EVENT",
+            "PLOT_PREREQUISITE_FOR","PLOT_ADVANCES","PLOT_BLOCKS","PLOT_RESOLVES",
+            "PLOT_CONFLICTS_WITH","PLOT_PARALLELS"
+        ]
+        types_str = ", ".join(f"\"{t}\"" for t in allowed)
+
+        cypher = f"""
+        CALL gds.graph.project.cypher(
+        'event_plot_graph',
+        'MATCH (n) RETURN id(n) AS id',
+        'MATCH (a)-[r]->(b)
+        WHERE type(r) IN [{types_str}]
+        RETURN id(a) AS source, id(b) AS target'
+        );
+        """
+        self.execute_query(cypher)
+        print("✅ 创建 Event Plot Graph（事件因果 + HAS_EVENT + 6 类 Plot 边）")
+
 
 
 
@@ -1727,14 +1691,14 @@ class Neo4jUtils:
 
         # 2. 边
         cypher_edges = """
-        MATCH (u)-[r:EVENT_CAUSES]->(v)
-        WHERE u.id IN $ids AND v.id IN $ids
+        MATCH (u:Event)-[r]->(v:Event)
+        WHERE u.id IN $ids AND v.id IN $ids AND type(r) IN ["EVENT_CAUSES","EVENT_INDIRECT_CAUSES","EVENT_PART_OF"]
         RETURN u.id AS sid,
-                v.id AS tid,
-                r.weight AS weight,
-                r.reason AS reason,
-                r.confidence AS confidence
+            v.id AS tid,
+            coalesce(r.confidence,0.0) AS confidence,
+            r.reason AS reason
         """
+
         edges = self.execute_query(cypher_edges, {"ids": node_ids})
         return node_map, edges
     
@@ -1796,12 +1760,50 @@ class Neo4jUtils:
     def get_starting_events(self):
         cypher = """
         MATCH (e:Event)
-        WHERE NOT ()-[:EVENT_CAUSES]->(e)
+        WHERE NOT ()-[:EVENT_CAUSES|:EVENT_INDIRECT_CAUSES|:EVENT_PART_OF]->(e)
         RETURN e.id AS event_id
         """
+
         result = self.execute_query(cypher)
         result = [e["event_id"] for e in result]
         return result
+    
+    def create_plot_event_relationships(self, plot_id: str, event_ids: List[str]) -> bool:
+        """
+        创建 HAS_EVENT 关系，并写入中文含义 relation_name=“包含事件”
+        """
+        import hashlib
+
+        rel_data = []
+        for event_id in event_ids:
+            rel_id = "rel_" + hashlib.sha1(f"{plot_id}-HAS_EVENT-{event_id}".encode("utf-8")).hexdigest()[:16]
+            rel_data.append({
+                "src_id": plot_id,
+                "tgt_id": event_id,
+                "rel_id": rel_id,
+                "predicate": "HAS_EVENT",
+                "relation_name": "包含事件",
+            })
+
+        cypher = """
+        UNWIND $data AS row
+        MATCH (p:Plot {id: row.src_id})
+        MATCH (e:Event {id: row.tgt_id})
+        MERGE (p)-[r:HAS_EVENT {id: row.rel_id}]->(e)
+        SET r.predicate     = row.predicate,
+            r.relation_name = row.relation_name
+        RETURN count(r) AS relationships_created
+        """
+        try:
+            result = self.execute_query(cypher, {"data": rel_data})
+            count = list(result)[0]['relationships_created']
+            return count == len(event_ids)
+        except Exception as e:
+            print(f"创建 HAS_EVENT 关系失败: {e}")
+            return False
+
+
+
     
     def find_event_chain(self, entity_id: str, min_confidence: float = 0.0):
         """
@@ -1846,8 +1848,13 @@ class Neo4jUtils:
     def reset_event_plot_graph(self):
         cypher = """
         MATCH ()-[r]->()
-        WHERE type(r) IN ["HAS_EVENT", "PLOT_CONTRIBUTES_TO", "PLOT_CONFLICT_WITH"]
-        DELETE r;
+        WHERE type(r) IN [
+        "HAS_EVENT",
+        "PLOT_PREREQUISITE_FOR","PLOT_ADVANCES","PLOT_BLOCKS","PLOT_RESOLVES",
+        "PLOT_CONFLICTS_WITH","PLOT_PARALLELS",
+        "PLOT_CONTRIBUTES_TO","PLOT_SETS_UP" // 历史兼容可留
+        ]
+        DELETE r
         """
         self.execute_query(cypher)
         
@@ -1859,37 +1866,74 @@ class Neo4jUtils:
         print("✅ Event Plot Graph已重置")
     
     
-    def get_plot_pairs(self, threshold=0.5):
+    def get_plot_pairs(self, threshold=0):
         """
-        从指定起点事件出发，返回所有到终点事件（没有出边的事件）的路径，
-        只保留满足 weight 和 confidence 阈值的边。
+        召回候选情节对（返回字典而非元组），并带回最短路径长度：
+        - 仅沿以下边联通：事件三类 + HAS_EVENT + 六类 Plot 边
+        - 优先选择路径更短的情节对
+        - 总量不超过 3 × Plot 数量
+        - 二次过滤：文本向量相似度 & node2vec 图相似度
+
+        返回: List[Dict]，每项形如 {"src": str, "tgt": str, "path_len": int}
         """
-        # cypher = """
-        # MATCH (p1:Plot), (p2:Plot)
-        # WHERE id(p1) < id(p2)
-        # MATCH (p1)-[*1..2]-(x)-[*1..2]-(p2)
-        # WHERE NOT p1 = p2
-        # AND NOT x:Plot
-        # RETURN DISTINCT p1.id AS src, p2.id AS tgt
-        # """
+        # 1) 只在白名单关系上找 1..5 跳内最短路径
         cypher = """
         MATCH (p1:Plot), (p2:Plot)
         WHERE id(p1) < id(p2)
-        MATCH path = (p1)-[*2..4]-(p2)
-        WHERE NOT p1 = p2
-        RETURN DISTINCT p1.id AS src, p2.id AS tgt
+        MATCH path = (p1)-[*1..5]-(p2)
+        WITH p1, p2, min(length(path)) AS path_len
+        RETURN p1.id AS src, p2.id AS tgt, path_len
         """
-        results = self.execute_query(
-            cypher
-        )
-        filtered_pairs = []
-        
-        for pair in results:
-            sim = self.compute_semantic_similarity(pair["src"], pair["tgt"])
-            graph_sim = self.compute_graph_similarity(pair["src"], pair["tgt"], 'node2vecEmbedding')
-            if sim >= threshold and graph_sim >=threshold:
-                filtered_pairs.append(pair)
-        return filtered_pairs
+        results = self.execute_query(cypher)
+
+        # 2) 计算 Plot 数 & 设上限（建议≈ 3x）
+        plot_cypher = "MATCH (p:Plot) RETURN count(DISTINCT p) AS plot_count"
+        res = self.execute_query(plot_cypher)
+        num_plots = int(res[0]["plot_count"]) if res else 0
+        max_num_relations = num_plots * 3
+
+        # 3) 按路径长度分桶
+        pair_maps: Dict[int, List[Dict[str, Any]]] = {}
+        for row in results:
+            d = int(row["path_len"])
+            item = {"src": row["src"], "tgt": row["tgt"], "path_len": d}
+            pair_maps.setdefault(d, []).append(item)
+
+        # 4) 依次从短到长选取，直到达到上限
+        import random
+        selected_pairs: List[Dict[str, Any]] = []
+        count = 0
+        for distance in sorted(pair_maps.keys()):
+            bucket = pair_maps[distance]
+            remain = max_num_relations - count
+            if remain <= 0:
+                break
+            if len(bucket) <= remain:
+                selected_pairs.extend(bucket)
+                count += len(bucket)
+            else:
+                selected_pairs.extend(random.sample(bucket, remain))
+                count += remain
+                break
+
+        # 5) 相似度过滤（文本 + 图 node2vec）
+        if threshold > 0:
+            filtered: List[Dict[str, Any]] = []
+            for item in selected_pairs:
+                src, tgt = item["src"], item["tgt"]
+                # 这两个函数返回 None 时跳过该对
+                sim = self.compute_semantic_similarity(src, tgt)
+                gsim = self.compute_graph_similarity(src, tgt, "node2vecEmbedding")
+                if sim is None or gsim is None:
+                    continue
+                if sim >= threshold and gsim >= threshold:
+                    filtered.append(item)
+        else: 
+            filtered = selected_pairs
+
+        return filtered
+
+    
     
     def create_event_plot_graph(self):
         cypher = """

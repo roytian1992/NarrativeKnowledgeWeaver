@@ -7,7 +7,7 @@
 import json
 from typing import Dict, Any
 from core.utils.config import KAGConfig
-from core.functions.regular_functions import (EventCausalityChecker, RedundancyEvaluator, PlotGenerator, PlotRelationExtractor, EventContextGenerator)
+from core.functions.regular_functions import (EventCausalityChecker, RedundancyEvaluator, PlotUnitExtractor, PlotRelationExtractor, EventContextGenerator)
 # from kag.schema.kg_schema import ENTITY_TYPES, RELATION_TYPE_GROUPS
 from core.utils.prompt_loader import PromptLoader
 import os
@@ -24,7 +24,7 @@ class GraphManager:
 
         self.event_causality_checker = EventCausalityChecker(self.prompt_loader, self.llm)  
         self.redundancy_evaluator = RedundancyEvaluator(self.prompt_loader, self.llm)
-        self.plot_generator = PlotGenerator(self.prompt_loader, self.llm)
+        self.plot_generator = PlotUnitExtractor(self.prompt_loader, self.llm)
         self.plot_relation_extractor = PlotRelationExtractor(self.prompt_loader, self.llm)
         self.event_context_generator = EventContextGenerator(self.prompt_loader, self.llm)
 

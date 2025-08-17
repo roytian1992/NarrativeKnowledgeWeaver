@@ -94,7 +94,7 @@ class OpenAIEmbeddingModel:
             kwargs["base_url"] = self.base_url  # 必须包含 /v1
         # if self.dimensions is not None:
         #     kwargs["dimensions"] = self.dimensions  # 仅当服务端支持才会生效
-        if "bge" in self.model_name.lower():
+        if "bge-large" in self.model_name.lower():
             client = OpenAI(base_url=self.base_url, api_key=self.api_key)
             self.model = OpenAICompatEmbeddings(
                 client=client,

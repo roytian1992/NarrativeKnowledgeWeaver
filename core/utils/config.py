@@ -1,6 +1,6 @@
 # config.py
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 import yaml
 
 # =========================
@@ -46,7 +46,8 @@ class EventPlotGraphBuilderConfig:
     max_num_triangles: int = 2000
     max_iterations: int = 5
     min_confidence: float = 0.5
-    min_weight: float = 0.5
+    # 新增：回退事件类型，按优先级书写，如 ["Action", "Goal"]
+    event_fallback: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -54,7 +55,12 @@ class ProbingConfig:
     # fixed / adjust / from_scratch
     probing_mode: str = "fixed"
     refine_background: bool = False
+    # 新增：任务目标说明（例如：面向剧本理解）
+    task_goal: str = ""
     max_workers: int = 32
+    max_retries: int = 2
+    relation_prune_threshold: float = 0.05
+    entity_prune_threshold: float = 0.02
     default_graph_schema_path: Optional[str] = "./core/schema/graph_schema.json"
     default_background_path: Optional[str] = "./examples/settings/we2_settings.json"
     experience_limit: int = 100
@@ -148,8 +154,8 @@ class KAGConfig:
 
     # 模型段
     llm: LLMConfig = field(default_factory=LLMConfig)
-    graph_embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)      # 新增：图谱向量
-    vectordb_embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)   # 新增：检索向量
+    graph_embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)      # 图谱向量
+    vectordb_embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)   # 检索向量
     rerank: RerankConfig = field(default_factory=RerankConfig)
 
     # 流水线段
@@ -174,6 +180,20 @@ class KAGConfig:
         # event_plot_graph_builder
         if "event_plot_graph_builder" in data:
             _update_dc_from_dict(cfg.event_plot_graph_builder, data["event_plot_graph_builder"])
+            # 轻量规范化：event_fallback -> List[str]
+            ef = cfg.event_plot_graph_builder.event_fallback
+            if ef is None:
+                cfg.event_plot_graph_builder.event_fallback = []
+            elif isinstance(ef, (str, int, float, bool)):
+                cfg.event_plot_graph_builder.event_fallback = [str(ef)]
+            elif isinstance(ef, tuple):
+                cfg.event_plot_graph_builder.event_fallback = [str(x) for x in ef]
+            elif isinstance(ef, list):
+                cfg.event_plot_graph_builder.event_fallback = [str(x) for x in ef]
+            else:
+                # 不可识别类型时给出提醒并置空
+                print(f"[KAGConfig] 提示：event_fallback 类型异常（{type(ef)}），已忽略。")
+                cfg.event_plot_graph_builder.event_fallback = []
 
         # probing
         if "probing" in data:
@@ -209,9 +229,13 @@ class KAGConfig:
         if "memory" in data:
             _update_dc_from_dict(cfg.memory, data["memory"])
 
-        # storage（容错 graph_scehma_path）
+        # storage（容错 graph_scehma_path → graph_schema_path）
         if "storage" in data:
-            _update_dc_from_dict(cfg.storage, data["storage"])
+            _update_dc_from_dict(
+                cfg.storage,
+                data["storage"],
+                aliases={"graph_scehma_path": "graph_schema_path"}
+            )
 
         cfg._validate()
         return cfg
@@ -247,11 +271,15 @@ class KAGConfig:
         if self.probing.probing_mode not in valid_modes:
             raise ValueError(f"probing.probing_mode 必须为 {valid_modes}，当前为 {self.probing.probing_mode!r}")
 
+        # event_fallback 类型检查（仅提示，不强制）
+        ef = self.event_plot_graph_builder.event_fallback
+        if not isinstance(ef, list) or not all(isinstance(x, str) for x in ef):
+            print(f"[KAGConfig] 提示：event_fallback 应为字符串列表，当前为 {type(ef)}，已在加载时尝试规范化。")
+
         # 向量维度提示（仅提示，不强制）
         for name, emb in (("graph_embedding", self.graph_embedding),
                           ("vectordb_embedding", self.vectordb_embedding)):
             if emb.dimensions is None:
-                # 不抛错，只给出默认经验提示
                 pass
 
         # vector_store_type 提示
