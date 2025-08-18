@@ -34,6 +34,7 @@ from .document_processor import DocumentProcessor
 from core.builder.graph_preprocessor import GraphPreprocessor
 from core.utils.format import DOC_TYPE_META
 from core.builder.reflection import DynamicReflector
+from collections import defaultdict
 
 def _normalize_type(t):
     """
@@ -73,6 +74,8 @@ class KnowledgeGraphBuilder:
         self.config = config
         self.max_workers = config.knowledge_graph_builder.max_workers
         self.meta = DOC_TYPE_META[self.doc_type]
+        self.section_chunk_ids = defaultdict(set)
+
         prompt_dir = config.knowledge_graph_builder.prompt_dir
         self.prompt_loader = PromptLoader(prompt_dir)
         self.llm = OpenAILLM(config)
@@ -610,6 +613,13 @@ class KnowledgeGraphBuilder:
                 if se.name not in self.section_names and se.id not in self.kg.entities:
                     self.kg.add_entity(se)
                     self.section_names.append(se.name)
+                else:
+                    exist = self.kg.entities.get(se.id)
+                    if exist:
+                        # 去重并保持稳定顺序
+                        merged = list(dict.fromkeys(list(exist.source_chunks) + list(se.source_chunks)))
+                        exist.source_chunks = merged
+                
 
             inner = self.section_entities_collection[se.name]
             for se in secs:
@@ -796,6 +806,9 @@ class KnowledgeGraphBuilder:
             if k not in excluded:
                 properties[k] = v
 
+        self.section_chunk_ids[eid].add(chunk_id)
+        agg_chunks = sorted(self.section_chunk_ids[eid])
+
         return [
             Entity(
                 id=eid,
@@ -803,7 +816,7 @@ class KnowledgeGraphBuilder:
                 type=label,
                 description=md.get("summary", ""),  # 可选：用 summary 作为简要描述
                 properties=properties,
-                source_chunks=[] # 超节点不需要chunk_ids
+                source_chunks=agg_chunks 
             )
         ]
 
@@ -911,7 +924,7 @@ class KnowledgeGraphBuilder:
         self.neo4j_utils.load_embedding_model(self.config.graph_embedding)
         self.neo4j_utils.create_vector_index()
         self.neo4j_utils.process_all_embeddings(
-            exclude_entity_types=[self.meta["section_label"]]
+            # exclude_entity_types=[self.meta["section_label"]]
             # exclude_relation_types=[self.meta["contains_pred"]],
         )
         self.neo4j_utils.ensure_entity_superlabel()

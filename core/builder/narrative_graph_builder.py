@@ -1148,6 +1148,15 @@ class EventCausalityBuilder:
             context += f"事件{i+1}：{event}\n" + self.event_cards[event] + "\n"
         
         return context
+    
+    def prepare_graph_embeddings(self):
+        self.neo4j_utils.load_embedding_model(self.config.graph_embedding)
+        self.neo4j_utils.create_vector_index()
+        self.neo4j_utils.process_all_embeddings(
+            entity_types=["Event", "Plot"]
+        )
+        self.neo4j_utils.ensure_entity_superlabel()
+        print("✅ 事件情节图向量构建完成")
 
     def generate_plot_relations(self):
         """

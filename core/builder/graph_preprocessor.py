@@ -292,40 +292,98 @@ class GraphPreprocessor:
     # ---------- 统一应用规则，深拷贝并返回 ----------
     @staticmethod
     def _apply_entity_rules(
+        self,
         extraction_results: List[Dict[str, Any]],
         *,
         type_rules: Optional[Dict[str, Dict[str, str]]] = None,   # {entity_name: {old_type: new_type, ...}}
-        scope_rules: Optional[Dict[str, str]] = None              # {entity_name: "global"/"local"}
+        scope_rules: Optional[Dict[str, str]] = None,              # {entity_name: "global"/"local"}
+        normalize_types: bool = True                                # ★ 应用映射后，是否规范化 type/types
     ) -> Tuple[List[Dict[str, Any]], int, int]:
-        """深拷贝 extraction_results，在副本上应用规则并返回。"""
+        """
+        深拷贝 extraction_results，在副本上应用规则并返回。
+        加强点：
+        - 对同一实体实例，合并其当前的单类型 `type` 与多标签 `types`，统一做类型映射与清洗；
+        - 清洗使用本类的优先级与策略（去 Concept、Action→Event、排序、限幅）；
+        - 最终同时写回 `types` 与主类型 `type`，确保不会出现【非 Concept 存在时仍保留 Concept】。
+        """
         new_results = deepcopy(extraction_results)
         type_changed = 0
         scope_changed = 0
+
+        # 便捷：把映射表取一个安全的空映射
+        type_rules = type_rules or {}
+        scope_rules = scope_rules or {}
 
         for doc in new_results:
             ents = doc.get("entities", [])
             for ent in ents:
                 nm = ent.get("name")
+                if not nm:
+                    continue
 
-                # 类型规则
-                if type_rules and nm in type_rules:
-                    mapping = type_rules[nm]
-                    old_t = ent.get("type")
-                    new_t = mapping.get(old_t)
-                    if new_t and new_t != old_t:
-                        ent["type"] = new_t
-                        type_changed += 1
+                # ---- 1) 统一汇总当前类型集合（type ∪ types）----
+                current_types: List[str] = []
+                if isinstance(ent.get("type"), str) and ent["type"].strip():
+                    current_types.append(ent["type"].strip())
+                if isinstance(ent.get("types"), list):
+                    for t in ent["types"]:
+                        if isinstance(t, str) and t.strip():
+                            current_types.append(t.strip())
 
-                # scope 规则（小写规范）
-                if scope_rules and nm in scope_rules:
-                    target = scope_rules[nm]
-                    if isinstance(target, str):
-                        tgt_norm = target.lower()
-                        if tgt_norm in ("global", "local"):
-                            tgt = "global" if tgt_norm == "global" else "local"
-                            if ent.get("scope") != tgt:
-                                ent["scope"] = tgt
-                                scope_changed += 1
+                # 去重（保留顺序）
+                seen = set()
+                merged_types = []
+                for t in current_types:
+                    if t not in seen:
+                        seen.add(t)
+                        merged_types.append(t)
+
+                before_types = list(merged_types)  # 记录变化
+
+                # ---- 2) 先做类型映射（按实体名命中时把 old_type → new_type）----
+                if nm in type_rules and isinstance(type_rules[nm], dict):
+                    mapping = type_rules[nm]           # {old_type: new_type}
+                    mapped = []
+                    for t in merged_types:
+                        new_t = mapping.get(t, t)
+                        mapped.append(new_t)
+                    merged_types = mapped
+
+                # ---- 3) 规范化 scope（若有规则）----
+                if nm in scope_rules and isinstance(scope_rules[nm], str):
+                    tgt_norm = scope_rules[nm].strip().lower()
+                    if tgt_norm in ("global", "local"):
+                        tgt = "global" if tgt_norm == "global" else "local"
+                        if ent.get("scope") != tgt:
+                            ent["scope"] = tgt
+                            scope_changed += 1
+
+                # ---- 4) 规范化类型集合（去 Concept、Action→Event、排序、限幅）----
+                if normalize_types:
+                    # 用类内清洗逻辑（会依据 STRIP_CONCEPT_WHEN_OTHERS / UNIFY_ACTION_TO_EVENT / TYPE_PRIORITY / MAX_TYPES_PER_NODE）
+                    cleaned_list = self._sanitize_type_set(set(merged_types))
+                else:
+                    # 仅去重
+                    cleaned_list = list(dict.fromkeys(merged_types))
+
+                # 保底：至少给一个类型
+                if not cleaned_list:
+                    cleaned_list = ["Concept"]
+
+                # ---- 5) 写回：types 与主类型 type ----
+                # 如果允许多标签：写回完整；否则仅保留主类型
+                if self.ALLOW_MULTI_TYPE:
+                    ent["types"] = cleaned_list
+                else:
+                    ent["types"] = [cleaned_list[0]]
+
+                old_type = ent.get("type")
+                ent["type"] = cleaned_list[0]  # 主类型用于兼容下游
+
+                # 变化统计：只要集合或主类型发生改变，就计数
+                if cleaned_list != before_types or ent["type"] != old_type:
+                    type_changed += 1
+
         return new_results, type_changed, scope_changed
 
     # ---------- 多类型：集合清洗 & 主类型选择 & 限幅 ----------

@@ -859,16 +859,16 @@ class Neo4jUtils:
         return False
 
 
-    def get_entity_info(self, event_id: str, entity_type="", contain_relations=False, contain_properties=False) -> str:
+    def get_entity_info(self, entity_id: str, entity_type="", contain_relations=False, contain_properties=False) -> str:
         """
         获取事件的详细信息，用于因果关系检查
         Args:
-            event_id: 事件ID
+            entity__id: 实体ID
             
         Returns:
             格式化的事件信息字符串
         """
-        event_node = self.get_entity_by_id(event_id)
+        event_node = self.get_entity_by_id(entity_id)
         
         relation_types = self.list_relationship_types()
         
@@ -877,7 +877,7 @@ class Neo4jUtils:
                 relation_types.remove(relation)
             
         results = self.search_related_entities(
-            source_id=event_id, 
+            source_id=entity_id, 
             return_relations=True,
             relation_types=relation_types
         )

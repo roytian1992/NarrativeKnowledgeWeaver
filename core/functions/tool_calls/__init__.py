@@ -1,17 +1,42 @@
-# kag/tools/qwen_tools/__init__.py
+# functions/__init__.py
+"""
+Expose tool classes so they can be imported directly via:
+    from functions import EntityRetrieverName, VDBHierdocsSearchTool, ...
+"""
 
-from .entity_extraction_tool import QwenEntityExtractionTool
-from .relation_extraction_tool import QwenRelationExtractionTool
-from .scene_elements_extraction_tool import QwenSceneElementsExtractionTool
-# from .parse_scene_name_tool import QwenParseSceneNameTool
-from .extract_props_tool import QwenExtractPropsTool
-from .reflect_extraction_tool import QwenReflectExtractionTool
+# Graph DB tools
+from .graphdb_tools import (
+    EntityRetrieverName,
+    EntityRetrieverID,
+    SearchRelatedEntities,
+    GetRelationSummary,
+    GetCommonNeighbors,
+    QuerySimilarEntities,
+    FindEventChain,
+    CheckNodesReachable,
+)
+
+# Vector DB tools
+from .vectordb_tools import (
+    VDBHierdocsSearchTool,
+    VDBDocsSearchTool,
+    VDBGetDocsByChunkIDsTool,
+    VDBSentencesSearchTool,
+)
 
 __all__ = [
-    "QwenEntityExtractionTool",
-    "QwenRelationExtractionTool", 
-    "QwenScriptElementsExtractionTool",
-    "QwenExtractPropsTool",
-    "QwenReflectExtractionTool",
+    # graphdb_tools
+    "EntityRetrieverName",
+    "EntityRetrieverID",
+    "SearchRelatedEntities",
+    "GetRelationSummary",
+    "GetCommonNeighbors",
+    "QuerySimilarEntities",
+    "FindEventChain",
+    "CheckNodesReachable",
+    # vectordb_tools
+    "VDBHierdocsSearchTool",
+    "VDBDocsSearchTool",
+    "VDBGetDocsByChunkIDsTool",
+    "VDBSentencesSearchTool",
 ]
-
