@@ -14,6 +14,7 @@ from .graphdb_tools import (
     QuerySimilarEntities,
     FindEventChain,
     CheckNodesReachable,
+    TopKByCentrality
 )
 
 # Vector DB tools
@@ -34,6 +35,7 @@ __all__ = [
     "QuerySimilarEntities",
     "FindEventChain",
     "CheckNodesReachable",
+    "TopKByCentrality",
     # vectordb_tools
     "VDBHierdocsSearchTool",
     "VDBDocsSearchTool",

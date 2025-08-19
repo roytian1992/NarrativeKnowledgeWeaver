@@ -17,6 +17,16 @@ DOC_TYPE_META: Dict[str, Dict[str, str]] = {
     },
 }
 
+DOC_TYPE_DESCRIPTION: Dict[str, Dict[str, str]] = {
+    "screenplay": {
+        "entity": "- Scene: 场景，表示第几场戏，包含场景名称（scene_name）、子场景名称（sub_scene_name）等信息。",
+        "relation": "- SCENE_CONTAINS: 场景中包含关系（Scene → Any）",
+    },
+    "novel": {
+        "entity": "- Chapter: 章节，表示小说的章节信息，包含章节标题（chapter_name）、子章节标题（sub_chapter_name）等信息。",
+        "relation": "- CHAPTER_CONTAINS: 章节中包含关系（Chapter → Any）",
+    },
+}
 def format_event_card(card: Dict[str, Any]) -> str:
     """
     将 event_card 字典整理为可读字符串。

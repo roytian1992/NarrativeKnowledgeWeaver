@@ -1129,6 +1129,200 @@ class Neo4jUtils:
             print(f"[+] Louvain 已完成，结果写入 `{write_property}`")
 
     
+    def compute_centrality(
+        self,
+        include_rel_types: Optional[List[str]] = None,
+        exclude_rel_types: Optional[List[str]] = None,
+        node_labels: Optional[List[str]] = None,
+        graph_name: str = "centrality_graph",
+        force_refresh: bool = True,
+    ) -> None:
+        if include_rel_types and exclude_rel_types:
+            raise ValueError("include_rel_types 与 exclude_rel_types 不能同时使用。")
+
+        # 节点投影
+        if node_labels:
+            node_query = """
+            MATCH (n)
+            WHERE ANY(l IN labels(n) WHERE l IN $node_labels)
+            RETURN id(n) AS id
+            """
+        else:
+            node_query = "MATCH (n) RETURN id(n) AS id"
+
+        # 关系投影
+        rel_where = []
+        if include_rel_types:
+            rel_where.append("type(r) IN $include_rels")
+        elif exclude_rel_types:
+            rel_where.append("NOT type(r) IN $exclude_rels")
+        rel_where_clause = " AND ".join(rel_where) if rel_where else "true"
+
+        rel_query = f"""
+        MATCH (a)-[r]->(b)
+        WHERE {rel_where_clause}
+        RETURN id(a) AS source, id(b) AS target
+        """
+
+        # 刷新子图
+        if force_refresh:
+            try:
+                self.execute_query("CALL gds.graph.drop($name, false)", {"name": graph_name})
+            except Exception:
+                pass
+
+        # 关键：把 node_labels / include_rels / exclude_rels 放进 parameters
+        gds_params = {}
+        if node_labels:
+            gds_params["node_labels"] = node_labels
+        if include_rel_types:
+            gds_params["include_rels"] = include_rel_types
+        if exclude_rel_types:
+            gds_params["exclude_rels"] = exclude_rel_types
+
+        self.execute_query("""
+        CALL gds.graph.project.cypher(
+        $name,
+        $nodeQuery,
+        $relQuery,
+        { parameters: $parameters }
+        )
+        """, {
+            "name": graph_name,
+            "nodeQuery": node_query,
+            "relQuery": rel_query,
+            "parameters": gds_params
+        })
+
+        # 空图直接收尾
+        stats = self.execute_query("""
+        CALL gds.graph.list() YIELD graphName, nodeCount, relationshipCount
+        WHERE graphName = $name
+        RETURN nodeCount, relationshipCount
+        """, {"name": graph_name})
+        if not stats or stats[0]["nodeCount"] == 0:
+            try:
+                self.execute_query("CALL gds.graph.drop($name, false)", {"name": graph_name})
+            except Exception:
+                pass
+            return
+
+
+        # 计算中心度
+        def _stream(q: str, p: Dict[str, Any]) -> List[Dict[str, Any]]:
+            return self.execute_query(q, p)
+
+        pr_rows = _stream("""
+            CALL gds.pageRank.stream($g)
+            YIELD nodeId, score
+            RETURN gds.util.asNode(nodeId).id AS id, score AS pr
+        """, {"g": graph_name})
+
+        deg_rows = _stream("""
+            CALL gds.degree.stream($g)
+            YIELD nodeId, score
+            RETURN gds.util.asNode(nodeId).id AS id, score AS deg
+        """, {"g": graph_name})
+
+        try:
+            btw_rows = _stream("""
+                CALL gds.betweenness.stream($g)
+                YIELD nodeId, score
+                RETURN gds.util.asNode(nodeId).id AS id, score AS btw
+            """, {"g": graph_name})
+        except Exception as e:
+            print(f"[i] Betweenness 计算失败：{e}")
+            btw_rows = []
+
+
+        # 合并结果并写回
+        merged: Dict[str, Dict[str, Any]] = {}
+        for r in pr_rows:
+            merged.setdefault(r["id"], {"id": r["id"], "pr": None, "deg": None, "btw": None, "clo": None})
+            merged[r["id"]]["pr"] = r["pr"]
+        for r in deg_rows:
+            merged.setdefault(r["id"], {"id": r["id"], "pr": None, "deg": None, "btw": None, "clo": None})
+            merged[r["id"]]["deg"] = r["deg"]
+        for r in btw_rows:
+            merged.setdefault(r["id"], {"id": r["id"], "pr": None, "deg": None, "btw": None, "clo": None})
+            merged[r["id"]]["btw"] = r["btw"]
+
+        payload = [{
+            "id": n_id,
+            "pr":  float(v.get("pr"))  if v.get("pr")  is not None else None,
+            "deg": float(v.get("deg")) if v.get("deg") is not None else None,
+            "btw": float(v.get("btw")) if v.get("btw") is not None else None,
+        } for n_id, v in merged.items()]
+
+        if payload:
+            self.execute_query("""
+            UNWIND $rows AS row
+            MATCH (n {id: row.id})
+            SET n.pr  = row.pr,
+                n.deg = row.deg,
+                n.btw = row.btw,
+            """, {"rows": payload})
+
+        # 清理子图
+        try:
+            self.execute_query("CALL gds.graph.drop($name, false)", {"name": graph_name})
+        except Exception:
+            pass
+
+
+    def top_k_by_centrality(
+        self,
+        metric: str,
+        top_k: int = 50,
+        node_labels: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        根据中心度指标返回 Top-K 节点。
+        - metric: 支持 "pagerank"/"pr", "degree"/"deg", "betweenness"/"btw"
+        - node_labels: 可选节点标签过滤；None 表示全图
+        - top_k: 返回数量；<=0 表示不限制
+        """
+        m = metric.lower().strip()
+        metric_map = {
+            "pagerank": "pr", "pr": "pr",
+            "degree": "deg", "deg": "deg",
+            "betweenness": "btw", "btw": "btw",
+        }
+        if m not in metric_map:
+            raise ValueError(
+                f"不支持的中心度指标: {metric}（可选：pagerank/degree/betweenness/closeness 或 pr/deg/btw/clo）"
+            )
+        prop = metric_map[m]
+
+        limit_clause = "LIMIT $k" if (top_k and top_k > 0) else ""
+        params: Dict[str, Any] = {}
+
+        if node_labels:
+            cypher = f"""
+            MATCH (n)
+            WHERE ANY(l IN labels(n) WHERE l IN $labels)
+            AND n.`{prop}` IS NOT NULL
+            RETURN n.id AS id, n.name AS name, labels(n) AS labels, n.`{prop}` AS score
+            ORDER BY score DESC
+            {limit_clause}
+            """
+            params["labels"] = node_labels
+        else:
+            cypher = f"""
+            MATCH (n)
+            WHERE n.`{prop}` IS NOT NULL
+            RETURN n.id AS id, n.name AS name, labels(n) AS labels, n.`{prop}` AS score
+            ORDER BY score DESC
+            {limit_clause}
+            """
+
+        if limit_clause:
+            params["k"] = top_k
+
+        rows = self.execute_query(cypher, params)
+        return [dict(r) for r in rows]
+
+
     # === 3. 取同社区事件对 ===
     def fetch_event_pairs_same_community(
             self,

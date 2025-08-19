@@ -379,8 +379,7 @@ class FindEventChain(BaseTool):
         "从起点事件出发，返回所有至“无出边终点”的事件链；可按边的confidence阈值过滤。"
     )
     parameters = [
-        {"name": "entity_id", "type": "string", "description": "起点事件ID（必填）", "required": True},
-        {"name": "min_confidence", "type": "number", "description": "边confidence阈值（默认0.0）", "required": False},
+        {"name": "entity_id", "type": "string", "description": "起点事件ID（必填）", "required": True}
     ]
 
     def __init__(self, neo4j_utils, embedding_config=None):
@@ -392,14 +391,12 @@ class FindEventChain(BaseTool):
         if not entity_id:
             raise ValueError("Missing required parameter: entity_id")
 
-        mc = data.get("min_confidence")
-        min_conf = float(mc) if isinstance(mc, (int, float, str)) else 0.0
 
-        chains = self.neo4j_utils.find_event_chain(entity_id=entity_id, min_confidence=min_conf)
+        chains = self.neo4j_utils.find_event_chain(entity_id=entity_id, min_confidence=0.0)
         if not chains:
             return "未找到符合条件的事件链。"
 
-        lines = [f"共发现 {len(chains)} 条事件链（min_confidence={min_conf:.2f}）："]
+        lines = [f"共发现 {len(chains)} 条事件链："]
         for idx, ids in enumerate(chains, 1):
             lines.append(f"{idx}. {_fmt_chain(ids, self.neo4j_utils)}")
         return "\n".join(lines)
@@ -436,3 +433,79 @@ class CheckNodesReachable(BaseTool):
             src_id=src_id, dst_id=dst_id, max_depth=max_depth, excluded_rels=excluded_rels
         )
         return f"可达性：{'是' if ok else '否'}（max_depth={max_depth}，excluded_rels={excluded_rels or []}）"
+
+@register_tool("top_k_by_centrality")
+class TopKByCentrality(BaseTool):
+    name = "top_k_by_centrality"
+    description = (
+        "按中心度指标返回 Top-K 节点排名（已写回到节点属性的中心度）。"
+        "支持的指标：pagerank/pr、degree/deg、betweenness/btw。"
+        "可选按节点标签过滤（如 ['Plot','Event']）。"
+    )
+    parameters = [
+        {
+            "name": "metric",
+            "type": "string",
+            "description": "中心度指标：pagerank、degree、betweenness三选一。",
+            "required": True,
+        },
+        {
+            "name": "top_k",
+            "type": "number",
+            "description": "返回数量，默认 50；<=0 表示不限制（大图不建议）。",
+            "required": False,
+        },
+        {
+            "name": "node_labels",
+            "type": "array",
+            "description": "可选的节点标签过滤（如 ['Plot','Event']）；不传表示全图。",
+            "required": False,
+        },
+    ]
+
+    def __init__(self, neo4j_utils, embedding_config=None):
+        self.neo4j_utils = neo4j_utils  # 依赖 neo4j_utils.top_k_by_centrality()
+
+    def call(self, params: str, **kwargs) -> str:
+        data = json.loads(params) if isinstance(params, str) else dict(params or {})
+        metric_in = (data.get("metric") or "").strip().lower()
+        metric_map = {
+            "pagerank": "pagerank", "pr": "pagerank",
+            "degree": "degree", "deg": "degree",
+            "betweenness": "betweenness", "btw": "betweenness",
+        }
+        if metric_in not in metric_map:
+            raise ValueError("metric 仅支持：pagerank/pr、degree/deg、betweenness/btw（不支持 closeness）")
+
+        metric = metric_map[metric_in]
+        top_k_raw = data.get("top_k", 50)
+        top_k = int(top_k_raw) if isinstance(top_k_raw, (int, float, str)) and str(top_k_raw).lstrip("-").isdigit() else 50
+        node_labels = data.get("node_labels")
+        if isinstance(node_labels, str):
+            node_labels = [s.strip() for s in node_labels.split(",") if s.strip()]
+        elif node_labels is not None and not isinstance(node_labels, list):
+            node_labels = [node_labels]
+
+        # 调用底层工具方法（内部已用 n.`prop` IS NOT NULL 语法，兼容 Neo4j 5+）
+        rows: List[Dict[str, Any]] = self.neo4j_utils.top_k_by_centrality(
+            metric=metric,
+            top_k=top_k,
+            node_labels=node_labels,
+        )
+
+        if not rows:
+            scope = f"{node_labels}" if node_labels else "全图"
+            return f"{scope} 未发现含有该中心度属性的节点（请先运行中心度写回过程）。"
+
+        # 格式化输出
+        header = f"Top-{top_k if top_k and top_k > 0 else 'ALL'} by {metric.upper()}" + (f" @labels={node_labels}" if node_labels else "")
+        lines = [header + ":"]
+        for i, r in enumerate(rows, 1):
+            name = r.get("name") or "(无名)"
+            nid = r.get("id") or ""
+            labs = r.get("labels") or []
+            score = r.get("score")
+            labs_txt = "/".join(labs) if labs else "Unknown"
+            score_txt = f"{score:.6f}" if isinstance(score, (int, float)) else str(score)
+            lines.append(f"{i:>2}. {name}  [ID: {nid}]  <{labs_txt}>  {metric}={score_txt}")
+        return "\n".join(lines)
