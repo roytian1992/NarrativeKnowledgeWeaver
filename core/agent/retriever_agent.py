@@ -1,4 +1,4 @@
-# qa_agent.py (按你的诉求改造：用 Mode 控制 工具+system_message+knowledge)
+# qa_agent.py （检索器版）
 from __future__ import annotations
 from typing import List, Dict, Any, Optional, Literal
 import os
@@ -32,10 +32,11 @@ from core.functions.tool_calls import (
     VDBSentencesSearchTool,
 )
 
+# —— 检索器版系统提示词（仅检索，不脑补）——
 DEFAULT_SYSTEM_MESSAGE = (
     "你是一名知识图谱 + 向量数据库驱动的问答智能体。\n"
     "当问题包含明确的实体时，优先调用图谱检索工具；当问题更偏段落/背景/长文内容时，优先调用向量检索工具（层级检索优先）。\n"
-    "回答请简洁、准确、中文，必要时分点展示；若信息来自检索结果，请用自己的话归纳。"
+    "最终的答案不要省略必要的、和问题相关的内容。你的作用更像是一个信息检索器，不要给用户提出建议。\n"
 )
 
 def prepare_knowledge(schema: Dict[str, Any], doc_type: str) -> str:
@@ -60,7 +61,7 @@ def prepare_knowledge(schema: Dict[str, Any], doc_type: str) -> str:
     )
     relation_type_description_text += DOC_TYPE_DESCRIPTION.get(doc_type, {}).get("relation", "")
 
-    relation_type_description_text += """\n情节、事件相关的关系类型有：
+    relation_type_description_text += """\n【情节、事件相关的关系类型】：
 - HAS_EVENT: 情节包含关系（Plot → Event）
 - EVENT_CAUSES: 事件因果关系（Event A 导致 Event B）
 - EVENT_INDIRECT_CAUSES: 事件间的间接因果关系（Event A 间接触发 Event B）
@@ -76,18 +77,18 @@ def prepare_knowledge(schema: Dict[str, Any], doc_type: str) -> str:
         "当前 Neo4j 知识图谱包含以下内容：\n"
         f"【实体类型】\n{entity_type_description_text}\n\n"
         f"【基础关系类型】\n{relation_type_description_text}\n"
+        "实体属性 source_chunks 表示实体来源的文档片段的chunk_id列表，可以通过向量数据库工具 vdb_get_docs_by_chunk_ids 定位到文档片段的内容。\n"
     )
     return full_knowledge
 
 Mode = Literal["hybrid", "graph_only", "vector_only"]
-DialogueMode = Literal["single_turn", "multi_turn"]
 
 class QuestionAnsweringAgent:
     """
-    用 Mode 同时控制：
-      - 工具加载（graph_only / vector_only / hybrid）
-      - 系统提示词（system_message）
-      - 注入的 knowledge（graph 知识 / 向量知识（留空）/ 混合）
+    纯检索器版本：
+      - 保留 Mode 控制（graph_only / vector_only / hybrid）
+      - 保留系统提示词与 knowledge 注入
+      - 删除多轮/历史逻辑；每次调用 ask() 仅以单轮消息驱动工具检索
     """
 
     def __init__(
@@ -100,21 +101,14 @@ class QuestionAnsweringAgent:
         reranker: Optional[Any] = None,
         extra_tools: Optional[List[Any]] = None,
         mode: Mode = "hybrid",
-        dialogue_mode: DialogueMode = "multi_turn",
-        max_history_msgs: int = 18,
     ):
         self.config = config
         self.doc_type = doc_type or config.knowledge_graph_builder.doc_type
         self._base_system_message = system_message or DEFAULT_SYSTEM_MESSAGE
         self.rag_cfg = rag_cfg or {}
 
-        # 会话策略
+        # —— Mode 策略 ——
         self.mode: Mode = mode
-        self.dialogue_mode: DialogueMode = dialogue_mode
-
-        # 历史管理
-        self._history: List[Dict[str, Any]] = []
-        self._max_history_msgs = max_history_msgs
 
         # ---- Graph / Neo4j ----
         self.graph_store = GraphStore(config)
@@ -138,7 +132,7 @@ class QuestionAnsweringAgent:
         self._vdb_tools = self._build_vdb_tools(reranker=self.reranker)
         self._extra_tools = extra_tools or []
 
-        # mode -> system_message / knowledge
+        # mode -> knowledge / system_message
         self._current_knowledge = self._build_knowledge(self.mode)
         self._current_system_message = self._build_system_message(self.mode)
 
@@ -147,16 +141,16 @@ class QuestionAnsweringAgent:
 
     # ---------- Knowledge / System Message ----------
     def _build_system_message(self, mode: Mode) -> str:
-        """不同 Mode 对应不同系统提示词（可以按需继续细化措辞）"""
+        """不同 Mode 对应不同系统提示词收尾说明（不改变核心“只检索”原则）"""
         if mode == "graph_only":
-            suffix = "（当前模式：仅图数据库工具；请优先使用图谱工具完成检索与推理。）"
+            suffix = "（当前模式：仅图数据库工具；请只使用图谱工具进行检索与返回结果。）"
         elif mode == "vector_only":
-            suffix = "（当前模式：仅向量数据库工具；请仅依据向量语料检索与重排结果作答。）"
+            suffix = "（当前模式：仅向量数据库工具；请只依据向量检索与重排结果返回片段。）"
         else:
-            suffix = "（当前模式：图谱+向量混合；请根据问题特征在图/向量工具间自适应选择。）"
-        
+            suffix = "（当前模式：图谱+向量混合；请根据查询在图/向量工具间自适应选择，但仍只返回检索结果。）"
+
         if self._current_knowledge:
-            suffix += f"\n\n当前知识图谱包含以下内容：\n{self._current_knowledge}"
+            suffix += f"\n\n知识背景：\n{self._current_knowledge}"
         return f"{self._base_system_message}\n\n{suffix}"
 
     def _load_graph_schema(self) -> Optional[Dict[str, Any]]:
@@ -172,89 +166,60 @@ class QuestionAnsweringAgent:
 
     def _build_knowledge(self, mode: Mode) -> str:
         """
-        - graph_only：注入图谱 schema 的说明文本（prepare_knowledge）；
-        - vector_only：留空字符串（你后续可替换为向量侧知识）；
-        - hybrid：先注入图谱知识；向量侧先留空，未来你可在此拼接。
+        - graph_only：注入图谱 schema 说明文本；
+        - vector_only：留空（如需，可自行扩展为向量侧知识）；
+        - hybrid：先注入图谱知识（向量侧先留空）。
         """
         if mode == "graph_only":
             schema = self._load_graph_schema()
             return prepare_knowledge(schema, self.doc_type) if schema else ""
         elif mode == "vector_only":
-            return ""  # 你之后自己添加向量侧 knowledge
+            return ""
         else:  # hybrid
             parts = []
             schema = self._load_graph_schema()
             if schema:
                 parts.append(prepare_knowledge(schema, self.doc_type))
-            # 这里预留向量侧知识占位
-            # parts.append("<Vector Knowledge Here>")
             return "\n\n".join([p for p in parts if p])
 
-    # ---------- Public: 会话/模式 ----------
+    # ---------- Public: Mode ----------
     def set_mode(self, mode: Mode) -> None:
         """切换 mode：重建 system_message / knowledge / Assistant（工具集合）。"""
         if mode not in ("hybrid", "graph_only", "vector_only"):
             raise ValueError(f"Unsupported mode: {mode}")
         if mode != self.mode:
             self.mode = mode
-            self._current_system_message = self._build_system_message(mode)
             self._current_knowledge = self._build_knowledge(mode)
+            self._current_system_message = self._build_system_message(mode)
             self._rebuild_assistant()
 
-    def set_dialogue_mode(self, dialogue_mode: DialogueMode) -> None:
-        if dialogue_mode not in ("single_turn", "multi_turn"):
-            raise ValueError(f"Unsupported dialogue_mode: {dialogue_mode}")
-        self.dialogue_mode = dialogue_mode
-
-    def reset_history(self) -> None:
-        self._history.clear()
-
-    def get_history(self) -> List[Dict[str, Any]]:
-        return list(self._history)
-
-    def set_max_history(self, n: int) -> None:
-        self._max_history_msgs = max(0, int(n))
-        self._trim_history()
-
-    # ---------- Public: 问答 ----------
+    # ---------- Public: 检索 ----------
     def ask(
         self,
         user_text: str,
         *,
-        history: Optional[List[Dict[str, str]]] = None,
         lang: Literal["zh", "en"] = "zh",
         **kwargs,
     ) -> List[Dict[str, Any]]:
         """
-        - multi_turn：把这次问答写入 self._history，后续继续上下文
-        - single_turn：仅使用（外部history + 内部history）推理，但不回写
-        - knowledge：若传入非空字符串，优先使用该知识；否则用当前 mode 生成的知识
+        单轮检索：
+        - 不维护/回写任何历史；
+        - 仅用本轮 user_text 触发工具检索并返回 Assistant 的完整消息序列（含 function 调用结果）。
         """
-        # 组装上下文：system_message 在 Assistant 内部持有，这里只传消息
-        messages: List[Dict[str, Any]] = []
-        if self._history:
-            messages.extend(self._history)
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": user_text})
-
-
+        messages: List[Dict[str, Any]] = [{"role": "user", "content": user_text}]
         resp = self.assistant.run_nonstream(
             messages=messages,
             lang=lang,
             **kwargs,
         )
-
-        # 写回历史
-        if self.dialogue_mode == "multi_turn":
-            self._append_and_trim({"role": "user", "content": user_text})
-            for m in resp:
-                if m.get("role") in ("assistant", "function"):
-                    self._append_and_trim(m)
-
         return resp
 
     def extract_final_text(self, responses: List[Dict[str, Any]]) -> str:
+        """
+        若需要拿到最终自然语言文本，可用此函数：
+        - 优先取最后一个 assistant 文本；
+        - 退化为拼接 function 输出（如果没有 assistant 文本）。
+        """
         final_text = ""
         fallback_chunks: List[str] = []
         for msg in responses:
@@ -269,6 +234,57 @@ class QuestionAnsweringAgent:
         if fallback_chunks:
             return "\n\n".join(fallback_chunks).strip()
         return ""
+    
+    def extract_tool_uses(self, responses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        提取中间使用过的工具调用过程（调用名、参数、输出）。
+        返回格式：
+        [
+          {
+            "tool_name": ...,
+            "tool_arguments": ...,
+            "tool_output": ...
+          },
+          ...
+        ]
+        """
+        tool_uses: List[Dict[str, Any]] = []
+        pending: Dict[str, Any] = None  # 临时保存 assistant 的 function_call
+
+        for msg in responses:
+            role = msg.get("role")
+            # assistant 发起的工具调用
+            if role == "assistant" and "function_call" in msg:
+                fc = msg["function_call"] or {}
+                pending = {
+                    "tool_name": fc.get("name") or "unknown_tool",
+                    "tool_arguments": fc.get("arguments") or "",
+                    "tool_output": None,
+                }
+
+            # function 返回的结果
+            elif role == "function":
+                # 优先用 function 消息里的 name 作为 tool_name（有时 assistant 没写）
+                tool_name = msg.get("name") or (pending.get("tool_name") if pending else "unknown_tool")
+                tool_output = msg.get("content") or ""
+
+                if pending and pending["tool_output"] is None:
+                    pending["tool_output"] = tool_output
+                    # 如果 function 消息带有 name，覆盖掉
+                    if msg.get("name"):
+                        pending["tool_name"] = msg["name"]
+                    tool_uses.append(pending)
+                    pending = None
+                else:
+                    # 孤立的 function 消息（没有对应的 function_call）
+                    tool_uses.append({
+                        "tool_name": tool_name,
+                        "tool_arguments": None,
+                        "tool_output": tool_output,
+                    })
+
+        return tool_uses
+
 
     # ---------- Internal ----------
     def _build_graph_tools(self) -> List[Any]:
@@ -281,7 +297,7 @@ class QuestionAnsweringAgent:
             GetCommonNeighbors(self.neo4j_utils),
             QuerySimilarEntities(self.neo4j_utils, emb_cfg),
             FindEventChain(self.neo4j_utils),
-            TopKByCentrality(self.neo4j_utils)
+            TopKByCentrality(self.neo4j_utils),
             # CheckNodesReachable(self.neo4j_utils),
         ]
 
@@ -313,13 +329,3 @@ class QuestionAnsweringAgent:
             system_message=self._current_system_message,
             rag_cfg=self.rag_cfg,
         )
-
-    # 历史管理
-    def _append_and_trim(self, m: Dict[str, Any]) -> None:
-        self._history.append(m)
-        self._trim_history()
-
-    def _trim_history(self) -> None:
-        overflow = len(self._history) - self._max_history_msgs
-        if overflow > 0:
-            self._history = self._history[overflow:]

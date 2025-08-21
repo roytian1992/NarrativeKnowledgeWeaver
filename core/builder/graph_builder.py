@@ -636,6 +636,7 @@ class KnowledgeGraphBuilder:
             print("💾 存储到数据库...")
         self._store_knowledge_graph(verbose)
         self.neo4j_utils.enrich_event_nodes_with_context()
+        self.neo4j_utils.compute_centrality(exclude_rel_types=[self.meta['contains_pred']])
 
         if verbose:
             st = self.kg.stats()
@@ -814,6 +815,7 @@ class KnowledgeGraphBuilder:
                 id=eid,
                 name=full_name,
                 type=label,
+                scope="local",  
                 description=md.get("summary", ""),  # 可选：用 summary 作为简要描述
                 properties=properties,
                 source_chunks=agg_chunks 
@@ -868,25 +870,6 @@ class KnowledgeGraphBuilder:
             source_chunks=[chunk_id]
         )
 
-    # -------- 存储 --------
-    # def _build_relational_database(self, dialog_chunks: List[TextChunk]):
-    #     rows = [{
-    #         "id": c.id,
-    #         "content": c.content.split("：")[-1].strip(),
-    #         "character": c.metadata.get("character", ""),
-    #         "type": c.metadata.get("type") or "regular",
-    #         "remark": "，".join(c.metadata.get("remark", [])),
-    #         "title": c.metadata.get("title", ""),
-    #         "subtitle": c.metadata.get("subtitle", ""),
-    #     } for c in dialog_chunks]
-
-    #     db_dir = self.config.storage.sql_database_path
-    #     os.makedirs(db_dir, exist_ok=True)
-    #     db_path = os.path.join(db_dir, "conversations.db")
-    #     if os.path.exists(db_path):
-    #         os.remove(db_path)
-    #     df = pd.DataFrame(rows)
-    #     df.to_sql("dialogues", sqlite3.connect(db_path), if_exists="replace", index=False)
 
     def _store_vectordb(self, verbose: bool):
         try:
@@ -900,6 +883,7 @@ class KnowledgeGraphBuilder:
                 content = doc.content
                 sentences = re.split(r'(?<=[。！？])', content)
                 for i, sentence in enumerate(sentences):
+                    sentence = sentence.replace("\\n", "").strip()
                     all_sentences.append(Document(id=f"{doc.id}-{i+1}", content=sentence, metadata=doc.metadata))
             
             self.sentence_vector_store.delete_collection()
@@ -935,5 +919,6 @@ class KnowledgeGraphBuilder:
         return {
             "knowledge_graph": self.kg.stats(),
             "graph_store": self.graph_store.get_stats(),
-            "vector_store": self.vector_store.get_stats(),
+            "document_vector_store": self.document_vector_store.get_stats(),
+            "sentence_vector_store": self.sentence_vector_store.get_stats(),
         }

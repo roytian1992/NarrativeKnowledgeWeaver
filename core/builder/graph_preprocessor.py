@@ -98,7 +98,7 @@ class GraphPreprocessor:
         return int(getattr(self, "max_workers", getattr(self, "max_worker", 4)))
 
     def _soft_timeout_pool(self, work_items, submit_fn, *,
-                           per_task_timeout: float = 120.0,
+                           per_task_timeout: float = 180.0,
                            desc: str = "并发任务",
                            thread_prefix: str = "pool"):
         """
@@ -191,7 +191,7 @@ class GraphPreprocessor:
         return filtered_entities
 
     def add_entity_summary(self, merged_global_entities: Dict[str, Dict[str, Dict[str, Any]]],
-                           per_task_timeout: float = 120.0):
+                           per_task_timeout: float = 180.0):
         entity_list: List[Dict[str, Any]] = []
         for t in merged_global_entities:
             entity_list.extend(list(merged_global_entities[t].values()))
@@ -253,8 +253,9 @@ class GraphPreprocessor:
                 for i, e in enumerate(group):
                     name = e.get("name")
                     summary = e.get("summary") or e.get("description") or ""
-                    parts.append(f"实体{i + 1}的名称：{name}\n实体的相关描述为：\n{summary}\n")
-                entity_descriptions = "".join(parts)
+                    parts.append(f"实体{i + 1}的名称：{name}\n - 该实体的相关描述为：{summary}\n")
+                entity_descriptions = "\n".join(parts)
+                # print("[CHECK] entity_descriptions: ", entity_descriptions)
                 raw = self.document_parser.merge_entities(
                     entity_descriptions=entity_descriptions,
                     system_prompt=self.system_prompt_text
@@ -290,7 +291,6 @@ class GraphPreprocessor:
         return rename_map
 
     # ---------- 统一应用规则，深拷贝并返回 ----------
-    @staticmethod
     def _apply_entity_rules(
         self,
         extraction_results: List[Dict[str, Any]],
@@ -520,7 +520,7 @@ class GraphPreprocessor:
 
         # 先应用规则（在副本上）
         new_results, _type_changed, _ = self._apply_entity_rules(
-            extraction_results, type_rules=type_rules, scope_rules=None
+            extraction_results=extraction_results, type_rules=type_rules, scope_rules=None
         )
         # ★ 写回多类型（不会收敛成单一类型）
         new_results = self._attach_multilabel(new_results)
@@ -550,7 +550,7 @@ class GraphPreprocessor:
                     counts[nm][sc] += 1
         return counts
 
-    def refine_entity_scope(self, extraction_results, per_task_timeout: float = 120.0,
+    def refine_entity_scope(self, extraction_results, per_task_timeout: float = 180.0,
                             tie_breaker: str = "global"):
         """
         1) 先按 LLM 判定（并发+软超时）；
@@ -591,7 +591,7 @@ class GraphPreprocessor:
 
         # 先应用已判定规则
         new_results, _, _ = self._apply_entity_rules(
-            extraction_results, type_rules=None, scope_rules=scope_rules
+            extraction_results=extraction_results, type_rules=None, scope_rules=scope_rules
         )
 
         # 全量标准化
@@ -617,7 +617,7 @@ class GraphPreprocessor:
 
         if fallback_rules:
             new_results, _, _ = self._apply_entity_rules(
-                new_results, type_rules=None, scope_rules=fallback_rules
+                extraction_results=new_results, type_rules=None, scope_rules=fallback_rules
             )
         return new_results
 
@@ -688,6 +688,10 @@ class GraphPreprocessor:
         for result in extraction_results:
             for ent in result.get("entities", []):
                 ent["name"] = rename_map.get(ent["name"], ent["name"])
+                if "name_embedding" in ent:
+                    del ent["name_embedding"]
+                if "description_embedding" in ent:
+                    del ent["description_embedding"]
             for rel in result.get("relations", []):
                 rel["subject"] = rename_map.get(rel["subject"], rel["subject"])
                 rel["object"] = rename_map.get(rel["object"], rel["object"])

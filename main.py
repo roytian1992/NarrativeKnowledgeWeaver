@@ -61,36 +61,36 @@ def main():
     # 创建构建器
     builder = KnowledgeGraphBuilder(config)
     
-    # 构建知识图谱
-    # builder.prepare_chunks(args.input, verbose=args.verbose) # 文本准备阶段：长文本拆分和元数据标注
+    # # 构建知识图谱
+    builder.prepare_chunks(args.input, verbose=args.verbose) # 文本准备阶段：长文本拆分和元数据标注
     builder.store_chunks(verbose=args.verbose) # 保存近向量数据库和本地json
-    # builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35) # from_scratch 的时候建议 0.35
-    # builder.initialize_agents()
-    # builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
-    # builder.run_extraction_refinement(verbose=args.verbose)
-    # builder.extract_entity_attributes(verbose=args.verbose) # 实体消歧和属性抽取
-    # kg = builder.build_graph_from_results(verbose=args.verbose)
-    # builder.prepare_graph_embeddings()
+    builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35) # from_scratch 的时候建议 0.35
+    builder.initialize_agents()
+    builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
+    builder.run_extraction_refinement(verbose=args.verbose)
+    builder.extract_entity_attributes(verbose=args.verbose) # 实体消歧和属性抽取
+    kg = builder.build_graph_from_results(verbose=args.verbose)
+    builder.prepare_graph_embeddings()
 
     # 可以插入一个定制化的小图谱来补充一些东西
     # additional_builder = ...
 
     
-    # event_graph_builder = EventCausalityBuilder(config)
-    # event_graph_builder.initialize() # 初始化事件情节图
-    # event_graph_builder.build_event_causality_graph() # 开始构建事件因果图
-    # event_graph_builder.run_SABER() # 运行断环、去冗余算法
-    # event_graph_builder.build_event_plot_graph() # 构建情节-事件图
-    # event_graph_builder.generate_plot_relations() # 抽取情节间关系
-    # event_graph_builder.prepare_graph_embeddings()
+    event_graph_builder = EventCausalityBuilder(config)
+    event_graph_builder.initialize() # 初始化事件情节图
+    event_graph_builder.build_event_causality_graph() # 开始构建事件因果图
+    event_graph_builder.run_SABER() # 运行断环、去冗余算法
+    event_graph_builder.build_event_plot_graph() # 构建情节-事件图
+    event_graph_builder.generate_plot_relations() # 抽取情节间关系
+    event_graph_builder.prepare_graph_embeddings()
     
-    # # 输出统计信息
-    # stats = builder.get_stats()
-    # print("\n📊 最终统计信息:")
-    # print(f"   - 实体数量: {stats['knowledge_graph']['entities']}")
-    # print(f"   - 关系数量: {stats['knowledge_graph']['relations']}")
-    # print(f"   - 文档数量: {stats['knowledge_graph']['documents']}")
-    # print(f"   - 文本块数量: {stats['knowledge_graph']['chunks']}")
+    # 输出统计信息
+    stats = builder.get_stats()
+    print("\n📊 最终统计信息:")
+    print(f"   - 实体数量: {stats['knowledge_graph']['entities']}")
+    print(f"   - 关系数量: {stats['knowledge_graph']['relations']}")
+    print(f"   - 文档数量: {stats['knowledge_graph']['documents']}")
+    print(f"   - 文本块数量: {stats['knowledge_graph']['chunks']}")
     
     # # 保存统计信息
     # if args.output_stats:

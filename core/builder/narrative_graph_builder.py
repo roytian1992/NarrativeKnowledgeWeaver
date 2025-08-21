@@ -278,9 +278,9 @@ class EventCausalityBuilder:
     def precompute_event_cards(
         self,
         events: List[Entity],
-        per_task_timeout: float = 180.0,
-        max_retries: int = 2,
-        retry_timeout: float = 90.0,
+        per_task_timeout: float = 180,
+        max_retries: int = 3,
+        retry_timeout: float = 60.0,
     ) -> Dict[str, Dict[str, Any]]:
         """
         并发为所有事件生成 event_card：
@@ -344,7 +344,7 @@ class EventCausalityBuilder:
 
         def _run_batch(evts: List[Entity], timeout: float, allow_placeholder: bool, desc: str):
             """通用并发跑一批；返回 (batch_map, failed_ids)。"""
-            results: Dict[str, Dict[str, Any]] = {}
+            results: Dict[str, Any] = {}
             failed: Set[str] = set()
 
             executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="card")
@@ -368,6 +368,19 @@ class EventCausalityBuilder:
                             results[eid] = card
                         except Exception:
                             failed.add(ev.id)
+                            if allow_placeholder:
+                                # 占位 skeleton，保证有值；存为 str 避免拼接报错
+                                skeleton = {
+                                    "name": ev.properties.get("name") or ev.name or f"event_{ev.id}",
+                                    "summary": "",
+                                    "time_hint": "unknown",
+                                    "locations": [],
+                                    "participants": [],
+                                    "action": "",
+                                    "outcomes": [],
+                                    "evidence": ""
+                                }
+                                results[ev.id] = json.dumps(skeleton, ensure_ascii=False)
                         pbar.update(1)
                         fut_info.pop(f, None)
 
@@ -379,9 +392,9 @@ class EventCausalityBuilder:
                         if now - start >= timeout:
                             ev = fut_info[f]["event"]
                             f.cancel()
+                            failed.add(ev.id)
                             if allow_placeholder:
-                                # 占位：给一个最小 skeleton，防止后续流程卡住
-                                results[ev.id] = {
+                                skeleton = {
                                     "name": ev.properties.get("name") or ev.name or f"event_{ev.id}",
                                     "summary": "",
                                     "time_hint": "unknown",
@@ -391,7 +404,7 @@ class EventCausalityBuilder:
                                     "outcomes": [],
                                     "evidence": ""
                                 }
-                            failed.add(ev.id)
+                                results[ev.id] = json.dumps(skeleton, ensure_ascii=False)
                             pbar.update(1)
                             to_forget.append(f)
 
@@ -429,7 +442,7 @@ class EventCausalityBuilder:
                 desc=f"预生成事件卡片（重试 {attempt}/{max_retries}）"
             )
 
-            # 覆盖成功项
+            # 覆盖成功项（替换掉首轮占位）
             for eid, card in retry_map.items():
                 card_map[eid] = card
 
@@ -444,6 +457,7 @@ class EventCausalityBuilder:
 
         print(f"🗂️ 事件卡片生成完成：成功 {len(card_map)} / 总计 {len(events)}；仍缺失 {len(need_ids)}")
         return card_map
+
 
     def filter_event_pairs_by_community(
         self,
@@ -1007,14 +1021,34 @@ class EventCausalityBuilder:
         return context_to_check
 
     def prepare_context(self, pattern_detail):
+        def _safe_str(x: Any) -> str:
+            return x if isinstance(x, str) else ("" if x is None else str(x))
+
         event_details = self.neo4j_utils.get_event_details(pattern_detail["entities"])
         full_event_details = "三个事件实体的描述如下：\n"
+
         for i, event_info in enumerate(event_details):
             event_id = event_info["event_id"]
             full_event_details += f"**事件{i+1}的相关描述如下：**\n事件id：{event_id}\n"
 
+            # 1) 可能返回 None：统一转成字符串
             background = self.neo4j_utils.get_entity_info(event_id, "事件", True, True)
-            event_props = json.loads(event_info.get("event_properties"))
+            background = _safe_str(background)
+
+            # 2) event_properties 可能为 None / str(JSON) / dict
+            props_raw = event_info.get("event_properties")
+            if isinstance(props_raw, dict):
+                event_props = props_raw
+            elif isinstance(props_raw, str) and props_raw.strip():
+                try:
+                    event_props = json.loads(props_raw)
+                    if not isinstance(event_props, dict):
+                        event_props = {}
+                except Exception:
+                    event_props = {}
+            else:
+                event_props = {}
+
             # 仅保留非空字符串属性
             non_empty_props = {k: v for k, v in event_props.items() if isinstance(v, str) and v.strip()}
 
@@ -1025,18 +1059,25 @@ class EventCausalityBuilder:
 
             if i + 1 != len(event_details):
                 background += "\n"
+
             full_event_details += background
 
+        # 关系细节字符串
         full_relation_details = "它们之间已经存在的因果关系有：\n"
         relation_details = pattern_detail["details"]
         for i, relation_info in enumerate(relation_details):
             src, tgt = relation_info["edge"]
-            background = f"{i+1}. " + self.neo4j_utils.get_relation_summary(src, tgt, "EVENT_CAUSES")
+            # 3) get_relation_summary 也做一次兜底转字符串
+            rel_summary = self.neo4j_utils.get_relation_summary(src, tgt, "EVENT_CAUSES")
+            rel_summary = _safe_str(rel_summary)
+            background = f"{i+1}. " + rel_summary
             background += f"\n关系的语义相似度为：{round(relation_info['similarity'], 4)}，置信度为：{relation_info['confidence']}。"
             if i + 1 != len(relation_details):
                 background += "\n\n"
             full_relation_details += background
+
         return full_event_details, full_relation_details
+
 
     def run_SABER(self):
         """

@@ -56,7 +56,7 @@ class EntitySchemaParser:
                 background_info += f"你是一个构建知识图谱的专家，请你基于以下一些任务（仅供参考，非硬性要求），思考一下我们的图谱所需要的schema：\n{task_goals}"
             
             if current_schema:
-                background_info += f"这是当前使用的schema：\n{current_schema}\n请在后续的任务中，基于这个进行调整。"
+                background_info += f"这是当前使用的schema：\n{current_schema}\n请在后续的任务中，基于这个进行调整。如果已经有的description尽量不要进行删减，只进行增量补充。"
                 if feedbacks:
                     background_info += f"\n这是针对当前schema的一些建议：\n{feedbacks}"
             if not background_info:

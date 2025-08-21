@@ -21,7 +21,7 @@ class VDBHierdocsSearchTool(BaseTool):
         {
             "name": "limit",
             "type": "integer",
-            "description": "返回条数，默认 5",
+            "description": "返回条数，默认 20",
             "required": False
         }
     ]
@@ -37,11 +37,11 @@ class VDBHierdocsSearchTool(BaseTool):
         logger.info("🔍 调用父子文档检索器 vdb_search_hierdocs")
         params_dict: Dict[str, Any] = json.loads(params)
         query = params_dict.get("query", "")
-        limit = int(params_dict.get("limit", 5))
+        limit = int(params_dict.get("limit", 20))
 
         hits = self.retriever.retrieve(
             query=query,
-            ks=20,                 # 子级候选数
+            ks=limit * 3,                 # 子级候选数
             kp=limit * 2,          # 父级候选数
             window=1,              # 句窗拼接
             topn=limit             # 最终返回
@@ -111,6 +111,34 @@ class VDBGetDocsByChunkIDsTool(BaseTool):
         results = self.doc_vs.search_by_ids(ids)
         texts = [r.content for r in results]
         return "相关结果：\n" + "\n--\n".join(texts)
+    
+# @register_tool("vdb_get_section_info_by_chunk_ids")
+# class VDBGetSectionInfoByChunkIDsTool(BaseTool):
+#     """按 chunk_id 直接获取段落/片段"""
+
+#     name = "vdb_get_section_info_by_chunk_ids"
+#     description = "根据提供的 chunk_id 列表，从向量数据库中直接获取对应的章节（Chapter）/场景（Scene）信息。"
+#     parameters = [
+#         {
+#             "name": "ids",
+#             "type": "array",
+#             "description": "待获取的 chunk_id 列表",
+#             "required": True
+#         }
+#     ]
+
+#     def __init__(self, document_vector_store):
+#         self.doc_vs = document_vector_store
+
+#     def call(self, params: str, **kwargs) -> str:
+#         logger.info("🔍 按 chunk_id 获取内容 vdb_get_docs_by_chunk_ids")
+#         params_dict: Dict[str, Any] = json.loads(params)
+#         ids = params_dict.get("ids") or []
+
+#         results = self.doc_vs.search_by_ids(ids)
+#         texts = [r.content for r in results]
+#         return "相关结果：\n" + "\n--\n".join(texts)
+        
 
 
 @register_tool("vdb_search_sentences")
