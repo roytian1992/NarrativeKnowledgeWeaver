@@ -16,11 +16,14 @@ import os
 class InformationExtractor:
     """信息抽取器"""
 
-    def __init__(self, config: KAGConfig, llm):
+    def __init__(self, config: KAGConfig, llm, prompt_loader: PromptLoader = None):
         self.config = config
         self.llm = llm
-        prompt_dir = self.config.knowledge_graph_builder.prompt_dir
-        self.prompt_loader = PromptLoader(prompt_dir)
+        if not prompt_loader:
+            prompt_dir = self.config.knowledge_graph_builder.prompt_dir
+            self.prompt_loader = PromptLoader(prompt_dir)
+        else:
+            self.prompt_loader = prompt_loader
         self.entity_extraction = EntityExtractor(self.prompt_loader, self.llm)
         self.relation_extraction = RelationExtractor(self.prompt_loader, self.llm)
         self.extraction_reflection = ExtractionReflector(self.prompt_loader, self.llm)
@@ -136,22 +139,22 @@ class InformationExtractor:
 
     def reflect_entity_attributes(
         self,
-        entity_name: str,
         entity_type: str,
         description: str,
         attribute_definitions: str,
         attributes: str,
+        original_text: str = "",
         system_prompt: str = ""
     ) -> str:
         """
         对属性抽取结果进行反思评估，判断是否完整、是否需要补充上下文等
         """
         params = {
-            "entity_name": entity_name,
             "entity_type": entity_type,
             "description": description,
             "attribute_definitions": attribute_definitions,
             "attributes": attributes,
+            "original_text": original_text,
             "system_prompt": system_prompt
         }
 

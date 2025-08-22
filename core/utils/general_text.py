@@ -114,7 +114,7 @@ attribute_reflection_repair_template = """
 
 请确保返回的JSON包含：
 1. "feedbacks"字段，表示当前的反馈
-2. "need_additional_context"字段，表示是否需要额外的信息
+2. "score"字段，表示当前抽取的得分
 3. "attributes_to_retry"字段，表示需要继续抽取的属性
 
 必要的时候可以直接原始响应抽取字段里面的信息进行重组。

@@ -17,9 +17,9 @@ def generate_suggestions(related_insights, related_history):
     return suggestions
 
 class InformationExtractionAgent:
-    def __init__(self, config, llm, system_prompt, schema, reflector, mode="regular"):
+    def __init__(self, config, llm, system_prompt, schema, reflector, mode="regular", prompt_loader=None):
         self.config = config
-        self.extractor = InformationExtractor(config, llm)
+        self.extractor = InformationExtractor(config, llm, prompt_loader=prompt_loader)
         self.load_schema(schema)
         self.graph = self._build_graph()
         self.reflector = reflector

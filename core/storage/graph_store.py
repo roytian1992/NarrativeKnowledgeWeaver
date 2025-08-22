@@ -38,6 +38,17 @@ class GraphStore:
             print(f"❌ Neo4j连接失败: {str(e)}")
             self.driver = None
     
+
+    def reset_knowledge_graph(self) -> None:
+        """重置知识图谱，删除所有节点和关系"""
+        if not self.driver:
+            print("⚠️ Neo4j未连接，跳过图重置")
+            return
+        
+        with self.driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n")
+            print("✅ 知识图谱已重置")  
+
     def store_knowledge_graph(self, kg: KnowledgeGraph) -> None:
         """存储知识图谱"""
         if not self.driver:
@@ -46,7 +57,7 @@ class GraphStore:
         
         with self.driver.session() as session:
             # 清空现有数据（可选）
-            session.run("MATCH (n) DETACH DELETE n")
+            # session.run("MATCH (n) DETACH DELETE n")
             
             # 存储实体
             for entity in kg.entities.values():

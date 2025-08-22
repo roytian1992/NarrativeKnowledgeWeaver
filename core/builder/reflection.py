@@ -13,6 +13,8 @@ class DynamicReflector:
         self.insight_memory = VectorMemory(self.config, "insight_memory")
         self.reranker = OpenAIRerankModel(self.config)
         self.entity_extraction_memory = dict()
+        self.history_memory_size = self.config.memory.history_memory_size
+        self.insight_memory_size = self.config.memory.insight_memory_size
     
     def clear(self):
         self.history_memory.clear()
@@ -118,7 +120,7 @@ class DynamicReflector:
         for sentence in sentences:
             if len(sentence) > 500:
                 sentence = sentence[:500]
-            results = self.history_memory.get(sentence, 3)
+            results = self.history_memory.get(sentence, self.history_memory_size)
             retrieved_docs = [create_record(doc.page_content, doc.metadata.get("history")) for doc in results]
             query = f"从下面的文中抽取实体和关系：\n{sentence}"
             retrieved_docs = self.reranker.rerank(query=query, documents=retrieved_docs)
@@ -128,7 +130,7 @@ class DynamicReflector:
         
         related_insights = []
         for sentence in sentences:
-            documents = self.insight_memory.get(sentence, 3)
+            documents = self.insight_memory.get(sentence, self.insight_memory_size)
             related_insights.extend([doc.page_content for doc in documents])
             
         related_insights = self.reranker.rerank(query="与文章相关的洞见", documents=related_insights, top_n=10)

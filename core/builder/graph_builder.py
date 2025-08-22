@@ -896,6 +896,7 @@ class KnowledgeGraphBuilder:
 
     def _store_knowledge_graph(self, verbose: bool):
         try:
+            self.graph_store.reset_knowledge_graph()
             self.graph_store.store_knowledge_graph(self.kg)
         except Exception as e:
             if verbose:

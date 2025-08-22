@@ -11,6 +11,7 @@ from tqdm import tqdm
 import numpy as np
 from core.utils.config import EmbeddingConfig
 from core.utils.format import DOC_TYPE_META
+import re
 
 EVENT_PLOT_GRAPH_RELS = ["EVENT_CAUSES", "EVENT_INDIRECT_CAUSES", "EVENT_PART_OF", "HAS_EVENT"]
 
@@ -203,7 +204,7 @@ class Neo4jUtils:
 
         return results
 
-    
+        
     def get_entity_by_id(self, entity_id: str) -> Optional[Entity]:
         """
         根据 ID 精准查找一个实体节点（兼容所有标签）
@@ -2273,3 +2274,117 @@ class Neo4jUtils:
         self.execute_query(cypher)
         print("✅ 创建 Node2Vec向量至属性 node2vecEmbedding")
         
+
+    def add_labels(self, node_id: str, labels: List[str]):
+        """
+        给指定节点添加标签（如果已有则跳过）。
+        不依赖 APOC；使用安全的标签清洗与字符串拼接。
+        """
+        if not labels:
+            return
+
+        def _sanitize_label(s: str) -> str:
+            # 允许字母、数字、下划线、连字符；其余去掉
+            s = (s or "").strip()
+            s = re.sub(r"[^A-Za-z0-9_\-]", "", s)
+            # Label 不能以数字开头；必要时加前缀
+            if s and s[0].isdigit():
+                s = f"L_{s}"
+            return s
+
+        clean = [l for l in (_sanitize_label(x) for x in labels) if l]
+        if not clean:
+            return
+
+        # 以反引号包裹，避免关键字冲突
+        label_str = ":".join(f"`{l}`" for l in dict.fromkeys(clean))
+        query = f"""
+        MATCH (n {{id: $node_id}})
+        SET n:{label_str}
+        """
+        self.execute_query(query, {"node_id": node_id})
+
+    def update_entity_properties(self, node_id: str, properties: Dict[str, Any], mode: str = "both"):
+        """
+        更新指定节点的属性。
+        mode:
+        - "json": n.properties = JSON 字符串
+        - "flat": SET n += $props
+        - "both": 两者都做
+        """
+        properties = properties or {}
+        props_json = json.dumps(properties, ensure_ascii=False)
+
+        if mode in ("json", "both"):
+            self.execute_query(
+                "MATCH (n {id: $node_id}) SET n.properties = $props_json",
+                {"node_id": node_id, "props_json": props_json}
+            )
+        if mode in ("flat", "both"):
+            # 注意：Neo4j 顶层属性不支持嵌套 map，传入的 properties 应该是扁平键值
+            self.execute_query(
+                "MATCH (n {id: $node_id}) SET n += $props",
+                {"node_id": node_id, "props": properties}
+            )
+
+    def _read_properties_json(self, node_id: str) -> dict:
+        """
+        读取 n.properties（JSON 字符串或 map），返回 dict；不存在或非法时返回 {}。
+        """
+        recs = self.execute_query(
+            "MATCH (n {id: $id}) RETURN n.properties AS props",
+            {"id": node_id}
+        )
+        if not recs:
+            return {}
+        props = recs[0].get("props")
+        if props is None:
+            return {}
+        # 兼容两种存储：字符串 JSON 或者已是 map
+        if isinstance(props, str):
+            try:
+                return json.loads(props) if props.strip() else {}
+            except Exception:
+                return {}
+        if isinstance(props, dict):
+            return props
+        # 其它类型不支持
+        return {}
+
+    def _write_properties_json(self, node_id: str, props: dict):
+        """
+        将 props 作为 JSON 字符串写入 n.properties；props 必须为 dict（允许空，若空就不写）
+        """
+        props = props or {}
+        if not props:
+            return  # 避免把库里已有的值改成 "{}"
+        props_json = json.dumps(props, ensure_ascii=False)
+        self.execute_query(
+            "MATCH (n {id: $id}) SET n.properties = $props_json",
+            {"id": node_id, "props_json": props_json}
+        )
+
+
+    def merge_entity_with_properties(
+        self, node_id: str, name: str, etypes, aliases, props: Dict[str, Any], store_mode: str = "both"
+    ):
+        # ……前面标签清洗与 MERGE 节点逻辑保持不变……
+
+        # 3) 写属性 —— 合并（而不是盲目覆盖）
+        props = props or {}
+        has_props = bool(props)
+
+        # JSON 路径：读取旧 JSON -> 合并 -> 回写
+        if has_props and store_mode in ("json", "both"):
+            old = self._read_properties_json(node_id)
+            merged = {**old, **props}  # 右侧 props 优先
+            self._write_properties_json(node_id, merged)
+
+        # 平铺路径：只在 props 非空时平铺
+        if has_props and store_mode in ("flat", "both"):
+            self.execute_query(
+                "MATCH (n {id: $id}) SET n += $props",
+                {"id": node_id, "props": props}
+            )
+
+
