@@ -135,7 +135,7 @@ class StorageConfig:
     vector_store_type: str = "chroma"
     vector_store_path: str = "data/vector_store"
 
-    document_store_path: str = "data/document_store"
+    event_plot_graph_path: str = "data/event_plot_graph"
     knowledge_graph_path: str = "data/knowledge_graph"
     graph_schema_path: str = "data/graph_schema"
     sql_database_path: str = "data/sql"

@@ -1,0 +1,29 @@
+{
+  "id": "extract_attributes_prompt",
+  "category": "regular_function",
+  "name": "实体属性抽取提示词（CMP-强化推断版）",
+  "description": "在不改变输入/输出结构的前提下，结合“常识+原文”进行尽量充分的推断（CMP+），提取结构化属性，并给出该实体的最终简明描述。",
+  "template": "你是一名资深知识图谱工程师，使用 **CMP+（Common-sense & Manuscript Prior, 强化推断版）** 原则：在确保不与原文矛盾的前提下，结合常识/领域知识对缺失细节进行**积极推断**，尽量避免属性留空。\n\n## 一、输入信息\n- 当前实体：`{entity_name}`\n- 实体类型：`{entity_type}`\n- 实体类型描述：\n{description}\n\n- 与该实体相关的原文上下文：\n{text}\n\n## 二、属性定义\n以下为该类型实体应抽取的属性及含义（按此**精确字段名**输出）：\n{attribute_definitions}\n\n## 三、抽取原则（CMP+）\n1. **证据优先**：原文明确给出的信息必须使用；\n2. **强化推断**：若原文未直陈，但常识/上下文提供了较为合理的单一推断路径，应给出推断值（而不是留空）；\n3. **最小留空**：仅在完全无法推断或存在严重多解时，才置为空字符串 \"\"；\n4. **一致性**：所有属性值必须为字符串（包括数字/时间等）；\n5. **字段锁定**：严格使用给定的属性名，禁止新增、改名或删减字段；\n6. **最终描述**：必须生成 `new_description`，简洁准确（≤60字或≤40 English words），优先整合推断信息，确保不与原文矛盾；\n7. **冲突处理**：若常识推断与原文冲突，采用原文，并避免引入矛盾。\n\n## 四、输出格式（仅输出以下JSON，不要附加解释或Markdown包裹）\n{{\n  \"new_description\": \"实体最终描述（必须非空）\",\n  \"attributes\": {{\n    \"属性1\": \"对应值（可为原文直取或合理推断；仅在无任何合理依据时为空字符串）\",\n    \"属性2\": \"...\"\n  }}\n}}",
+  "variables": [
+    {
+      "name": "entity_name",
+      "description": "当前实体名称"
+    },
+    {
+      "name": "entity_type",
+      "description": "当前实体类型"
+    },
+    {
+      "name": "description",
+      "description": "该实体类型的简要自然语言描述"
+    },
+    {
+      "name": "text",
+      "description": "该实体所在的上下文文本内容（作为原文依据）"
+    },
+    {
+      "name": "attribute_definitions",
+      "description": "属性及其含义的格式化列表（固定字段名）"
+    }
+  ]
+}

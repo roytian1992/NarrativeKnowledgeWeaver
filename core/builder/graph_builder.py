@@ -588,9 +588,7 @@ class KnowledgeGraphBuilder:
         
         with open(os.path.join(base, "section_entities_collection.pkl"), "rb") as f:
             self.section_entities_collection = pickle.load(f)
-            
-       #  self.section_entities_collection = json.load(open(os.path.join(base, "section_entities_collection.json"), "r", encoding="utf-8"))
-        
+
         # id → Entity
         entity_map = {d["id"]: Entity(**d) for d in ent_raw.values()}
         name2id: Dict[str, str] = {e.name: e.id for e in entity_map.values()}
@@ -622,6 +620,7 @@ class KnowledgeGraphBuilder:
                 
 
             inner = self.section_entities_collection[se.name]
+            # print("[CHECK] inner entities: ", [e.name for e in inner])
             for se in secs:
                 self._link_section_to_entities(se, inner, res["chunk_id"])
 
@@ -672,9 +671,10 @@ class KnowledgeGraphBuilder:
         #     json.dump(self.chunk2section_map, f)
     
         # 中文前缀词：Scene → 场景；Chapter → 章节
-        for result in extraction_results:
+        for i, result in enumerate(extraction_results):
             md = result.get("chunk_metadata", {}) or {}
             label = md.get('doc_title', md.get('subtitle', md.get('title', "")))
+            chunk_id = result.get("chunk_id", md.get("order", 0))
             
             if label not in self.section_entities_collection:
                 self.section_entities_collection[label] = []
@@ -697,11 +697,11 @@ class KnowledgeGraphBuilder:
                     existing_section_name = self.chunk2section_map[existing_chunk_id]
                     current_section_name = md["doc_title"]
                     if current_section_name != existing_section_name: # 如果不属于同章节的local，需要重命名。
-                        new_name = f"{ent_data['name']}_in_{label}"
+                        new_name = f"{ent_data['name']}_in_{chunk_id}"
                         suffix = 1
                         while new_name in entity_map:        # 仍冲突则追加 _n
                             suffix += 1
-                            new_name = f"{ent_data['name']}_in_{label}_{suffix}"
+                            new_name = f"{ent_data['name']}_in_{chunk_id}_{suffix}"
                         ent_data["name"] = new_name
 
                 # 创建 / 合并
@@ -826,6 +826,7 @@ class KnowledgeGraphBuilder:
     def _link_section_to_entities(self, section: Entity, inners: List[Entity], chunk_id: str):
         pred = self.meta["contains_pred"]
         for tgt in inners:
+            # print(f"[CHECK] linking {section.name} to {tgt.name}")
             rid = f"rel_{hash(f'{section.id}_{pred}_{tgt.id}') % 1_000_000}"
             self.kg.add_relation(
                 Relation(id=rid, subject_id=section.id, predicate=pred,

@@ -468,6 +468,26 @@ class Neo4jUtils:
             DELETE r
         """)
         print(f"✅ 已删除所有 {relation_type} 关系")
+
+    
+    def delete_entity_type(self, node_label: str, exclude_labels: list[str] | None = None):
+        """
+        删除指定 node_label 的节点及其关系，
+        如果节点还带有 exclude_labels 中的任意标签，则不会删除。
+        """
+        exclude_labels = exclude_labels or []
+
+        print(f"🧹 正在清除 :{node_label} 节点（排除：{exclude_labels}）...")
+
+        query = f"""
+            MATCH (n:{node_label})
+            WHERE { " AND ".join([f"NOT '{lbl}' IN labels(n)" for lbl in exclude_labels]) if exclude_labels else "true" }
+            DETACH DELETE n
+        """
+        self.execute_query(query)
+        print(f"✅ 已删除所有仅属于 {node_label} 且不含 {exclude_labels} 的节点及其关系")
+
+
         
 
     def has_path_between(
@@ -736,6 +756,8 @@ class Neo4jUtils:
         print(f"📌 实体类型标签: {entity_types}")
         nodes = self.fetch_all_nodes(entity_types)
         for n in  tqdm(nodes, desc="Encoding Nodes", ncols=80):
+            if n.get("embedding") is not None:
+                continue
             try:
                 emb = self.encode_node_embedding(n)
                 self.update_node_embedding(n["id"], emb)
@@ -2304,60 +2326,87 @@ class Neo4jUtils:
         """
         self.execute_query(query, {"node_id": node_id})
 
-    def update_entity_properties(self, node_id: str, properties: Dict[str, Any], mode: str = "both"):
+    def update_entity_properties(self, node_id: str, properties: Dict[str, Any], mode: str = "json"):
         """
-        更新指定节点的属性。
-        mode:
-        - "json": n.properties = JSON 字符串
-        - "flat": SET n += $props
-        - "both": 两者都做
+        仅把传入的 properties 和已有 n.properties 合并后，写回到 n.properties（字符串 JSON）。
+        不再做顶层扁平化（不再使用 SET n += $props），避免把业务键摊平到节点顶层。
+        参数 mode 保留仅为兼容旧调用（即使传入 "flat"/"both" 也不会扁平写入）。
         """
         properties = properties or {}
-        props_json = json.dumps(properties, ensure_ascii=False)
+        # 读取旧的 properties（自动兼容字符串/Map/None）
+        old_props = self._read_properties_json(node_id)
+        merged = {**(old_props or {}), **properties}
 
-        if mode in ("json", "both"):
-            self.execute_query(
-                "MATCH (n {id: $node_id}) SET n.properties = $props_json",
-                {"node_id": node_id, "props_json": props_json}
-            )
-        if mode in ("flat", "both"):
-            # 注意：Neo4j 顶层属性不支持嵌套 map，传入的 properties 应该是扁平键值
-            self.execute_query(
-                "MATCH (n {id: $node_id}) SET n += $props",
-                {"node_id": node_id, "props": properties}
-            )
+        # 仅写回 n.properties 为字符串 JSON
+        self._write_properties_json(node_id, merged)
+
 
     def _read_properties_json(self, node_id: str) -> dict:
         """
         读取 n.properties（JSON 字符串或 map），返回 dict；不存在或非法时返回 {}。
+        对 execute_query 的各种返回形态（list[dict] / list[tuple] / neo4j.Result）做了兼容。
         """
-        recs = self.execute_query(
-            "MATCH (n {id: $id}) RETURN n.properties AS props",
-            {"id": node_id}
-        )
-        if not recs:
+        try:
+            recs = self.execute_query(
+                "MATCH (n {id: $id}) RETURN n.properties AS props",
+                {"id": node_id}
+            )
+        except Exception:
             return {}
-        props = recs[0].get("props")
-        if props is None:
+
+        # 统一成可迭代
+        if recs is None:
             return {}
-        # 兼容两种存储：字符串 JSON 或者已是 map
-        if isinstance(props, str):
-            try:
-                return json.loads(props) if props.strip() else {}
-            except Exception:
-                return {}
-        if isinstance(props, dict):
-            return props
-        # 其它类型不支持
+        try:
+            iterator = iter(recs)
+        except TypeError:
+            # 不是可迭代，直接空
+            return {}
+
+        for row in iterator:
+            # neo4j-python 驱动 row 可能是 dict-like/Record/tuple
+            props = None
+            if isinstance(row, dict):
+                props = row.get("props")
+            else:
+                # 尝试属性访问
+                props = getattr(row, "props", None)
+                if props is None:
+                    # 尝试以键方式访问
+                    try:
+                        props = row["props"]
+                    except Exception:
+                        # 有些驱动返回单列 tuple
+                        try:
+                            if isinstance(row, (list, tuple)) and len(row) == 1:
+                                props = row[0]
+                        except Exception:
+                            pass
+
+            if props is None:
+                return {}  # 有记录但属性为 null
+            if isinstance(props, str):
+                props = props.strip()
+                if not props:
+                    return {}
+                try:
+                    return json.loads(props)
+                except Exception:
+                    return {}
+            if isinstance(props, dict):
+                return props
+            return {}
+        # 没有任何记录
         return {}
 
     def _write_properties_json(self, node_id: str, props: dict):
         """
-        将 props 作为 JSON 字符串写入 n.properties；props 必须为 dict（允许空，若空就不写）
+        将 props 作为 JSON 字符串写入 n.properties；props 为 {} 时不写，避免覆盖成 "{}"
         """
+        # print("[CHECK] props: ", props)
         props = props or {}
         if not props:
-            return  # 避免把库里已有的值改成 "{}"
+            return
         props_json = json.dumps(props, ensure_ascii=False)
         self.execute_query(
             "MATCH (n {id: $id}) SET n.properties = $props_json",
@@ -2366,25 +2415,64 @@ class Neo4jUtils:
 
 
     def merge_entity_with_properties(
-        self, node_id: str, name: str, etypes, aliases, props: Dict[str, Any], store_mode: str = "both"
+        self,
+        node_id: str,
+        name: str,
+        etypes,
+        aliases,
+        props: Dict[str, Any],
+        store_mode: str = "json"
     ):
-        # ……前面标签清洗与 MERGE 节点逻辑保持不变……
+        """
+        将实体写入/更新到 Neo4j：
+        - MERGE 节点，更新 name/aliases
+        - 设置标签（含 :Entity 与业务标签）
+        - 仅把 props 合并进 n.properties（字符串 JSON），不做顶层扁平化
+        注意：store_mode 参数保留兼容旧代码，但无论传什么都只写 n.properties。
+        """
+        # 归一化标签
+        if isinstance(etypes, list):
+            labels = [t for t in etypes if t]
+        else:
+            labels = [etypes] if etypes else []
+        labels = ["Entity"] + labels
 
-        # 3) 写属性 —— 合并（而不是盲目覆盖）
+        def _sanitize_label(s: str) -> str:
+            s = (s or "").strip()
+            s = re.sub(r"[^A-Za-z0-9_\-]", "", s)
+            if s and s[0].isdigit():
+                s = f"L_{s}"
+            return s
+
+        clean_labels = [l for l in (_sanitize_label(x) for x in labels) if l]
+        label_str = ":".join(f"`{l}`" for l in dict.fromkeys(clean_labels))  # 至少包含 `Entity`
+
+        aliases = aliases or []
         props = props or {}
         has_props = bool(props)
 
-        # JSON 路径：读取旧 JSON -> 合并 -> 回写
-        if has_props and store_mode in ("json", "both"):
+        # 1) MERGE 节点（名字/别名）
+        self.execute_query(
+            """
+            MERGE (n {id: $id})
+            ON CREATE SET n.name = $name, n.aliases = $aliases
+            ON MATCH  SET n.name = $name
+            """,
+            {"id": node_id, "name": name or "", "aliases": aliases}
+        )
+
+        # 2) 设置标签（字符串插值前已清洗）
+        self.execute_query(
+            f"""
+            MATCH (n {{id: $id}})
+            SET n:{label_str}
+            """,
+            {"id": node_id}
+        )
+
+        # 3) 仅写 n.properties（JSON 合并），不做顶层扁平化
+        if has_props:
             old = self._read_properties_json(node_id)
-            merged = {**old, **props}  # 右侧 props 优先
+            merged = {**(old or {}), **props}  # 右侧优先
             self._write_properties_json(node_id, merged)
-
-        # 平铺路径：只在 props 非空时平铺
-        if has_props and store_mode in ("flat", "both"):
-            self.execute_query(
-                "MATCH (n {id: $id}) SET n += $props",
-                {"id": node_id, "props": props}
-            )
-
 

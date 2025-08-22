@@ -60,11 +60,14 @@ class GraphStore:
             # session.run("MATCH (n) DETACH DELETE n")
             
             # 存储实体
+            print("[CHECK] 存储实体数量: ", len(kg.entities.values()))
             for entity in kg.entities.values():
                 # print(f"存储实体: {entity}")
+                
                 self._store_entity(session, entity)
             
             # 存储关系
+            print("[CHECK] 存储关系数量: ", len(kg.relations.values()))
             for relation in kg.relations.values():
                 # print(f"存储关系: {relation}")
                 self._store_relation(session, relation)
@@ -102,7 +105,7 @@ class GraphStore:
                 "name": entity.name,
                 "aliases": entity.aliases,
                 "description": entity.description,
-                "scope": entity.scope,
+                "scope": entity.scope or "local",
                 "properties": json.dumps(entity.properties, ensure_ascii=False),
                 "source_chunks": entity.source_chunks,
             })
@@ -120,7 +123,7 @@ class GraphStore:
             # session.run("MATCH (e {id:$id}) SET e:Entity", {"id": entity.id})
 
         except Exception as e:
-            print(f"[Neo4j] MERGE Entity 失败: {e}")
+            print(f"[Neo4j] MERGE Entity 失败: {e} \n 实体信息：{entity}")
 
     # def _store_entity(self, session, entity: Entity) -> None:
     #     """存储单个实体"""
