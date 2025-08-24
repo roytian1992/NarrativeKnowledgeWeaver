@@ -102,8 +102,8 @@ core/
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/roytian1992/KGAG.git
-cd KGAG
+git clone https://github.com/roytian1992/NarrativeKnowledgeWeaver.git
+cd NarrativeKnowledgeWeaver
 ```
 
 2. **安装Python依赖**
