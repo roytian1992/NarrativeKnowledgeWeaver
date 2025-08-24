@@ -44,8 +44,8 @@ class RelationalDatabaseBuilder:
             background=settings.get("background", ""),
             abbreviations=settings.get("abbreviations", []),
         )
-        doc_type = self.config.knowledge_graph_builder.doc_type
-        system_prompt_id = "agent_prompt_screenplay" if doc_type == "screenplay" else "agent_prompt_novel"
+        # doc_type = self.config.knowledge_graph_builder.doc_type
+        system_prompt_id = "agent_prompt_cmp" 
         return self.prompt_loader.render_prompt(system_prompt_id, {"background_info": background_info})
 
     def get_background_info(self, background: str, abbreviations: List[dict]) -> str:
