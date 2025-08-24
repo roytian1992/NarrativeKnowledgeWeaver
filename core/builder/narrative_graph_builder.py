@@ -50,11 +50,11 @@ def remove_subset_paths(chains: List[List[str]]) -> List[List[str]]:
     return filtered
 
 
-def jaccard_similarity(set1: Set[str], set2: Set[str]) -> float:
+def overlapping_similarity(set1: Set[str], set2: Set[str]) -> float:
     """计算两个集合的 Jaccard 相似度（|A∩B| / max(|A|, |B|)）"""
     if not set1 and not set2:
         return 1.0
-    return len(set1 & set2) / max([len(set1), len(set2)])
+    return len(set1 & set2) / min([len(set1), len(set2)])
 
 
 def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> List[List[str]]:
@@ -66,7 +66,7 @@ def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> Lis
         set_chain = set(chain)
         keep = True
         for kept in filtered:
-            sim = jaccard_similarity(set_chain, set(kept))
+            sim = overlapping_similarity(set_chain, set(kept))
             if sim >= threshold:
                 keep = False
                 break
@@ -950,15 +950,15 @@ class EventCausalityBuilder:
             src_mid_conf = edge_map.get((source, link[0]))["confidence"]
             src_tgt_conf = edge_map.get((source, link[1]))["confidence"]
 
-            if (src_mid_sim > src_tgt_sim and mid_tgt_sim > src_tgt_sim) or (src_mid_conf > src_tgt_conf and mid_tgt_conf > src_tgt_conf):
-                context_to_check.append({
-                    "entities": [source, link[0], link[1]],
-                    "details": [
-                        {"edge": [source, link[0]], "similarity": src_mid_sim, "confidence": src_mid_conf},
-                        {"edge": [source, link[1]], "similarity": src_tgt_sim, "confidence": src_tgt_conf},
-                        {"edge": [link[0], link[1]], "similarity": mid_tgt_sim, "confidence": mid_tgt_conf},
-                    ]
-                })
+            # if (src_mid_sim > src_tgt_sim and mid_tgt_sim > src_tgt_sim) or (src_mid_conf > src_tgt_conf and mid_tgt_conf > src_tgt_conf):
+            context_to_check.append({
+                "entities": [source, link[0], link[1]],
+                "details": [
+                    {"edge": [source, link[0]], "similarity": src_mid_sim, "confidence": src_mid_conf},
+                    {"edge": [source, link[1]], "similarity": src_tgt_sim, "confidence": src_tgt_conf},
+                    {"edge": [link[0], link[1]], "similarity": mid_tgt_sim, "confidence": mid_tgt_conf},
+                ]
+            })
         return context_to_check
 
     def prepare_context(self, pattern_detail):

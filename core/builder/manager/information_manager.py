@@ -8,7 +8,7 @@ import json
 from typing import Dict, Any
 from core.utils.config import KAGConfig
 from core.functions.regular_functions import (EntityExtractor, RelationExtractor, 
-    ExtractionReflector, AttributeExtractor, AttributeReflector)
+    ExtractionReflector, AttributeExtractor, AttributeReflector, PropItemExtractor, WardrobeExtractor, StylingExtractor, CMPReflector)
 # from kag.schema.kg_schema import ENTITY_TYPES, RELATION_TYPE_GROUPS
 from core.utils.prompt_loader import PromptLoader
 import os
@@ -29,6 +29,10 @@ class InformationExtractor:
         self.extraction_reflection = ExtractionReflector(self.prompt_loader, self.llm)
         self.attribute_extraction = AttributeExtractor(self.prompt_loader, self.llm)
         self.attribute_reflection = AttributeReflector(self.prompt_loader, self.llm)
+        self.propitem_extraction = PropItemExtractor(self.prompt_loader, self.llm)
+        self.styling_extraction = StylingExtractor(self.prompt_loader, self.llm)
+        self.wardrobe_extraction = WardrobeExtractor(self.prompt_loader, self.llm)
+        self.custume_reflection = CMPReflector(self.prompt_loader, self.llm)
 
     def extract_entities(
         self,
@@ -160,4 +164,83 @@ class InformationExtractor:
 
         result = self.attribute_reflection.call(params=json.dumps(params))
         # print("[CHECK] attribute reflection result:", result)
+        return result
+    
+    def extract_propitem(
+        self,
+        content: str,
+        system_prompt: str,
+        reflection_results: dict
+    ) -> str:
+        """从文本中抽取道具"""
+        params = {
+                "content": content,
+                "system_prompt": system_prompt,
+                "reflection_results": reflection_results
+            }
+        result = self.propitem_extraction.call(
+            params=json.dumps(params)
+        )
+        # print("[CHECK] propitem extraction result: ", result)
+        # print(f"原文：\n{content}")
+        return result
+
+
+    def extract_wardrobe(
+        self,
+        content: str,
+        system_prompt: str,
+        reflection_results: dict
+    ) -> str:
+        """从文本中抽取服装"""
+        params = {
+                "content": content,
+                "system_prompt": system_prompt,
+                "reflection_results": reflection_results
+            }
+        result = self.wardrobe_extraction.call(
+            params=json.dumps(params)
+        )
+        # print("[CHECK] wardrobe extraction result: ", result)
+        # print(f"原文：\n{content}")
+        return result
+    
+    def extract_styling(
+        self,
+        content: str,
+        system_prompt: str,
+        reflection_results: dict
+    ) -> str:
+        """从文本中抽取妆造"""
+        params = {
+                "content": content,
+                "system_prompt": system_prompt,
+                "reflection_results": reflection_results
+            }
+        result = self.styling_extraction.call(
+            params=json.dumps(params)
+        )
+        # print("[CHECK] styling extraction result: ", result)
+        # print(f"原文：\n{content}")
+        return result
+
+    def reflect_cmp_extractions(
+        self,
+        logs: str,
+        content: str,
+        system_prompt: str,
+        previous_reflection: dict|str = None,
+    ) -> str:
+        """反思抽取结果的质量"""
+        params = {
+                "logs": logs,
+                "content": content,
+                "system_prompt": system_prompt,
+                "previous_reflection": previous_reflection,
+            }
+        result = self.custume_reflection.call(
+            params=json.dumps(params)
+        )
+        # print("[CHECK] reflection result: ", result)
+        # print(f"原文：\n{content}")
         return result

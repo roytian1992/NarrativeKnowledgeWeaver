@@ -1,0 +1,11 @@
+{
+  "id": "reflect_costume_extraction_v1",
+  "category": "reflection",
+  "name": "服化道抽取质量反思（极简字段版）",
+  "description": "基于原文与抽取记录，从准确性、一致性与冗余性三个维度反思服化道（wardrobe / styling / prop）抽取质量；产出可执行的逐条改进建议与评分。",
+  "template": "你是一名资深服化道监督与数据治理工程师。请对本段文本与其抽取记录进行质量反思，仅输出 JSON（不要解释过程）。\n\n一、输入\n- 原文：\n{content}\n- 抽取记录（字段固定：name, category, subcategory, appearance, status, character, evidence；可能为多条）：\n{logs}\n注意，如果当前的原文本身缺乏足够信息，那么缺失抽取记录也是合理的，这种情况可以直接输出 score=10，不必提供feedbacks。\n\n二、评估维度\n1) 准确性：\n   - category 是否合理（wardrobe / styling / prop）。\n   - subcategory 是否贴切（如 suit、boots、ponytail、mask、tablet、curtain 等）。\n   - character 是否为文本中实际或可单一路径推断出的角色；一物多角色情况是否拆分为多条。\n   - evidence 是否能直接支撑该条；appearance/status 是否与原文不矛盾；是否过度臆测。\n2) 一致性：\n   - name 口径是否统一（去人称/所有格，避免“某某的外套”）。\n   - 同类项命名、大小写、术语是否一致；相似 subcategory 是否统一。\n3) 冗余性：\n   - 是否存在重复记录、低价值或与人物外观无关的项（例如纯系统口令且无可见物件）。\n\n三、缺漏与推断\n- 合理推断允许但必须存在单一路径依据（例如“拉开窗帘”可推出“窗帘”；“看向屏幕”可推出“显示屏”）。\n- 无依据或多解场景应留空或删除；如 appearance/status 可由文本补充，请指出可补充点。\n\n四、评分规则（0–10）\n0：抽取缺失或大幅错误，需要重做。\n3：可用但问题较多，需明显修改。\n5：基本可用，若干可改进点。\n7：质量较好，只有少量微调。\n10：质量优秀，无需修改。\n\n五、输出要求\n- 仅输出 JSON，形如：\n{{\n  \"feedbacks\": [\n    \"<prop> 建议…\",\n    \"<styling> 建议…\",\n    \"<ward> 建议…\"\n  ],\n  \"score\": 整数\n}}\n- feedbacks 为针对单条或一组问题的具体可执行建议，每条以前缀区分：\n  • <prop> 针对道具\n  • <styling> 针对造型\n  • <ward> 针对服装/鞋靴/配饰\n- 若 logs 为空：score=0，feedbacks 仅包含一条“抽取日志缺失”。\n\n请现在给出 JSON。",
+  "variables": [
+    { "name": "content", "description": "剧本文本内容（用于核对与合理推断）" },
+    { "name": "logs", "description": "已抽取的记录列表（字段：name, category, subcategory, appearance, status, character, evidence）" }
+  ]
+}

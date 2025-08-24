@@ -141,6 +141,11 @@ class StorageConfig:
     sql_database_path: str = "data/sql"
 
 
+@dataclass
+class PlugInConfig:
+    prompt_dir: str = "./plug_in/prompts"
+    graph_schema_path: str = "./plug_in/schema/default_graph_schema.json"
+
 # =========================
 # 顶层配置
 # =========================
@@ -163,6 +168,9 @@ class KAGConfig:
     agent: AgentConfig = field(default_factory=AgentConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+
+    # 插件段
+    plug_in: PlugInConfig = field(default_factory=PlugInConfig)
 
     # ---------- 构造 ----------
 
@@ -237,6 +245,10 @@ class KAGConfig:
                 aliases={"graph_scehma_path": "graph_schema_path"}
             )
 
+        # plug_in
+        if "plug_in" in data:
+            _update_dc_from_dict(cfg.plug_in, data["plug_in"])
+
         cfg._validate()
         return cfg
 
@@ -256,6 +268,7 @@ class KAGConfig:
             "agent": asdict(self.agent),
             "memory": asdict(self.memory),
             "storage": asdict(self.storage),
+            "plug_in": asdict(self.plug_in),
         }
 
     def save_yaml(self, yaml_path: str) -> None:

@@ -1,6 +1,6 @@
-# 叙事知识编织者 (Narrative Knowledge Weaver)
+# Narrative Knowledge Weaver: A Multi-Agent Framework for Knowledge Graph Construction and Narrative Analysis
 
-**叙事知识编织者**是一个基于大语言模型的智能知识图谱构建与叙事分析系统。该系统能够从非结构化的叙事文本（如小说、剧本）中自动抽取实体、关系和属性，构建结构化的知识图谱，并进一步分析事件因果关系和情节结构，生成事件因果图谱和情节单元图谱。
+**Narrative Knowledge Weaver**是一个基于大语言模型的智能知识图谱构建与叙事分析系统。该系统能够从非结构化的叙事文本（如小说、剧本）中自动抽取实体、关系和属性，构建结构化的知识图谱，并进一步分析事件因果关系和情节结构，生成事件因果图谱和情节单元图谱。
 
 ## 核心特性
 
@@ -17,19 +17,57 @@
 
 系统采用模块化设计，主要包含以下核心模块：
 
+<img src="assets/overall_architecture.png" alt="系统架构" width="600"/>
+
+## 多智能体系统
+### Information Extraction Agent
+用于抽取实体和关系
+
+<img src="assets/kg_agent.png" alt="Information Extraction Agent" width="600"/>
+
+**工作流程架构：**
+1. **经验检索** ：调用语义记忆系统，检索历史中与当前输入相似的问题与建议，提升提示上下文的针对性
+2. **实体抽取** ：使用语言模型从文本中抽取结构化实体，支持8种核心实体类型（Character、Event、Action、Location、Object、Concept、Emotion、Goal、TimePoint）
+3. **关系抽取**：基于已有实体与关系类型定义，从文本中识别实体之间的语义关系，支持角色关系、事件动作关系、场景关系等多种关系类型
+4. **反思评估**：结合当前抽取结果与日志生成过程，评估抽取质量，返回评分与反思建议
+
+属性抽取与服化道信息抽取也基于类似的抽取-> 反思 -> 优化的流程。
+
+### Attribute Extraction Agent
+AttributeExtractionAgent是系统中专门负责实体属性抽取的核心组件。
+
+<img src="assets/attr_agent.png" alt="Attribute Extraction Agent" width="600"/>
+
+### Graph Probing Agent
+主要目标是确保知识图谱的 schema 结构能够与文本内容和用户需求高度契合，从而支撑不同层面的分析与推理任务
+
+<img src="assets/probing_agent.png" alt="Graph Probing Agent" width="600"/>
+
+**预准备步骤** 在进入 schema 探测之前，系统会先执行一个 **阅读洞见抽取**: **随机抽取约 35% 的文本块**，进行快速阅读与语义分析。
+
+在实际运行中，Graph Probing Agent 采用 **循环式工作流**：
+1. **经验检索**：从记忆库中检索相关案例和洞见，作为 schema 优化的参考。
+2. **背景信息生成/调整**：根据洞见，生成/优化背景信息和术语列表。
+3. **Schema 生成/调整**：结合背景信息与用户 goals，生成新的实体 Schema，然后以此为基础生成新的关系Schema。
+4. **抽取测试**：用已有的背景信息和术语列表构建系统提示词，然后基于候选 schema 在部分文本上进行试验性抽取，验证覆盖度与可行性。
+5. **修剪优化**：根据统计分布与任务目标，删除冗余或低频类型，保持 schema 的精炼性。
+6. **反思迭代**：评估当前 schema 的质量与目标匹配度，若不足则进入下一轮优化。
+
 ### 核心目录结构
 
 ```
 core/
-├── agent/                    # 智能代理模块
-│   ├── attribute_extraction_agent.py   # 属性抽取代理
-│   ├── kg_extraction_agent.py          # 知识图谱抽取代理
-│   ├── openai_agent.py                 # OpenAI代理封装
-│   └── qwen3_fncall_agent.py           # Qwen模型代理
+├── agent/                    # 智能体模块
+│   ├── attribute_extraction_agent.py   # 属性抽取智能体
+│   ├── knowledge_extraction_agent.py          # 知识图谱抽取代理
+│   ├── graph_probing_agent.py           # 探测器智能体
+|   ├── retriever_agent.py              # 信息检索智能体
+│   └── cmp_extraction_agent.py           # 服化道抽取智能体
 ├── builder/                  # 构建器模块
 │   ├── manager/                        # 构建管理器
 │   ├── document_processor.py           # 文档处理器
 │   ├── graph_builder.py                # 图谱构建器
+│   ├── database_builder.py             # 关系型数据库构建器
 │   ├── graph_preprocessor.py           # 图预处理器
 │   ├── narrative_graph_builder.py      # 叙事图构建器
 │   └── reflection.py                   # 反思模块
@@ -210,16 +248,12 @@ storage:
 python main.py \
     -c configs/config_openai.yaml \
     -i examples/documents/流浪地球2剧本.json \
-    -b examples/settings/we2_settings.json \
-    -t "screenplay" \
     -v
 
 # 处理小说文档
 python main.py \
     -c configs/config_openai.yaml \
     -i examples/documents/我机器人.json \
-    -b examples/settings/irobot_settings.json \
-    -t "novel" \
     -v
 ```
 
@@ -230,7 +264,6 @@ python main.py \
 | `-c, --config` | str | 是 | 主配置文件路径（YAML格式） |
 | `-i, --input` | str | 是 | 输入文档路径（JSON格式） |
 | `-b, --build-settings` | str | 是 | 构建流程设置文件路径 |
-| `-t, --doc-type` | str | 是 | 文档类型：`novel` 或 `screenplay` |
 | `-v, --verbose` | flag | 否 | 启用详细日志输出 |
 
 ## 核心工作流程
@@ -261,7 +294,7 @@ python main.py \
 
 ## 应用场景
 
-- **数字人文研究**：大规模文学作品分析和模式发现
+- **人文研究**：大规模文学作品分析和模式发现
 - **内容分析**：媒体内容的结构化分析和理解
 - **智能问答**：基于叙事内容的智能问答系统
 - **创作辅助**：为创作者提供故事结构分析和建议
@@ -275,13 +308,6 @@ python main.py \
 - **模块化设计**：易于扩展和维护的模块化架构
 - **多模型支持**：支持多种大语言模型和嵌入模型
 
-## 开发建议
-
-- 对于大型文档，建议使用多进程并行处理
-- 根据硬件资源调整`max_workers`参数
-- 对于低置信度的抽取结果，启用反思重抽机制
-- 使用Neo4j Bloom或GraphXR进行图谱可视化探索
-- 定期备份Neo4j数据库和向量存储
 
 ## 许可证
 
@@ -298,5 +324,5 @@ python main.py \
 
 ## 致谢
 
-本项目基于LangChain、Neo4j、ChromaDB等优秀的开源项目构建。感谢所有贡献者和开源社区的支持。
+感谢 **《流浪地球3》剧组** 提供算力支持与剧本问答数据标注。
 

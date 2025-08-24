@@ -23,6 +23,10 @@ from .entity_type_validation import EntityTypeValidator
 from .entity_scope_validation import EntityScopeValidator
 from .event_context_generation import EventContextGenerator
 from .schema_feedback_summarizer import FeedbackSummarizer
+from .propitem_extraction import PropItemExtractor
+from .styling_extraction import StylingExtractor
+from .wardrobe_extraction import WardrobeExtractor
+from .cmp_reflection import CMPReflector
 
 
 __all__ = [
@@ -49,6 +53,10 @@ __all__ = [
     "EntityTypeValidator",
     "EntityScopeValidator",
     "EventContextGenerator",
-    "FeedbackSummarizer"
+    "FeedbackSummarizer",
+    "PropItemExtractor",
+    "StylingExtractor",
+    "WardrobeExtractor",
+    "CMPReflector"
 ]
 

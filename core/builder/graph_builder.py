@@ -6,6 +6,7 @@ import os
 import sqlite3
 import pickle
 import multiprocessing as mp
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError, wait, FIRST_COMPLETED
 import time
 from collections import defaultdict
@@ -20,10 +21,8 @@ from tqdm import tqdm
 from core.utils.prompt_loader import PromptLoader
 from core.utils.format import correct_json_format
 from core.models.data import Entity, KnowledgeGraph, Relation, TextChunk, Document
-from ..storage.document_store import DocumentStore
 from ..storage.graph_store import GraphStore
 from ..storage.vector_store import VectorStore
-from core.memory.vector_memory import VectorMemory
 from ..utils.config import KAGConfig
 from ..utils.neo4j_utils import Neo4jUtils
 from core.model_providers.openai_llm import OpenAILLM
@@ -152,101 +151,166 @@ class KnowledgeGraphBuilder:
             
         return background_info
         
-    def prepare_chunks(self, json_file_path: str, verbose: bool = True):
+    def prepare_chunks(
+        self,
+        json_file_path: str,
+        verbose: bool = True,
+        retries: int = 2,
+        per_task_timeout: float = 120.0,
+        retry_backoff: float = 1.0,
+    ):
         """
         并发拆分文档为 TextChunk，按【完成顺序】收集；
-        单文档软超时=120s（可调），超时则跳过其块并继续处理其它文档。
+        - 单文档软超时 = per_task_timeout（默认120s），超时则跳过其块并在下一轮重试；
+        - 可配置重试轮数 retries（默认2轮）。每轮仅对未成功的文档进行并发处理；
+        - 成功：立即收集其 document_chunks；
+        - 失败/超时：计入队列，若仍有剩余轮次则进入下一轮重试。
+
+        Args:
+            json_file_path: 输入 JSON 路径
+            verbose: 是否打印日志
+            retries: 最大重试轮数（含首轮），默认2
+            per_task_timeout: 单文档软超时（秒），默认120
+            retry_backoff: 每轮之间的退避（秒），默认1.0
         """
-        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
-        import time
-        from tqdm import tqdm
-        import os, json
-
-        PER_TASK_TIMEOUT = 120.0  # 可调；比如 180
-
         # —— 初始化/清理 —— #
         self.reflector.clear()
         base = self.config.storage.knowledge_graph_path
         self.clear_directory(base)
+
         if verbose:
             print(f"🚀 开始构建知识图谱: {json_file_path}")
             print("📖 加载文档...")
 
         documents = self.processor.load_from_json(json_file_path, extract_metadata=True)
-        if verbose:
-            print(f"✅ 成功加载 {len(documents)} 个文档")
+        n_docs = len(documents)
 
-        # —— 单文档拆分任务 —— #
+        if verbose:
+            print(f"✅ 成功加载 {n_docs} 个文档")
+
+        # 单文档拆分任务
         def _run(doc):
             # 期望返回 {"document_chunks": List[TextChunk]}
             return self.processor.prepare_chunk(doc)
 
-        # —— 并发执行：完成即收集 + 软超时 —— #
+        # —— 并发 & 重试 —— #
         all_chunks = []
-        timeouts = []
-        failures = []
+        # 这些索引最终用于汇报：每轮动态更新
+        final_failures = set()   # 全部轮次里仍失败（异常）的文档 idx
+        final_timeouts = set()   # 全部轮次里仍超时的文档 idx
 
+        # 待处理文档索引集合（第一轮是全部）
+        remaining = list(range(n_docs))
+
+        # 并发大小
         max_workers = getattr(self, "max_workers", getattr(self, "max_worker", 4))
-        executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="chunk")
 
-        try:
-            fut_info = {}  # future -> {"start": float, "doc": Any, "idx": int}
-            for idx, d in enumerate(documents):
-                f = executor.submit(_run, d)
-                fut_info[f] = {"start": time.time(), "doc": d, "idx": idx}
+        for round_id in range(1, max(1, retries) + 1):
+            if not remaining:
+                if verbose:
+                    print(f"🎉 所有文档在第 {round_id-1} 轮前已完成，无需继续。")
+                break
 
-            pbar = tqdm(total=len(fut_info), desc="并发拆分中", ncols=100)
-            pending = set(fut_info.keys())
+            if verbose:
+                print(f"\n🔁 第 {round_id}/{max(1, retries)} 轮并发拆分：待处理 {len(remaining)} 个文档")
 
-            while pending:
-                # 1) 先收集已完成的
-                done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
-                for f in done:
-                    info = fut_info.pop(f, None)
-                    try:
-                        grp = f.result()  # 已完成，不阻塞
-                        chunks = (grp or {}).get("document_chunks", [])
-                        if isinstance(chunks, list):
-                            all_chunks.extend(chunks)
-                        else:
-                            failures.append(info["idx"])
-                    except Exception:
-                        failures.append(info["idx"])
-                    pbar.update(1)
+            # 当轮的失败/超时暂存（仅本轮计算，用于下一轮重试）
+            round_failures = []
+            round_timeouts = []
 
-                # 2) 检查未完成是否超过软超时；超时则不再等待
-                now = time.time()
-                to_forget = []
-                for f in pending:
-                    start = fut_info[f]["start"]
-                    if now - start >= PER_TASK_TIMEOUT:
-                        info = fut_info[f]
-                        f.cancel()  # 若已在运行则返回 False；无论如何我们不再等待
-                        timeouts.append(info["idx"])
+            # —— 提交任务 —— #
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=f"chunk-r{round_id}") as executor:
+                fut_info = {}  # future -> {"start": float, "idx": int}
+                for idx in remaining:
+                    f = executor.submit(_run, documents[idx])
+                    fut_info[f] = {"start": time.time(), "idx": idx}
+
+                pbar = tqdm(total=len(fut_info), desc=f"并发拆分中/第{round_id}轮", ncols=100)
+                pending = set(fut_info.keys())
+
+                while pending:
+                    # 1) 先收集已完成的
+                    done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+                    for f in done:
+                        info = fut_info.pop(f, None)
+                        try:
+                            grp = f.result()  # 已完成，不阻塞
+                            chunks = (grp or {}).get("document_chunks", [])
+                            if isinstance(chunks, list):
+                                all_chunks.extend(chunks)
+                            else:
+                                round_failures.append(info["idx"])
+                        except Exception:
+                            round_failures.append(info["idx"])
                         pbar.update(1)
-                        to_forget.append(f)
-                if to_forget:
-                    for f in to_forget:
-                        pending.remove(f)
-                        fut_info.pop(f, None)
 
-            pbar.close()
-        finally:
-            # 不等待未完成的线程；取消队列里尚未开始的任务，避免退出卡住
-            executor.shutdown(wait=False, cancel_futures=True)
+                    # 2) 检查未完成是否超过软超时；超时则不再等待
+                    now = time.time()
+                    to_forget = []
+                    for f in pending:
+                        start = fut_info[f]["start"]
+                        if now - start >= per_task_timeout:
+                            info = fut_info[f]
+                            try:
+                                f.cancel()  # 若已在运行则返回 False；无论如何不再等待
+                            except Exception:
+                                pass
+                            round_timeouts.append(info["idx"])
+                            pbar.update(1)
+                            to_forget.append(f)
+                    if to_forget:
+                        for f in to_forget:
+                            pending.remove(f)
+                            fut_info.pop(f, None)
 
-        # —— 落盘 —— #
+                pbar.close()
+
+                # executor 在 with 结束时会等待正在运行的任务完成；
+                # 但我们上面已对超时的 future 做了 pbar 更新并移除 pending，不会卡住。
+
+            # —— 计算下一轮 remaining —— #
+            # 当轮未成功 = (当轮失败 ∪ 当轮超时)
+            # 注意：成功的 idx 已经通过 all_chunks 收集，不需要记录。
+            remaining = list(set(round_failures) | set(round_timeouts))
+
+            # 汇总到“最终统计集合”（用于全部轮次结束后的汇报）
+            final_failures.update(round_failures)
+            final_timeouts.update(round_timeouts)
+
+            if verbose:
+                print(f"📦 第 {round_id} 轮结束：成功 {n_docs - len(remaining) - (len(all_chunks) == 0)}（累计块 {len(all_chunks)}）")
+                if round_timeouts:
+                    print(f"⏱️ 本轮超时 {len(round_timeouts)} 个：{sorted(round_timeouts)}")
+                if round_failures:
+                    print(f"❗本轮失败 {len(round_failures)} 个：{sorted(round_failures)}")
+
+            # 若还有未完成且仍有下一轮，稍作退避
+            if remaining and round_id < max(1, retries) and retry_backoff > 0:
+                time.sleep(retry_backoff)
+
+        # —— 落盘（只写成功块）—— #
         os.makedirs(base, exist_ok=True)
         out_path = os.path.join(base, "all_document_chunks.json")
         with open(out_path, "w", encoding="utf-8") as fw:
             json.dump([c.dict() for c in all_chunks], fw, ensure_ascii=False, indent=2)
 
+        # —— 最终报告 —— #
         if verbose:
-            print(f"✅ 生成 {len(all_chunks)} 个文本块")
-            if timeouts:
-                print(f"⏱️ 有 {len(timeouts)} 个文档在 {int(PER_TASK_TIMEOUT)}s 内未完成拆分（已跳过）：{timeouts}")
-            if failures:
-                print(f"❗有 {len(failures)} 个文档拆分失败（已跳过）：{failures}")
+            print(f"\n✅ 最终生成 {len(all_chunks)} 个文本块，已写入：{out_path}")
+
+            # “最终失败/超时集合”里，去掉那些后来成功完成的索引
+            # 做法：推断成功文档索引 = 全部索引 - 最终 remaining 集合
+            # 但由于我们没有逐文档的 chunk 计数，这里采用保守汇报：
+            #   报告在“最后一轮仍未完成”的索引
+            if remaining:
+                print(f"⚠️ 以下 {len(remaining)} 个文档在 {retries} 轮后仍未完成：{sorted(remaining)}")
+
+            # 辅助：给出所有回合中出现过的异常/超时索引（便于排查）
+            if final_timeouts:
+                print(f"⏱️ 所有轮次累计出现过超时的文档索引：{sorted(final_timeouts)}")
+            if final_failures:
+                print(f"❗所有轮次累计出现过失败的文档索引：{sorted(final_failures)}")
+
 
     # ═════════════════════════════════════════════════════════════════════
     #  2) 存储 Chunk（RDB + VDB）

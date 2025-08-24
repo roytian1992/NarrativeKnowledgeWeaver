@@ -155,9 +155,30 @@ class QuestionAnsweringAgent:
 
     def _load_graph_schema(self) -> Optional[Dict[str, Any]]:
         schema_path = os.path.join(self.config.storage.graph_schema_path, "graph_schema.json")
+        plug_in_schema_path = self.config.plug_in.graph_schema_path
         if os.path.exists(schema_path):
             with open(schema_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                graph_schema = json.load(f)
+
+            if os.path.exists(plug_in_schema_path):
+                print("- 读取额外的Schema")
+                with open(plug_in_schema_path, "r", encoding="utf-8") as f:
+                    plug_in_schema = json.load(f)
+
+            if plug_in_schema:
+                entity_types = [entity["type"] for entity in graph_schema["entities"]]
+                relation_types = graph_schema["relations"].keys()
+                entities = graph_schema["entities"] + [entity for entity in plug_in_schema["entities"] if entity["type"] not in entity_types]
+                relations = dict()
+                for relation_type in plug_in_schema["relations"]:
+                    if relation_type in relation_types:
+                        relations[relation_type + "_2"] = plug_in_schema["relations"][relation_type]
+                    else:
+                        relations[relation_type] = plug_in_schema["relations"][relation_type]
+                return {"entities": entities, "relations": relations}
+            else:
+                return graph_schema
+
         default_path = getattr(self.config.probing, "default_graph_schema_path", None)
         if default_path and os.path.exists(default_path):
             with open(default_path, "r", encoding="utf-8") as f:
