@@ -26,13 +26,13 @@
 
 系统采用模块化设计，主要包含以下核心模块：
 
-<img src="assets/overall_architecture.png" alt="系统架构" width="600"/>
+<img src="./assets/overall_architecture.png" alt="系统架构" width="600"/>
 
 ## 多智能体系统
 ### Information Extraction Agent
 用于抽取实体和关系
 
-<img src="assets/kg_agent.png" alt="Information Extraction Agent" width="600"/>
+<img src="./assets/kg_agent.png" alt="Information Extraction Agent" width="600"/>
 
 **工作流程架构：**
 1. **经验检索** ：调用语义记忆系统，检索历史中与当前输入相似的问题与建议，提升提示上下文的针对性
@@ -45,12 +45,12 @@
 ### Attribute Extraction Agent
 AttributeExtractionAgent是系统中专门负责实体属性抽取的核心组件。
 
-<img src="assets/attr_agent.png" alt="Attribute Extraction Agent" width="600"/>
+<img src="./assets/attr_agent.png" alt="Attribute Extraction Agent" width="600"/>
 
 ### Graph Probing Agent
 主要目标是确保知识图谱的 schema 结构能够与文本内容和用户需求高度契合，从而支撑不同层面的分析与推理任务
 
-<img src="assets/probing_agent.png" alt="Graph Probing Agent" width="600"/>
+<img src="./assets/probing_agent.png" alt="Graph Probing Agent" width="600"/>
 
 **预准备步骤** 在进入 schema 探测之前，系统会先执行一个 **阅读洞见抽取**: **随机抽取约 35% 的文本块**，进行快速阅读与语义分析。
 
