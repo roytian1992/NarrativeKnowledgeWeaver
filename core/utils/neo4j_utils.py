@@ -122,7 +122,59 @@ class Neo4jUtils:
                 entities.append(self._build_entity_from_data(data))
             return entities
 
-    
+    def find_co_section_entities(
+        self,
+        entity_id: str,
+        include_types: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+    ) -> List[Entity]:
+        """
+        给定任意实体 id，返回与其处在同一 Scene 的“其它实体”（转换为 Entity）。
+        - 通过 self.meta['section_label'] 和 self.meta['contains_pred'] 自动适配 Scene/Chapter 与包含关系方向。
+        - include_types: 可选的标签白名单（如 ["Event", "Character"]）；不传则返回全部。
+        - 若传入的 id 本身是 Scene/Chapter 节点，则直接以其为场景返回该场景下的实体。
+        """
+        section_label = self.meta["section_label"]       # 如 "Scene" 或 "Chapter"
+        contains_pred = self.meta["contains_pred"]       # 如 "SCENE_CONTAINS" 或 "CHAPTER_CONTAINS"
+
+        # 动态 where 片段
+        type_filter = "AND ANY(l IN labels(o) WHERE l IN $etypes)" if include_types else ""
+        limit_clause = "LIMIT $limit" if limit else ""
+
+        cypher = f"""
+        MATCH (e {{id: $eid}})
+        // 找到承载该实体的场景；如果 e 自己就是场景，则把 e 当作场景
+        OPTIONAL MATCH (s:{section_label})-[:{contains_pred}]->(e)
+        WITH e, s, labels(e) AS e_labels
+        WITH e, CASE WHEN s IS NULL AND '{section_label}' IN e_labels THEN e ELSE s END AS scene
+        WHERE scene IS NOT NULL
+        MATCH (scene)-[:{contains_pred}]->(o)
+        WHERE o.id <> e.id
+        {type_filter}
+        RETURN DISTINCT o
+        {limit_clause}
+        """
+
+        params: Dict[str, Any] = {"eid": entity_id}
+        if include_types:
+            params["etypes"] = include_types
+        if limit:
+            params["limit"] = limit
+
+        rows = self.execute_query(cypher, params)
+        entities: List[Entity] = []
+        for r in rows:
+            node = r.get("o")
+            if node is None:
+                continue
+            try:
+                entities.append(self._build_entity_from_data(node))
+            except Exception:
+                # 个别节点异常时跳过，保证整体健壮性
+                continue
+        return entities
+
+
     def search_related_entities(
         self,
         source_id: str,

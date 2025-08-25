@@ -10,6 +10,9 @@ from core.storage.vector_store import VectorStore
 from core.utils.neo4j_utils import Neo4jUtils
 from core.model_providers.openai_rerank import OpenAIRerankModel
 from qwen_agent.agents import Assistant
+from core.model_providers.openai_llm import OpenAILLM
+from langchain_core.documents import Document
+
 
 # 注意：你原先写的是 DOCT_TYPE_DESCRIPTION，这里修正为 DOC_TYPE_DESCRIPTION
 from core.utils.format import DOC_TYPE_META, DOC_TYPE_DESCRIPTION
@@ -30,6 +33,13 @@ from core.functions.tool_calls import (
     VDBDocsSearchTool,
     VDBGetDocsByChunkIDsTool,
     VDBSentencesSearchTool,
+    GetCoSectionEntities,
+    Search_By_Character,
+    Search_By_Scene,
+    Chunk_To_Scene,
+    Scene_To_Chunks,
+    NLP2SQL_Query,
+    BM25SearchDocsTool
 )
 
 # —— 检索器版系统提示词（仅检索，不脑补）——
@@ -61,7 +71,7 @@ def prepare_knowledge(schema: Dict[str, Any], doc_type: str) -> str:
     )
     relation_type_description_text += DOC_TYPE_DESCRIPTION.get(doc_type, {}).get("relation", "")
 
-    relation_type_description_text += """\n【情节、事件相关的关系类型】：
+    relation_type_description_text += """\n\n【情节、事件相关的关系类型】：
 - HAS_EVENT: 情节包含关系（Plot → Event）
 - EVENT_CAUSES: 事件因果关系（Event A 导致 Event B）
 - EVENT_INDIRECT_CAUSES: 事件间的间接因果关系（Event A 间接触发 Event B）
@@ -79,6 +89,10 @@ def prepare_knowledge(schema: Dict[str, Any], doc_type: str) -> str:
         f"【基础关系类型】\n{relation_type_description_text}\n"
         "实体属性 source_chunks 表示实体来源的文档片段的chunk_id列表，可以通过向量数据库工具 vdb_get_docs_by_chunk_ids 定位到文档片段的内容。\n"
     )
+    sql_cols = ["名称", "类别", "子类别", "外观", "状态", "相关角色", "文中线索", "补充信息", "chunk_id", "场次", "场次名", "子场次名"]
+    col_txt = ", ".join(sql_cols)
+    if doc_type == "screenplay":
+        full_knowledge += "\n另外，服饰、化妆、道具的信息保存在 SQL 数据库中，表名为 CMP_info，有以下一些column name：\n{col_txt}\n"
     return full_knowledge
 
 Mode = Literal["hybrid", "graph_only", "vector_only"]
@@ -103,6 +117,7 @@ class QuestionAnsweringAgent:
         mode: Mode = "hybrid",
     ):
         self.config = config
+        self.db_path = os.path.join(self.config.storage.sql_database_path, "CMP.db")
         self.doc_type = doc_type or config.knowledge_graph_builder.doc_type
         self._base_system_message = system_message or DEFAULT_SYSTEM_MESSAGE
         self.rag_cfg = rag_cfg or {}
@@ -114,7 +129,7 @@ class QuestionAnsweringAgent:
         self.graph_store = GraphStore(config)
         self.neo4j_utils = Neo4jUtils(self.graph_store.driver, doc_type=self.doc_type)
         self.neo4j_utils.load_embedding_model(config.graph_embedding)
-
+        self.llm = OpenAILLM(config)
         # ---- Vector Stores ----
         self.document_vector_store = VectorStore(config, "documents")
         self.sentence_vector_store = VectorStore(config, "sentences")
@@ -130,6 +145,7 @@ class QuestionAnsweringAgent:
         # 工具池（分组）
         self._graph_tools = self._build_graph_tools()
         self._vdb_tools = self._build_vdb_tools(reranker=self.reranker)
+        self._native_tools = self._build_native_tools(reranker=self.reranker)
         self._extra_tools = extra_tools or []
 
         # mode -> knowledge / system_message
@@ -143,9 +159,11 @@ class QuestionAnsweringAgent:
     def _build_system_message(self, mode: Mode) -> str:
         """不同 Mode 对应不同系统提示词收尾说明（不改变核心“只检索”原则）"""
         if mode == "graph_only":
-            suffix = "（当前模式：仅图数据库工具；请只使用图谱工具进行检索与返回结果。）"
+            suffix = "（当前模式：仅图数据库工具；请只使用图谱工具、关键词检索、SQL数据库进行检索与返回结果。）"
         elif mode == "vector_only":
-            suffix = "（当前模式：仅向量数据库工具；请只依据向量检索与重排结果返回片段。）"
+            suffix = "（当前模式：仅向量数据库工具；请只依据向量检索、关键词检索、SQL数据库与重排结果返回片段。）"
+        elif mode == "native":
+            suffix = "（当前模式：仅原始工具；请只依据SQL数据库和关键词检索器。）"
         else:
             suffix = "（当前模式：图谱+向量混合；请根据查询在图/向量工具间自适应选择，但仍只返回检索结果。）"
 
@@ -155,28 +173,9 @@ class QuestionAnsweringAgent:
 
     def _load_graph_schema(self) -> Optional[Dict[str, Any]]:
         schema_path = os.path.join(self.config.storage.graph_schema_path, "graph_schema.json")
-        plug_in_schema_path = self.config.plug_in.graph_schema_path
         if os.path.exists(schema_path):
             with open(schema_path, "r", encoding="utf-8") as f:
                 graph_schema = json.load(f)
-
-            if os.path.exists(plug_in_schema_path):
-                print("- 读取额外的Schema")
-                with open(plug_in_schema_path, "r", encoding="utf-8") as f:
-                    plug_in_schema = json.load(f)
-
-            if plug_in_schema:
-                entity_types = [entity["type"] for entity in graph_schema["entities"]]
-                relation_types = graph_schema["relations"].keys()
-                entities = graph_schema["entities"] + [entity for entity in plug_in_schema["entities"] if entity["type"] not in entity_types]
-                relations = dict()
-                for relation_type in plug_in_schema["relations"]:
-                    if relation_type in relation_types:
-                        relations[relation_type + "_2"] = plug_in_schema["relations"][relation_type]
-                    else:
-                        relations[relation_type] = plug_in_schema["relations"][relation_type]
-                return {"entities": entities, "relations": relations}
-            else:
                 return graph_schema
 
         default_path = getattr(self.config.probing, "default_graph_schema_path", None)
@@ -319,6 +318,7 @@ class QuestionAnsweringAgent:
             QuerySimilarEntities(self.neo4j_utils, emb_cfg),
             FindEventChain(self.neo4j_utils),
             TopKByCentrality(self.neo4j_utils),
+            GetCoSectionEntities(self.neo4j_utils)
             # CheckNodesReachable(self.neo4j_utils),
         ]
 
@@ -333,14 +333,49 @@ class QuestionAnsweringAgent:
                 reranker=reranker,
             ),
         ]
+    
+    def _build_native_tools(self, *, reranker: Any) -> List[Any]:
+
+        base = os.path.join(self.config.storage.knowledge_graph_path, "all_document_chunks.json")
+        with open(base, "r") as f:
+            data = json.load(f)
+        
+        keys_to_drop = {"chunk_index", "chunk_type", "doc_title", "order", "total_doc_chunks"}
+        documents: List[Document] = []
+
+        for item in data:
+            chunk_id = item.get("id")
+            content = (item.get("content") or "").strip()
+            if not chunk_id or not content:
+                continue
+
+            meta: Dict[str, Any] = dict(item.get("metadata") or {})
+            meta["chunk_id"] = chunk_id
+            for key in list(keys_to_drop):
+                if key in meta:
+                    del meta[key]
+
+            # ✅ 统一用 LangChain 的 Document
+            documents.append(Document(page_content=content, metadata=meta))
+
+        return [
+            Search_By_Character(self.db_path),
+            Search_By_Scene(self.db_path),
+            Chunk_To_Scene(self.db_path),
+            Scene_To_Chunks(self.db_path),
+            NLP2SQL_Query(self.db_path, self.llm),
+            BM25SearchDocsTool(documents, reranker=reranker)
+        ]
 
     def _select_tools(self, mode: Mode) -> List[Any]:
         if mode == "graph_only":
-            return [*self._graph_tools, *self._extra_tools]
+            return [*self._graph_tools, *self._native_tools, *self._extra_tools]
         elif mode == "vector_only":
-            return [*self._vdb_tools, *self._extra_tools]
+            return [*self._vdb_tools, *self._native_tools, *self._extra_tools]
+        elif mode == "native":
+            return [*self._native_tools, *self._extra_tools]
         else:
-            return [*self._graph_tools, *self._vdb_tools, *self._extra_tools]
+            return [*self._graph_tools, *self._vdb_tools, *self._native_tools, *self._extra_tools]
 
     def _rebuild_assistant(self) -> None:
         tools = self._select_tools(self.mode)

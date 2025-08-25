@@ -2,12 +2,12 @@
   "id": "parse_screenplay_metadata",
   "category": "regular_function",
   "name": "剧本场景元数据抽取",
-  "description": "用于从剧本场景内容中抽取空间、位置、景光等元数据",
-  "template": "请解析以下剧本场景信息，提取结构化元数据：\n\n标题名称：{title}\n\n**请提取以下字段：**\n- **scene_category**：INT（内景）/ EXT（外景）/ null\n- **lighting**：景光（日 / 夜 / 无日夜 / null）\n- **space**：空间类型（现实世界 / 数字空间 / 梦境 / null）\n- **region**：区域信息（如“月球基地”“北京城市街区”）\n- **main_location**：主场景位置（如“指挥室”“走廊”）\n- **sub_location**：次级位置（如“门口”“窗边”等）\n- **summary**：该场景的一句话剧情概要\n\n**返回格式（严格遵循 JSON）：**\n```json\n{\n  \"metadata\": {\n    \"scene_category\": \"INT / EXT / null\",\n    \"lighting\": \"日 / 夜 / 无日夜 / null\",\n    \"space\": \"现实世界 / 数字空间 / 梦境 / null\",\n    \"region\": \"区域信息或 null\",\n    \"main_location\": \"主场景位置或 null\",\n    \"sub_location\": \"次场景位置或 null\",\n    \"summary\": \"一句话剧情概要\"\n  }\n}\n```\n\n请严格按 JSON 格式输出，不要添加自然语言说明。",
+  "description": "从场景标题中精准抽取场次编号（含复合编号）、空间/位置/景光等元数据，并进行规范化。",
+  "template": "请解析以下剧本场景标题，提取并规范化结构化元数据。\n\n标题名称：{title}\n\n【字段与规范】\n1) scene_id（必填，可为 null）：\n   - 定义：场次编号，通常位于标题开头，可为纯数字或复合编号（如“17-13”）。\n   - 提取规则：\n     a. 优先匹配标题起始处的编号：^\\s*([0-9]+(?:-[0-9]+)?)\\s*[、：:.]?\\s*\n     b. 若a未命中，再在整行内查找第一个符合 [0-9]+(-[0-9]+)? 的编号。\n     c. 命中后去除多余标点与空格，仅保留如“71”或“17-13”的形式。\n     d. 未命中则为 null。\n\n2) scene_category：\n   - 输出仅限：\"INT\"（内景）、\"EXT\"（外景）、null。\n   - 规范化映射：出现“INT/内/内景/室内”等同义词归一为\"INT\"；出现“EXT/外/外景/室外”等归一为\"EXT\"；无法判断为 null。\n\n3) lighting：\n   - 输出仅限：\"日\"、\"夜\"、\"无日夜\"、null。\n   - 规范化映射：出现“日/白天/晨/午/黄昏（若未出现夜字样）”可归一为\"日\"；出现“夜/晚/深夜/午夜”等归一为\"夜\"；明确标注为“无日夜/ND/No Day-Night”归一为\"无日夜\"；无法判断为 null。\n\n4) space：\n   - 输出仅限：\"现实世界\"、\"数字空间\"、\"梦境\"、null（按标题关键词或常用标注判断，无法判断为 null）。\n\n5) region / main_location / sub_location：\n   - region：较大区域/地理范围（如“利伯维尔”“北京城市街区”“月球基地”）。\n   - main_location：主场景位置（如“UEG 基地”“指挥室”“实验舱”“训练场”）。\n   - sub_location：更细粒度位置（如“电磁枪训练场”“走廊”“门口”“窗边”等）。\n   - 提取建议：\n     a. 按从大到小语义分解（地理/设施 → 建筑/区域 → 功能/具体点）。\n     b. 若层级不足，缺失字段置 null；避免凭空臆测。\n\n6) summary：用不超过20个字的一句话概括场景用途/氛围（缺乏线索可为 null）。\n\n【返回格式（严格 JSON，仅输出对象本身）】\n{{\n  \"metadata\": {{\n    \"scene_id\": \"71 或 17-13 或 null\",\n    \"scene_category\": \"INT / EXT / null\",\n    \"lighting\": \"日 / 夜 / 无日夜 / null\",\n    \"space\": \"现实世界 / 数字空间 / 梦境 / null\",\n    \"region\": \"区域信息或 null\",\n    \"main_location\": \"主场景位置或 null\",\n    \"sub_location\": \"次场景位置或 null\",\n    \"summary\": \"一句话剧情概要或 null\"\n  }}\n}}\n\n请严格按上述 JSON 结构与取值规范输出，不要添加任何额外说明或注释。",
   "variables": [
     {
       "name": "title",
-      "description": "剧本场景标题，例如 INT.实验舱.夜"
+      "description": "剧本场景标题"
     }
   ]
 }

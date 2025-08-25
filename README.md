@@ -328,8 +328,8 @@ python main.py \
 
 ## 支持
 
-- **问题反馈**：[GitHub Issues](https://github.com/roytian1992/KGAG/issues)
-- **讨论交流**：[GitHub Discussions](https://github.com/roytian1992/KGAG/discussions)
+- **问题反馈**：[GitHub Issues](https://github.com/roytian1992/NarrativeKnowledgeWeaver/issues)
+- **讨论交流**：[GitHub Discussions](https://github.com/roytian1992/NarrativeKnowledgeWeaver/discussions)
 
 ## 致谢
 

@@ -59,31 +59,31 @@ def main():
         print(f"✅ 从 {args.config} 加载配置")
 
     
-    # 创建构建器
-    builder = KnowledgeGraphBuilder(config)
+    # # 创建构建器
+    # builder = KnowledgeGraphBuilder(config)
     
-    # # # 构建知识图谱
-    builder.prepare_chunks(args.input, verbose=args.verbose) # 文本准备阶段：长文本拆分和元数据标注
-    builder.store_chunks(verbose=args.verbose) # 保存近向量数据库和本地json
-    builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35) # from_scratch 的时候建议 0.35
-    builder.initialize_agents()
-    builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
-    builder.run_extraction_refinement(verbose=args.verbose) # 实体消歧
-    builder.extract_entity_attributes(verbose=args.verbose) # 属性抽取
-    kg = builder.build_graph_from_results(verbose=args.verbose)
-    builder.prepare_graph_embeddings()
+    # # # # 构建知识图谱
+    # builder.prepare_chunks(args.input, verbose=args.verbose) # 文本准备阶段：长文本拆分和元数据标注
+    # builder.store_chunks(verbose=args.verbose) # 保存近向量数据库和本地json
+    # builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35) # from_scratch 的时候建议 0.35
+    # builder.initialize_agents()
+    # builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
+    # builder.run_extraction_refinement(verbose=args.verbose) # 实体消歧
+    # builder.extract_entity_attributes(verbose=args.verbose) # 属性抽取
+    # kg = builder.build_graph_from_results(verbose=args.verbose)
+    # builder.prepare_graph_embeddings()
 
     sql_builder = RelationalDatabaseBuilder(config)
-    sql_builder.extract_cmp_information()
+    # sql_builder.extract_cmp_information()
     sql_builder.build_relational_database()
     
-    event_graph_builder = EventCausalityBuilder(config)
-    event_graph_builder.initialize() # 初始化事件情节图
-    event_graph_builder.build_event_causality_graph() # 开始构建事件因果图
-    event_graph_builder.run_SABER() # 运行断环、去冗余算法
-    event_graph_builder.build_event_plot_graph() # 构建情节-事件图
-    event_graph_builder.generate_plot_relations() # 抽取情节间关系
-    event_graph_builder.prepare_graph_embeddings()
+    # event_graph_builder = EventCausalityBuilder(config)
+    # event_graph_builder.initialize() # 初始化事件情节图
+    # event_graph_builder.build_event_causality_graph() # 开始构建事件因果图
+    # event_graph_builder.run_SABER() # 运行断环、去冗余算法
+    # event_graph_builder.build_event_plot_graph() # 构建情节-事件图
+    # event_graph_builder.generate_plot_relations() # 抽取情节间关系
+    # event_graph_builder.prepare_graph_embeddings()
     
     # 输出统计信息
     # stats = builder.get_stats()

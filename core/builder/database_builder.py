@@ -15,6 +15,30 @@ from core.utils.prompt_loader import PromptLoader
 from core.agent.cmp_extraction_agent import CMPExtractionAgent
 
 
+def clean_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    # 统一去空格（只处理会用到的列）
+    norm_cols = ['名称','类别','相关角色','chunk_id','场次','子类别','外观','状态','文中线索','补充信息','子场次']
+    for c in norm_cols:
+        if c in df.columns:
+            df[c] = df[c].astype('string').str.strip()
+
+    # 1) 删除名称缺失/空白的行
+    df = df[ df['名称'].notna() & (df['名称'] != '') ]
+
+    # 2) 类别=propitem -> prop（不区分大小写）
+    if '类别' in df.columns:
+        df.loc[df['类别'].str.lower() == 'propitem', '类别'] = 'prop'
+
+    # 3) 按关键列去重（保留第一条）
+    keys = [c for c in ['名称','类别','相关角色','chunk_id','场次'] if c in df.columns]
+    df = df.drop_duplicates(subset=keys, keep='first').reset_index(drop=True)
+
+    return df
+
+
+
 class RelationalDatabaseBuilder:
     """
     读取 all_document_chunks.json -> 服化道抽取 -> 写入 SQLite
@@ -81,7 +105,8 @@ class RelationalDatabaseBuilder:
                 "notes": r.get("notes", ""),
                 "chunk_id": chunk.get("id", ""),
                 "title": md.get("title", ""),
-                "subtitle": md.get("subtitle", "")
+                "subtitle": md.get("subtitle", ""),
+                "scene_id": md.get("scene_id", "")
             })
         return rows
 
@@ -158,8 +183,9 @@ class RelationalDatabaseBuilder:
             "character": "相关角色",
             "evidence": "文中线索",
             "chunk_id": "chunk_id",
-            "title": "场次",
-            "subtitle": "子场次",
+            "scene_id": "场次",
+            "title": "场次名",
+            "subtitle": "子场次名",
             "notes": "补充信息"
         })
 
@@ -168,6 +194,7 @@ class RelationalDatabaseBuilder:
         if os.path.exists(db_path):
             os.remove(db_path)
         conn = sqlite3.connect(db_path)
+        df = clean_df(df)
         df.to_sql("CMP_info", conn, if_exists="replace", index=False)
         conn.commit()
         conn.close()
