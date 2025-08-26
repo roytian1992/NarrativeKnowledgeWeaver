@@ -65,8 +65,11 @@ def _normalize_type(t):
 # ═════════════════════════════════════════════════════════════════════════════
 class KnowledgeGraphBuilder:
     """知识图谱构建器（支持多文档格式）"""
-    def __init__(self, config: KAGConfig):
-        self.doc_type = config.knowledge_graph_builder.doc_type
+    def __init__(self, config: KAGConfig, doc_type: str = None):
+        if doc_type:
+            self.doc_type = doc_type
+        else:
+            self.doc_type = config.knowledge_graph_builder.doc_type
         if self.doc_type not in DOC_TYPE_META:
             raise ValueError(f"Unsupported doc_type: {self.doc_type}")
         
@@ -394,11 +397,14 @@ class KnowledgeGraphBuilder:
         self.attribute_extraction_agent = AttributeExtractionAgent(self.config, self.llm, self.system_prompt_text, schema)
         self.graph_preprocessor = GraphPreprocessor(self.config, self.llm, system_prompt=self.system_prompt_text)
         
-    def update_schema(self, schema: Dict = {}, background: str = "", abbreviations: List = [], verbose: bool = True, sample_ratio: float = None):
-        
-        base = self.config.storage.knowledge_graph_path
-        doc_chunks = [TextChunk(**o) for o in
-                       json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
+    def update_schema(self, schema: Dict = {}, background: str = "", abbreviations: List = [], verbose: bool = True, sample_ratio: float = None, documents: List[Document] = None):
+        if documents:
+            doc_chunks = documents
+        else:
+            base = self.config.storage.knowledge_graph_path
+            doc_chunks = [TextChunk(**o) for o in
+                        json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
+            
         if not sample_ratio:
             sample_ratio = 0.35
         k = int(len(doc_chunks) * sample_ratio)

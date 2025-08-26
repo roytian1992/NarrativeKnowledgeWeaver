@@ -31,7 +31,14 @@ class InformationExtractionAgent:
             self.max_retries = 0
         # print("[CHECK] score threshold: ", self.score_threshold)
         # print("[CHECK] max retries: ", self.max_retries)
-        
+    
+    def set_mode(self, mode):
+        self.mode = mode
+        if  self.mode== "probing":
+            self.max_retries = 0
+        else:
+            self.max_retries = self.config.agent.max_retries
+
     def load_schema(self, schema):
         entity_types = schema.get("entities")
         relation_type_groups = schema.get("relations")
