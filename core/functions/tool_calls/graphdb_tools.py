@@ -3,7 +3,7 @@ import json
 import logging
 from qwen_agent.tools.base import BaseTool, register_tool
 
-logger = logging.getLogger(__name__)
+from qwen_agent.utils.utils import logger
 
 # =========================
 # 公共格式化/工具函数
@@ -319,9 +319,10 @@ class TopKByCentrality(BaseTool):
 @register_tool("get_co_section_entities")
 class GetCoSectionEntities(BaseTool):
     name = "get_co_section_entities"
-    description = "返回同一分节中的实体。"
+    description = "返回与该实体同一章节/场次中的其它实体。"
     parameters = [
-        {"name": "entity_id", "type": "string", "required": True},
+        {"name": "entity_id", "type": "string", "description": "起始实体ID", "required": True},
+        {"name": "include_types", "type": "array", "description": "可选的实体类型过滤，如 ['Event','Character']", "required": False},
     ]
 
     def __init__(self, neo4j_utils, embedding_config=None):
@@ -330,5 +331,19 @@ class GetCoSectionEntities(BaseTool):
     def call(self, params: str, **kwargs) -> str:
         logger.info("🔎 调用 get_co_section_entities")
         data = json.loads(params) if isinstance(params, str) else dict(params or {})
-        results = self.neo4j_utils.find_co_section_entities(entity_id=data["entity_id"], include_types=data.get("include_types"))
+        entity_id = data.get("entity_id")
+        if not entity_id:
+            raise ValueError("缺少必要参数：entity_id")
+
+        include_types = _as_list(data.get("include_types"))
+        results = self.neo4j_utils.find_co_section_entities(
+            entity_id=entity_id,
+            include_types=include_types,
+        )
+
+        if not results:
+            scope = f"（类型过滤：{include_types}）" if include_types else ""
+            return f"未在同一分节中找到其它实体{scope}。"
+
         return format_entity_results(results)
+

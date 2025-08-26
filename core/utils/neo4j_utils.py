@@ -952,7 +952,7 @@ class Neo4jUtils:
         Returns:
             格式化的事件信息字符串
         """
-        event_node = self.get_entity_by_id(entity_id)
+        ent_node = self.get_entity_by_id(entity_id)
         
         relation_types = self.list_relationship_types()
         
@@ -971,19 +971,24 @@ class Neo4jUtils:
             info = self._get_relation_info(result[1])
             if info:
                 relevant_info.append("- " + info)
-                
-        event_description = event_node.description or "无具体描述"
+
+        try:      
+            ent_description = ent_node.description or "无具体描述"
+        except:
+            print("获取description出错: ", ent_node)
+            ent_description = "无具体描述"
+
         if not entity_type:
             entity_type = "实体"
         
-        context = f"{entity_type}名称：{event_node.name}，描述：{event_description}\n"
+        context = f"{entity_type}名称：{ent_node.name}，描述：{ent_description}\n"
         if contain_relations:
             context += f"相关信息有：\n" + "\n".join(relevant_info) + "\n"
     
         if contain_properties:
-            event_props = event_node.properties
+            ent_props = ent_node.properties
             # print(event_props)
-            non_empty_props = {k: v for k, v in event_props.items() if v}
+            non_empty_props = {k: v for k, v in ent_props.items() if v}
 
             if non_empty_props:
                 context += f"{entity_type}的属性如下：\n"

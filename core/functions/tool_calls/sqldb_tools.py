@@ -386,7 +386,7 @@ class Chunk_To_Scene(BaseTool):
     ]
 
     def __init__(self, db_path: str,
-                 default_table: str = "CMP_info",
+                 default_table: str = "Scene_info",
                  build_indices: bool = False):
         self.db_path = db_path
         self.default_table = default_table
@@ -451,7 +451,7 @@ class Scene_To_Chunks(BaseTool):
     ]
 
     def __init__(self, db_path: str,
-                 default_table: str = "CMP_info",
+                 default_table: str = "Scene_info",
                  build_indices: bool = False):
         self.db_path = db_path
         self.default_table = default_table

@@ -87,7 +87,8 @@ def prepare_knowledge(schema: Dict[str, Any], doc_type: str) -> str:
         "当前 Neo4j 知识图谱包含以下内容：\n"
         f"【实体类型】\n{entity_type_description_text}\n\n"
         f"【基础关系类型】\n{relation_type_description_text}\n"
-        "实体属性 source_chunks 表示实体来源的文档片段的chunk_id列表，可以通过向量数据库工具 vdb_get_docs_by_chunk_ids 定位到文档片段的内容。\n"
+        f"实体属性 source_chunks 表示实体来源的文档片段的chunk_id列表，可以通过向量数据库工具 vdb_get_docs_by_chunk_ids 定位到文档片段的内容。\n"
+        f"需要基于关键词进行检索时可以调用 bm25_search_docs。"
     )
     sql_cols = ["名称", "类别", "子类别", "外观", "状态", "相关角色", "文中线索", "补充信息", "chunk_id", "场次", "场次名", "子场次名"]
     col_txt = ", ".join(sql_cols)
