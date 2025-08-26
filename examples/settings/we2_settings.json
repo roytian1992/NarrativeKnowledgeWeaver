@@ -2,52 +2,60 @@
   "background": "《流浪地球》描述了太阳即将膨胀并吞没地球的未来危机。为延续人类文明，联合政府（UEG）启动“流浪地球计划”：在全球建造上万台太阳级推进器（Helios）推动地球脱离太阳系，并同步建设地下城（UCS）供人类长期生存。同时，通过空间电梯（SEP）与太空站运行的量子 AI 系统 MOSS 执行火种计划（Ark），在极端情况下以缆索引爆协议（TDP）与地球分离，保障文明备份。计划分阶段利用木星引力助推，却引发月球流放计划（LEP）等争议与牺牲，展现人类在绝境中的团结、理性与希望。",
   "abbreviations": [
     {
+      "name": "UEG",
+      "description": "全球统一政府，统筹地球逃逸工程",
       "abbr": "UEG",
       "full": "United Earth Government",
-      "zh": "联合政府",
-      "description": "全球统一政府，统筹推进地球逃逸计划、空间电梯、地下城等核心工程。"
+      "zh": "联合政府"
     },
     {
+      "name": "MOSS",
+      "description": "太空站量子计算控制系统，执行火种计划",
       "abbr": "MOSS",
       "full": "Quantum AI System",
-      "zh": "量子人工智能系统",
-      "description": "太空站上的量子计算机控制系统，具备高度决策能力，冷酷理性，是火种计划的执行者。"
+      "zh": "量子人工智能系统"
     },
     {
+      "name": "Ark",
+      "description": "用于延续人类文明的备份计划",
       "abbr": "Ark",
       "full": "Ark Project / Seed Project",
-      "zh": "火种计划",
-      "description": "人类文明备份计划，试图通过太空站或飞船延续人类火种。"
+      "zh": "火种计划"
     },
     {
+      "name": "LEP",
+      "description": "以月球撞击修正地球轨道的设想",
       "abbr": "LEP",
       "full": "Lunar Exile Plan",
-      "zh": "月球流放计划",
-      "description": "为了调整地球轨道，考虑将月球撞向地球以修正动力航线（设定中出现）。"
+      "zh": "月球流放计划"
     },
     {
+      "name": "SEP",
+      "description": "将货物与人员送入轨道的巨型电梯系统",
       "abbr": "SEP",
       "full": "Space Elevator Project",
-      "zh": "空间电梯计划",
-      "description": "为将大型设备和人员送入太空所建设的巨型电梯系统。"
+      "zh": "空间电梯计划"
     },
     {
+      "name": "UCS",
+      "description": "极端环境下的人类地下居住体系",
       "abbr": "UCS",
       "full": "Underground City System",
-      "zh": "地下城系统",
-      "description": "为躲避极端寒冷环境建立的大型人类生存系统。"
+      "zh": "地下城系统"
     },
     {
+      "name": "TDP",
+      "description": "紧急情况下触发的缆索爆破分离程序",
       "abbr": "TDP",
       "full": "Tether Detonation Protocol",
-      "zh": "缆索引爆协议",
-      "description": "空间站在极端情况下执行的缆索自毁程序，用于与母体分离。"
+      "zh": "缆索引爆协议"
     },
     {
+      "name": "Helios",
+      "description": "推动地球航行的巨型推进器系统",
       "abbr": "Helios",
       "full": "Helios Engine System",
-      "zh": "太阳级推进器系统",
-      "description": "推进地球离开太阳系的巨型推进器系统，设定中或称为 Helios 引擎。"
+      "zh": "太阳级推进器系统"
     }
   ]
 }
