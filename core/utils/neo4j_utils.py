@@ -952,48 +952,51 @@ class Neo4jUtils:
         Returns:
             格式化的事件信息字符串
         """
+        
         ent_node = self.get_entity_by_id(entity_id)
+
+        try:
         
-        relation_types = self.list_relationship_types()
-        
-        for relation in EVENT_PLOT_GRAPH_RELS + [self.meta["contains_pred"]]:
-            if relation in relation_types:
-                relation_types.remove(relation)
+            relation_types = self.list_relationship_types()
             
-        results = self.search_related_entities(
-            source_id=entity_id, 
-            return_relations=True,
-            relation_types=relation_types
-        )
-        
-        relevant_info = []
-        for result in results:
-            info = self._get_relation_info(result[1])
-            if info:
-                relevant_info.append("- " + info)
+            for relation in EVENT_PLOT_GRAPH_RELS + [self.meta["contains_pred"]]:
+                if relation in relation_types:
+                    relation_types.remove(relation)
+                
+            results = self.search_related_entities(
+                source_id=entity_id, 
+                return_relations=True,
+                relation_types=relation_types
+            )
+            
+            relevant_info = []
+            for result in results:
+                info = self._get_relation_info(result[1])
+                if info:
+                    relevant_info.append("- " + info)
 
-        try:      
+        
             ent_description = ent_node.description or "无具体描述"
-        except:
-            print("获取description出错: ", ent_node)
-            ent_description = "无具体描述"
 
-        if not entity_type:
-            entity_type = "实体"
+
+            if not entity_type:
+                entity_type = "实体"
+            
+            context = f"{entity_type}名称：{ent_node.name}，描述：{ent_description}\n"
+            if contain_relations:
+                context += f"相关信息有：\n" + "\n".join(relevant_info) + "\n"
         
-        context = f"{entity_type}名称：{ent_node.name}，描述：{ent_description}\n"
-        if contain_relations:
-            context += f"相关信息有：\n" + "\n".join(relevant_info) + "\n"
-    
-        if contain_properties:
-            ent_props = ent_node.properties
-            # print(event_props)
-            non_empty_props = {k: v for k, v in ent_props.items() if v}
+            if contain_properties:
+                ent_props = ent_node.properties
+                # print(event_props)
+                non_empty_props = {k: v for k, v in ent_props.items() if v}
 
-            if non_empty_props:
-                context += f"{entity_type}的属性如下：\n"
-                for k, v in non_empty_props.items():
-                    context += f"- {k}：{v}\n"
+                if non_empty_props:
+                    context += f"{entity_type}的属性如下：\n"
+                    for k, v in non_empty_props.items():
+                        context += f"- {k}：{v}\n"
+        except:
+            print("运行失败，获取到的node为： ", ent_node)
 
         return context
     

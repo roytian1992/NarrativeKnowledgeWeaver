@@ -20,9 +20,6 @@ from qwen_agent.utils.utils import logger
 from langchain_community.utilities import SQLDatabase
 from langchain_experimental.sql.base import SQLDatabaseSequentialChain
 
-# 如果你已有 KAGConfig / OpenAILLM，可在 __init__ 里按需切换
-from core.utils.config import KAGConfig
-from core.model_providers.openai_llm import OpenAILLM
 
 # —— 列清单（与表结构一致） —— #
 COLUMNS = [
@@ -137,17 +134,22 @@ def format_query_result(
         return format_rows_dicts_to_nl(data, columns=columns, header=header)
     return "（无法识别的结果类型，未能格式化。）"
 
-def format_mapping_chunk_to_scene(mapping: Optional[Dict[str, Any]]) -> str:
+def format_mapping_chunks_to_scene(mappings: List[Dict[str, Any]]) -> str:
     """
-    专用于 chunk_to_scene：期望字段 chunk_id / 场次名 / 子场次名
+    专用于 chunk_to_scene：处理多个结果
     """
-    if not mapping:
-        return "未找到该 chunk_id 对应的场次信息。"
-    chunk = mapping.get("chunk_id", "")
-    scene = mapping.get("场次名", "")
-    sub = mapping.get("子场次名", "")
-    tail = f"；子场次名：{sub}" if sub else ""
-    return f"chunk_id：{chunk} 对应 场次名：{scene}{tail}"
+    if not mappings:
+        return "未找到任何 chunk_id 对应的场次信息。"
+
+    lines = []
+    for m in mappings:
+        chunk = m.get("chunk_id", "")
+        scene = m.get("场次名", "")
+        sub = m.get("子场次名", "")
+        tail = f"；子场次名：{sub}" if sub else ""
+        lines.append(f"- chunk_id：{chunk} → 场次名：{scene}{tail}")
+
+    return "查询结果如下：\n" + "\n".join(lines)
 
 def format_scene_to_chunks(scene_name: str,
                            chunks: List[str],
@@ -368,19 +370,20 @@ class Search_By_Scene(BaseTool):
         return format_query_result(rows, header=f"{head} 的相关记录：")
 
 
-# —— 3) chunk_id → 场次/子场次 —— #
+# —— 3) chunk_id 列表 → 场次/子场次 —— #
 @register_tool("chunk_to_scene")
 class Chunk_To_Scene(BaseTool):
     """
-    从 chunk_id 映射到场次：返回 chunk_id、场次名、子场次名。
+    从一组 chunk_id 映射到场次：返回 chunk_id、场次名、子场次名。
     """
     name = "chunk_to_scene"
-    description = "给定 chunk_id，查询其对应的 场次名 / 子场次名 映射。"
+    description = "给定一个或多个 chunk_id，查询其对应的 场次名 / 子场次名 映射。"
     parameters = [
         {
-            "name": "chunk_id",
-            "type": "string",
-            "description": "要查询的 chunk_id（精确匹配）",
+            "name": "chunk_ids",
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "要查询的 chunk_id 列表（精确匹配）",
             "required": True
         }
     ]
@@ -397,28 +400,34 @@ class Chunk_To_Scene(BaseTool):
             finally:
                 conn.close()
 
-    def _chunk_to_scene(self, chunk_id: str) -> Optional[Dict[str, Any]]:
+    def _chunk_to_scene(self, chunk_ids: List[str]) -> List[Dict[str, Any]]:
+        if not chunk_ids:
+            return []
+        placeholders = ",".join("?" for _ in chunk_ids)
         sql = f'''
             SELECT "chunk_id","场次名","子场次名"
             FROM "{self.default_table}"
-            WHERE "chunk_id" = ?
-            LIMIT 1
+            WHERE "chunk_id" IN ({placeholders})
+            ORDER BY "场次名","子场次名","chunk_id"
         '''
         conn = get_conn(self.db_path)
         try:
             cur = conn.cursor()
-            cur.execute(sql, (chunk_id,))
-            row = cur.fetchone()
-            return dict(row) if row else None
+            cur.execute(sql, tuple(chunk_ids))
+            return rows_to_dicts(cur.fetchall())
         finally:
             conn.close()
 
     def call(self, params: str, **kwargs) -> str:
-        logger.info("🧭 chunk_to_scene: 由 chunk_id 映射到场次")
+        logger.info("🧭 chunk_to_scene: 由多个 chunk_id 映射到场次")
         p: Dict[str, Any] = json.loads(params)
-        chunk_id = str(p.get("chunk_id", "")).strip()
-        mapping = self._chunk_to_scene(chunk_id)
-        return format_mapping_chunk_to_scene(mapping)
+        chunk_ids = p.get("chunk_ids", [])
+        if not isinstance(chunk_ids, list) or not chunk_ids:
+            return "请提供一个非空的 chunk_id 列表。"
+        chunk_ids = [str(cid).strip() for cid in chunk_ids if str(cid).strip()]
+
+        mappings = self._chunk_to_scene(chunk_ids)
+        return format_mapping_chunks_to_scene(mappings)
 
 
 # —— 4) 场次/子场次 → chunk_id 列表 —— #

@@ -119,10 +119,10 @@ def _fmt_chain(ids: List[str], neo4j_utils) -> str:
 @register_tool("retrieve_entity_by_name")
 class EntityRetrieverName(BaseTool):
     name = "retrieve_entity_by_name"
-    description = "在图数据库中检索指定类型的实体。支持关键词、别名的模糊匹配；若 query 为空字符串，则返回该类型下的所有实体。"
+    description = "在图数据库中检索指定类型的实体。支持关键词、别名的模糊匹配；若 query 为空字符串，则返回该类型下的所有实体。如果entity_type无法确定，就填写'Entity'"
     parameters = [
         {"name": "query", "type": "string", "description": "检索关键词", "required": True},
-        {"name": "entity_type", "type": "string", "description": "实体类型", "required": True},
+        {"name": "entity_type", "type": "string", "description": "实体类型，如果无法确定，就填写'Entity'", "required": False},
     ]
 
     def __init__(self, neo4j_utils, embedding_config):
@@ -133,7 +133,7 @@ class EntityRetrieverName(BaseTool):
         logger.info("🔎 调用 retrieve_entity_by_name")
         params_dict = json.loads(params)
         query = params_dict.get("query", "")
-        entity_type = params_dict.get("entity_type")
+        entity_type = params_dict.get("entity_type", "Entity")
         results = self.neo4j_utils.search_entities_by_type(entity_type, keyword=query)
         return format_entity_results(results)
 

@@ -116,6 +116,7 @@ class QuestionAnsweringAgent:
         reranker: Optional[Any] = None,
         extra_tools: Optional[List[Any]] = None,
         mode: Mode = "hybrid",
+        doc_path: str = None,
     ):
         self.config = config
         self.db_path = os.path.join(self.config.storage.sql_database_path, "CMP.db")
@@ -146,7 +147,7 @@ class QuestionAnsweringAgent:
         # 工具池（分组）
         self._graph_tools = self._build_graph_tools()
         self._vdb_tools = self._build_vdb_tools(reranker=self.reranker)
-        self._native_tools = self._build_native_tools(reranker=self.reranker)
+        self._native_tools = self._build_native_tools(doc_path=doc_path)
         self._extra_tools = extra_tools or []
 
         # mode -> knowledge / system_message
@@ -227,7 +228,7 @@ class QuestionAnsweringAgent:
         - 不维护/回写任何历史；
         - 仅用本轮 user_text 触发工具检索并返回 Assistant 的完整消息序列（含 function 调用结果）。
         """
-        messages: List[Dict[str, Any]] = [{"role": "user", "content": user_text}]
+        messages: List[Dict[str, Any]] = [{"role": "user", "content": user_text + "如果找不到，可以用关键词检索。"}]
         resp = self.assistant.run_nonstream(
             messages=messages,
             lang=lang,
@@ -335,9 +336,11 @@ class QuestionAnsweringAgent:
             ),
         ]
     
-    def _build_native_tools(self, *, reranker: Any) -> List[Any]:
-
-        base = os.path.join(self.config.storage.knowledge_graph_path, "all_document_chunks.json")
+    def _build_native_tools(self, *, doc_path: str = None) -> List[Any]:
+        if not doc_path:
+            base = os.path.join(self.config.storage.knowledge_graph_path, "all_document_chunks.json")
+        else:
+            base = doc_path
         with open(base, "r") as f:
             data = json.load(f)
         
@@ -365,7 +368,7 @@ class QuestionAnsweringAgent:
             Chunk_To_Scene(self.db_path),
             Scene_To_Chunks(self.db_path),
             NLP2SQL_Query(self.db_path, self.llm),
-            BM25SearchDocsTool(documents, reranker=reranker)
+            BM25SearchDocsTool(documents)
         ]
 
     def _select_tools(self, mode: Mode) -> List[Any]:

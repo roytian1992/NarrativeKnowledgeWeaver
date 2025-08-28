@@ -159,7 +159,7 @@ class KnowledgeGraphBuilder:
         json_file_path: str,
         verbose: bool = True,
         retries: int = 2,
-        per_task_timeout: float = 120.0,
+        per_task_timeout: float = 600.0,
         retry_backoff: float = 1.0,
     ):
         """

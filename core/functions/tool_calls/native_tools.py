@@ -58,17 +58,13 @@ class BM25SearchDocsTool(BaseTool):
     def __init__(
         self,
         documents: List[Document],
-        reranker: Optional[Any] = None,
         *,
         use_zh_preprocess: bool = True,
-        overfetch_mult: int = 2,
         k_default: int = 10,
     ):
         self.retriever = KeywordBM25Retriever(
             documents=documents,
-            reranker=reranker,
             zh_preprocess=(zh_preprocess if use_zh_preprocess else None),
-            overfetch_mult=overfetch_mult,
             k_default=k_default
         )
 
