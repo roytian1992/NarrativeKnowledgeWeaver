@@ -84,6 +84,7 @@ class EmbeddingConfig:
     model_name: str = "Qwen3-Embedding-8B"
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    max_tokens: Optional[str] = None
     dimensions: Optional[int] = None
     timeout: int = 60
 

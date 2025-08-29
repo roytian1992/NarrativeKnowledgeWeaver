@@ -12,10 +12,11 @@ from .graphdb_tools import (
     GetRelationSummary,
     GetCommonNeighbors,
     QuerySimilarEntities,
-    FindEventChain,
-    CheckNodesReachable,
+    FindPathsBetweenNodes,
     TopKByCentrality,
     GetCoSectionEntities,
+    FindRelatedEventsAndPlots,
+    GetKHopSubgraph,
 )
 
 # Vector DB tools
@@ -46,10 +47,11 @@ __all__ = [
     "GetRelationSummary",
     "GetCommonNeighbors",
     "QuerySimilarEntities",
-    "FindEventChain",
-    "CheckNodesReachable",
+    "FindPathsBetweenNodes",
     "TopKByCentrality",
     'GetCoSectionEntities',
+    'FindRelatedEventsAndPlots',
+    'GetKHopSubgraph',
     # vectordb_tools
     "VDBHierdocsSearchTool",
     "VDBDocsSearchTool",

@@ -45,10 +45,12 @@ class Neo4jUtils:
     def load_embedding_model(self, config: EmbeddingConfig):
         if config.provider == "openai":
             from core.model_providers.openai_embedding import OpenAIEmbeddingModel
+            self.config = config
             self.model = OpenAIEmbeddingModel(config)
             self.dim = config.dimensions
         else:
             from sentence_transformers import SentenceTransformer
+            self.config = config
             self.model = SentenceTransformer(config.model_name)
             self.dim = config.dimensions or self.model.get_sentence_embedding_dimension()
             
@@ -121,6 +123,194 @@ class Neo4jUtils:
                 data = record["e"]
                 entities.append(self._build_entity_from_data(data))
             return entities
+
+    def get_k_hop_subgraph(
+        self,
+        center_ids: List[str],
+        k: int = 2,
+        limit_nodes: int = 200
+    ) -> Dict[str, Any]:
+        """
+        抽取以若干中心节点为起点的 k-hop 邻居子图。
+
+        Args:
+            center_ids: 起点节点 ID 列表
+            k: 邻居跳数（建议 1-3，不要过大）
+            limit_nodes: 限制返回的最大节点数，避免结果过大
+
+        Returns:
+            {
+            "nodes": [
+                {id,name,labels,description,properties}, ...
+            ],
+            "relationships": [
+                {type,predicate,relation_name,confidence,properties,start,end}, ...
+            ]
+            }
+        """
+        if not center_ids:
+            return {"nodes": [], "relationships": []}
+
+        params = {"ids": center_ids, "k": k, "limit_nodes": limit_nodes}
+
+        cypher = f"""
+        MATCH (c)
+        WHERE c.id IN $ids
+        CALL {{
+            WITH c
+            MATCH (c)-[*1..{k}]-(nbr)
+            RETURN collect(DISTINCT nbr) AS nbrs
+        }}
+        WITH collect(DISTINCT c) + apoc.coll.flatten(collect(nbrs)) AS nodes
+        WITH nodes[0..$limit_nodes] AS nodes
+        UNWIND nodes AS n
+        WITH collect(DISTINCT n) AS nodes
+        UNWIND nodes AS n
+        OPTIONAL MATCH (n)-[r]-(m)
+        WHERE m IN nodes
+        RETURN
+        [n IN nodes | {{
+            id: n.id,
+            name: n.name,
+            labels: labels(n),
+            description: n.description,
+            properties: coalesce(n.properties, {{}})
+        }}] AS nodes,
+        collect(DISTINCT {{
+            type: type(r),
+            predicate: coalesce(r.predicate, type(r)),
+            relation_name: coalesce(r.relation_name, ''),
+            confidence: coalesce(r.confidence, 0.0),
+            properties: coalesce(r.properties, {{}}),
+            start: startNode(r).id,
+            end: endNode(r).id
+        }}) AS relationships
+        """
+
+        rows = self.execute_query(cypher, params)
+        return rows[0] if rows else {"nodes": [], "relationships": []}
+
+
+    def find_related_events_and_plots(
+        self,
+        entity_id: str,
+        max_depth: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        给定一个节点 ID，查找其关联的 Event（通过任意方式连接 ≤max_depth 跳），
+        并进一步找到这些 Event 通过 HAS_EVENT 所关联的 Plot。
+
+        Args:
+            entity_id: 起点节点 ID
+            max_depth: 搜索最大跳数（默认 3，建议不要太大）
+
+        Returns:
+            List[Dict]，每个元素包含：
+            {
+                "event": {id,name,description,labels},
+                "path_nodes": [...],
+                "path_rels": [...],
+                "plots": [{id,name,description,labels}, ...]
+            }
+        """
+        cypher = f"""
+        MATCH (src {{id: $id}})
+        MATCH p = (src)-[*1..{max_depth}]-(ev:Event)
+        WITH ev, p
+        ORDER BY length(p) ASC
+        WITH ev, collect(p)[0] AS sp   // 每个 Event 取一条最短路径
+        OPTIONAL MATCH (pl:Plot)-[:HAS_EVENT]->(ev)
+        RETURN
+        ev {{ .id, .name, .description, labels: labels(ev) }} AS event,
+        [n IN nodes(sp) | {{id: n.id, name: n.name, labels: labels(n)}}] AS path_nodes,
+        [r IN relationships(sp) | {{
+            type: type(r),
+            start: startNode(r).id,
+            end: endNode(r).id
+        }}] AS path_rels,
+        collect(DISTINCT {{
+            id: pl.id, name: pl.name, description: pl.description, labels: labels(pl)
+        }}) AS plots
+        """
+
+        rows = self.execute_query(cypher, {"id": entity_id})
+        return rows or []
+
+
+    def find_paths_between_nodes(
+        self,
+        src_id: str,
+        dst_id: str,
+        max_depth: int = 4,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        查找 src 与 dst 之间的 k-最短路径（无向）。
+        - nodes:  [{id,name,labels,description,properties}, ...]
+        - relationships: [{type,predicate,relation_name,confidence,properties,start,end,dir}, ...]
+        - length: 路径长度（边数）
+
+        Args:
+            src_id: 起点节点 ID
+            dst_id: 终点节点 ID
+            max_depth: 最大搜索深度
+            limit: 返回路径数量上限（k）
+        """
+        if not src_id or not dst_id:
+            return []
+
+        params: Dict[str, Any] = {"src_id": src_id, "dst_id": dst_id, "limit": limit}
+
+        # 按路径长度升序，取前 limit 条
+        cypher = f"""
+        MATCH (src {{id: $src_id}}), (dst {{id: $dst_id}})
+        MATCH p = (src)-[*1..{max_depth}]-(dst)
+        WITH p ORDER BY length(p) ASC
+        LIMIT $limit
+        RETURN
+        [n IN nodes(p) | {{
+            id: n.id,
+            name: n.name,
+            labels: labels(n),
+            description: n.description,
+            properties: coalesce(n.properties, {{}})
+        }}] AS nodes,
+        [r IN relationships(p) | {{
+            type: type(r),
+            predicate: coalesce(r.predicate, type(r)),
+            relation_name: coalesce(r.relation_name, ''),
+            confidence: coalesce(r.confidence, 0.0),
+            properties: coalesce(r.properties, {{}}),
+            start: startNode(r).id,
+            end: endNode(r).id
+        }}] AS rels,
+        length(p) AS length
+        """
+
+        rows = self.execute_query(cypher, params)
+        out: List[Dict[str, Any]] = []
+
+        for row in rows:
+            nodes = row["nodes"]
+            rels = row["rels"]
+            pos = {n["id"]: i for i, n in enumerate(nodes)}
+
+            rels_with_dir = []
+            for r in rels:
+                s, t = r.get("start"), r.get("end")
+                dir_token = "->"
+                if s in pos and t in pos and pos[s] > pos[t]:
+                    dir_token = "<-"
+                rels_with_dir.append({**r, "dir": dir_token})
+
+            out.append({
+                "nodes": nodes,
+                "relationships": rels_with_dir,
+                "length": int(row["length"])
+            })
+
+        return out
+
 
     def find_co_section_entities(
         self,
@@ -703,19 +893,19 @@ class Neo4jUtils:
             props_dict = {}
 
         # 构造嵌入输入
-        if node_type not in ["Scene", "Plot", "Event"]:
+        if node_type in ["Character", "Object"]:
             text = f"{name}{name}{name}.{desc}"
         elif node_type in ["Scene", "Plot", "Event"]:
             text = f"{desc}"
         else:
-            text = f"{name}{name}{name}.{desc}"
+            text = f"{name}.{desc}"
 
         if props_dict:
             prop_text = "；".join([f"{k}：{v}" for k, v in props_dict.items()])
             text += f".{prop_text}"
 
-        if len(text) > 1000:
-            text = text[:1000] # BGE最大上下文限制
+        if len(text) >= self.config.max_tokens:
+            text = text[:self.config.max_tokens] # BGE最大上下文限制
             
         embed = self.model.encode(text)
         embed = embed.tolist() if hasattr(embed, "tolist") else embed
@@ -883,7 +1073,10 @@ class Neo4jUtils:
         Returns:
             List[Dict]: 包含 name、labels、id、score 的结果列表
         """
+        if len(text) >= self.config.max_tokens:
+            text = text[:self.config.max_tokens]
         embed = self.model.encode(text)
+        # print("len(embed): ", len(embed))
         embed = embed.tolist() if hasattr(embed, "tolist") else embed
          
         return self._query_entity_knn(embed, top_k=top_k)

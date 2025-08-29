@@ -83,15 +83,15 @@ class DynamicReflector:
             matches = [s.strip() for s in sentences if entity_name in s]
             if entity_name and entity_type:
                 if entity_name in self.entity_extraction_memory:
-                    self.entity_extraction_memory[entity_name].add(f"抽取了实体: {entity_name} (实体类型: {entity_type}, scope: {entity_scope})\n")
+                    self.entity_extraction_memory[entity_name].add(f"抽取了实体: {entity_name} (实体类型: {entity_type}\n")
                 else:
-                    self.entity_extraction_memory[entity_name] = set([f"抽取了实体: {entity_name} (实体类型: {entity_type}, scope: {entity_scope})\n"])
+                    self.entity_extraction_memory[entity_name] = set([f"抽取了实体: {entity_name} (实体类型: {entity_type})\n"])
                     
                 for match in matches:
                     if match in documents:
-                        documents[match] += f"- 抽取了实体: {entity_name} (实体类型: {entity_type}, scope: {entity_scope})\n"
+                        documents[match] += f"- 抽取了实体: {entity_name} (实体类型: {entity_type})\n"
                     else:
-                        documents[match] = f"- 抽取了实体: {entity_name} (实体类型: {entity_type}, scope: {entity_scope})\n"
+                        documents[match] = f"- 抽取了实体: {entity_name} (实体类型: {entity_type})\n"
 
         for relation in relations:
             subject = relation.get("subject", "")

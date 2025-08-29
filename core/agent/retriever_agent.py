@@ -25,9 +25,10 @@ from core.functions.tool_calls import (
     GetRelationSummary,
     GetCommonNeighbors,
     QuerySimilarEntities,
-    FindEventChain,
-    # CheckNodesReachable,
+    FindPathsBetweenNodes,
     TopKByCentrality,
+    FindRelatedEventsAndPlots,
+    GetKHopSubgraph,
     # 向量数据库工具
     VDBHierdocsSearchTool,
     VDBDocsSearchTool,
@@ -228,7 +229,40 @@ class QuestionAnsweringAgent:
         - 不维护/回写任何历史；
         - 仅用本轮 user_text 触发工具检索并返回 Assistant 的完整消息序列（含 function 调用结果）。
         """
-        messages: List[Dict[str, Any]] = [{"role": "user", "content": user_text + "如果找不到，可以用关键词检索。"}]
+        system_prompt = """你在选择回答问题的工具时，可以参考以下经验规则（不是硬性约束，而是倾向性建议）：
+
+1. 缩略语、全称与术语解释类问题  
+    - 使用关键词检索工具（如 BM25）定位定义或者retrieve_entity_by_name，如果不确定实体类型就设为Entity。  
+    - 必要时交叉验证多个片段，确保答案完整。
+
+2. 角色出场、行为或服装类问题  
+    - 使用角色检索工具或实体检索工具获取相关片段。  
+    - 如果需要场次信息，结合场次映射工具（chunk_to_scene）。
+
+3. 事件时间线与结果类问题  
+    - 使用向量数据库检索（vdb 系列工具）获取全局性或时间相关的段落。  
+    - 需要映射到场次时，再使用 chunk_to_scene。
+
+4. 物品出现与状态变化类问题  
+    - 先用BM25关键词检索找到出现位置。  
+    - 再用向量检索补充状态、变化等上下文信息。
+
+5. 地点或场景变化类问题  
+    - 使用实体检索工具retrieve_entity_by_name获取地点或场景的定义。  
+    - 结合向量数据库检索找到变化后的描述。  
+    - 若要求场次，使用 chunk_to_scene 映射。
+
+6. 装备定义与属性类问题  
+    - 使用结构化查询工具（如 nlp2sql_query）从属性表中获取定义或属性。  
+    - 如果涉及使用者或场次，再结合关键词检索或角色检索。
+
+7. 其它容易出错的问题
+    - 高风险类型：外貌细节、型号枚举、虚构时间线、物品来源、经济/生活细节。
+    - 建议：优先调用 bm25_search_docs 检索原始文档再作答。
+    - 补充：如果其他检索方式没有结果，也建议再试一次 bm25_search_docs，而不是直接空答。
+"""
+
+        messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_text }]
         resp = self.assistant.run_nonstream(
             messages=messages,
             lang=lang,
@@ -318,10 +352,11 @@ class QuestionAnsweringAgent:
             GetRelationSummary(self.neo4j_utils),
             GetCommonNeighbors(self.neo4j_utils),
             QuerySimilarEntities(self.neo4j_utils, emb_cfg),
-            FindEventChain(self.neo4j_utils),
+            FindPathsBetweenNodes(self.neo4j_utils),
             TopKByCentrality(self.neo4j_utils),
-            GetCoSectionEntities(self.neo4j_utils)
-            # CheckNodesReachable(self.neo4j_utils),
+            GetCoSectionEntities(self.neo4j_utils),
+            FindRelatedEventsAndPlots(self.neo4j_utils),
+            GetKHopSubgraph(self.neo4j_utils),
         ]
 
     def _build_vdb_tools(self, *, reranker: Any) -> List[Any]:
