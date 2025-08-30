@@ -68,45 +68,56 @@ class VectorStore:
             )
 
     def store_documents(self, documents: List[Document]) -> None:
-        """存储文档到向量数据库"""
         if not self.client or not self.collection:
             print("⚠️ 向量数据库未初始化，跳过向量存储")
             return
 
         self._ensure_collection()
         try:
-            ids, texts, metadatas = [], [], []
+            # Chroma 的保守批量；5461 是错误里报的阈值，下限取 1000 更稳妥
+            CHROMA_BATCH = 1000
+            # sentence-transformers 的编码批量（显存友好）
+            ENCODE_BATCH = 64
 
-            for doc in documents:
-                ids.append(str(doc.id))
-                texts.append(doc.content)
+            n = len(documents)
+            total_upserted = 0
 
-                # 元数据（Chroma 仅支持标量；其它转字符串）
-                metadata = {}
-                for key, value in (doc.metadata or {}).items():
-                    if isinstance(value, (str, int, float, bool)):
-                        metadata[key] = value
-                    else:
-                        metadata[key] = str(value)
-                metadatas.append(metadata)
+            for s in range(0, n, CHROMA_BATCH):
+                e = min(s + CHROMA_BATCH, n)
+                batch = documents[s:e]
 
-            # 生成嵌入向量
-            embeddings = self.embedding_model.encode(texts)
-            if hasattr(embeddings, "tolist"):
-                embeddings = embeddings.tolist()
+                ids, texts, metadatas = [], [], []
+                for doc in batch:
+                    ids.append(str(doc.id))
+                    texts.append(doc.content)
 
-            # 存储
-            self.collection.upsert(
-                ids=ids,
-                documents=texts,
-                embeddings=embeddings,
-                metadatas=metadatas
-            )
-            print(f"✅ 成功存储 {len(documents)} 个文档到向量数据库")
+                    md = {}
+                    for k, v in (doc.metadata or {}).items():
+                        md[k] = v if isinstance(v, (str, int, float, bool)) else str(v)
+                    metadatas.append(md)
+
+                # —— 分批编码，避免一次性 encode 过大 —— #
+                embs = []
+                for i in range(0, len(texts), ENCODE_BATCH):
+                    j = min(i + ENCODE_BATCH, len(texts))
+                    part = self.embedding_model.encode(texts[i:j])
+                    if hasattr(part, "tolist"):
+                        part = part.tolist()
+                    embs.extend(part)
+
+                # —— 分批 upsert —— #
+                self.collection.upsert(
+                    ids=ids,
+                    documents=texts,
+                    embeddings=embs,
+                    metadatas=metadatas
+                )
+                total_upserted += len(batch)
+
+            print(f"✅ 成功存储 {total_upserted} 个文档到向量数据库")
 
         except Exception as e:
-            print(f"❌ 向量存储失败: {str(e)}")
-
+            print(f"❌ 向量存储失败: {e}")
     def search(self, query: str, limit: int = 5) -> List[Document]:
         if not self.client or not self.collection:
             return []
