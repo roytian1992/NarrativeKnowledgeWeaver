@@ -34,6 +34,8 @@ from core.builder.graph_preprocessor import GraphPreprocessor
 from core.utils.format import DOC_TYPE_META
 from core.builder.reflection import DynamicReflector
 from collections import defaultdict
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 
 def _normalize_type(t):
     """
@@ -943,23 +945,43 @@ class KnowledgeGraphBuilder:
 
 
     def _store_vectordb(self, verbose: bool):
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=200,
+            chunk_overlap=50,
+            separators=[
+                "\n\n", "### ", "## ", "# ",     # 标题/小节优先
+                "\n",                             # 段落
+                "。", "！", "？", "；", "：", "、", "，",  # 中文标点
+                ". ", "? ", "! ",                 # 英文句末（粗粒度）
+                " ",                              # 空格
+                ""                                # 最后兜底按字符
+            ],
+            keep_separator=True
+        )
+
         try:
             all_documents = list(self.kg.documents.values())
             self.document_vector_store.delete_collection()
             self.document_vector_store._initialize()
             self.document_vector_store.store_documents(all_documents)
             
+            self.sentence_vector_store.delete_collection()
+            self.sentence_vector_store._initialize()
+
             all_sentences = []
-            for doc in all_documents:
+
+            for doc in tqdm(all_documents, desc="保存数据中", total=len(all_documents)):
                 content = doc.content
-                sentences = re.split(r'(?<=[。！？])', content)
+                if len(content) > 200:
+                    sentences = splitter.split_text(content)
+                else:
+                    sentences = [content]
                 for i, sentence in enumerate(sentences):
                     sentence = sentence.replace("\\n", "").strip()
                     all_sentences.append(Document(id=f"{doc.id}-{i+1}", content=sentence, metadata=doc.metadata))
             
-            self.sentence_vector_store.delete_collection()
-            self.sentence_vector_store._initialize()
             self.sentence_vector_store.store_documents(all_sentences)
+            
             
         except Exception as e:
             if verbose:

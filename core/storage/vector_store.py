@@ -67,45 +67,76 @@ class VectorStore:
                 metadata={"description": f"{self.vector_store_name} vectordb"}
             )
 
-    def store_documents(self, documents: List[Document]) -> None:
-        """存储文档到向量数据库"""
+    def store_documents(self, documents: List[Document], batch_size: int = 500) -> None:
+        """存储文档到向量数据库（>500 条时按批写入，默认每批 500）"""
         if not self.client or not self.collection:
             print("⚠️ 向量数据库未初始化，跳过向量存储")
             return
 
+        if not documents:
+            print("ℹ️ 无文档可存储")
+            return
+
+        if batch_size <= 0:
+            batch_size = 500  # 兜底
+
         self._ensure_collection()
-        try:
-            ids, texts, metadatas = [], [], []
 
-            for doc in documents:
-                ids.append(str(doc.id))
-                texts.append(doc.content)
+        total = len(documents)
+        success = 0
+        failed_batches = []
 
-                # 元数据（Chroma 仅支持标量；其它转字符串）
-                metadata = {}
-                for key, value in (doc.metadata or {}).items():
-                    if isinstance(value, (str, int, float, bool)):
-                        metadata[key] = value
-                    else:
-                        metadata[key] = str(value)
-                metadatas.append(metadata)
+        # 简单的批生成器
+        def _batches(lst, n):
+            for i in range(0, len(lst), n):
+                yield i, lst[i:i + n]
 
-            # 生成嵌入向量
-            embeddings = self.embedding_model.encode(texts)
-            if hasattr(embeddings, "tolist"):
-                embeddings = embeddings.tolist()
+        for start_idx, batch in _batches(documents, batch_size):
+            try:
+                ids, texts, metadatas = [], [], []
+                for doc in batch:
+                    ids.append(str(doc.id))
+                    texts.append(doc.content)
 
-            # 存储
-            self.collection.upsert(
-                ids=ids,
-                documents=texts,
-                embeddings=embeddings,
-                metadatas=metadatas
-            )
-            print(f"✅ 成功存储 {len(documents)} 个文档到向量数据库")
+                    # 元数据（Chroma 仅支持标量；其它转字符串）
+                    md = {}
+                    for key, value in (doc.metadata or {}).items():
+                        if isinstance(value, (str, int, float, bool)):
+                            md[key] = value
+                        else:
+                            md[key] = str(value)
+                    metadatas.append(md)
 
-        except Exception as e:
-            print(f"❌ 向量存储失败: {str(e)}")
+                # 生成嵌入向量（按批）
+                embeddings = self.embedding_model.encode(texts)
+                if hasattr(embeddings, "tolist"):
+                    embeddings = embeddings.tolist()
+
+                # upsert 当前批
+                self.collection.upsert(
+                    ids=ids,
+                    documents=texts,
+                    embeddings=embeddings,
+                    metadatas=metadatas
+                )
+
+                success += len(batch)
+                end_idx = min(start_idx + len(batch), total)
+                print(f"✅ 批次写入成功：{start_idx}-{end_idx-1}（{len(batch)} 条）")
+
+            except Exception as e:
+                end_idx = min(start_idx + len(batch), total)
+                failed_batches.append((start_idx, end_idx, str(e)))
+                print(f"❌ 批次写入失败：{start_idx}-{end_idx-1}，错误：{e}")
+
+        # 汇总
+        if failed_batches:
+            print(f"⚠️ 总结：成功 {success}/{total} 条，失败批次 {len(failed_batches)} 个：")
+            for (s, e, msg) in failed_batches:
+                print(f"   - 批 {s}-{e-1}: {msg}")
+        else:
+            print(f"🎉 全部写入成功，共 {success} 条（批大小 {batch_size}）。")
+
 
     def search(self, query: str, limit: int = 5) -> List[Document]:
         if not self.client or not self.collection:

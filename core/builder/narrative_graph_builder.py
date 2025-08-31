@@ -51,7 +51,7 @@ def remove_subset_paths(chains: List[List[str]]) -> List[List[str]]:
 
 
 def overlapping_similarity(set1: Set[str], set2: Set[str]) -> float:
-    """计算两个集合的 Jaccard 相似度（|A∩B| / max(|A|, |B|)）"""
+    """计算两个集合的相似度（|A∩B| / min(|A|, |B|)）"""
     if not set1 and not set2:
         return 1.0
     return len(set1 & set2) / min([len(set1), len(set2)])
@@ -59,7 +59,7 @@ def overlapping_similarity(set1: Set[str], set2: Set[str]) -> float:
 
 def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> List[List[str]]:
     """
-    删除与已保留链 Jaccard 相似度 >= threshold 的链
+    删除与已保留链相似度 >= threshold 的链
     """
     filtered: List[List[str]] = []
     for chain in chains:
@@ -73,6 +73,142 @@ def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> Lis
         if keep:
             filtered.append(chain)
     return filtered
+
+
+from typing import List, Set, Tuple, Dict
+from collections import defaultdict, Counter
+
+def _maximal_chain_indices_by_set(chains: List[List[str]], min_length: int = 2) -> List[int]:
+    """
+    返回“事件集合严格极大”的原始链下标集合（仅考虑长度 >= min_length 的链），
+    即：set(chain_i) 不是任何 set(chain_j) 的严格子集。
+    使用倒排索引加交集做候选剪枝，避免 O(N^2) 全比较。
+    """
+    # 只保留能产生子链的原始链（长度 >= min_length）
+    idxs = [i for i, ch in enumerate(chains) if len(ch) >= min_length]
+    sets = [set(chains[i]) for i in idxs]
+
+    # 倒排索引：元素 -> 含有该元素的“已保留极大集合”的下标（在 kept_idxs 序）
+    inv = defaultdict(set)
+
+    # 先按“集合大小”降序，这样更大的集合先进入“已保留集合池”，
+    # 判断某集合是否有“严格超集”时，只需在池里查。
+    order = sorted(range(len(idxs)), key=lambda k: -len(sets[k]))
+
+    kept_local = []         # 在本函数内部的局部下标（指向 idxs/sets 的下标）
+    kept_sets = []          # 已保留的集合本体（与 kept_local 对齐）
+
+    for k in order:
+        s = sets[k]
+        if not s:
+            # 空集：若池中已有任一非空集合，则空集是严格子集，丢弃；否则保留第一个空集（与原逻辑等价）
+            if any(len(ts) > 0 for ts in kept_sets):
+                continue
+            kept_idx = len(kept_sets)
+            kept_local.append(k)
+            kept_sets.append(s)
+            # 空集不进倒排
+            continue
+
+        # 用倒排索引做候选“严格超集”召回：交所有元素的桶
+        sig = sorted(s, key=lambda e: len(inv[e]))  # 稀有元素优先，交集更小
+        cand = inv[sig[0]].copy() if sig else set()
+        for e in sig[1:]:
+            cand &= inv[e]
+            if not cand:
+                break
+
+        # 候选里只要存在 size 更大的已保留集合，即为严格超集
+        has_strict_superset = any(len(kept_sets[j]) > len(s) for j in cand)
+        if has_strict_superset:
+            continue
+
+        # 保留，并更新倒排
+        kept_idx = len(kept_sets)
+        kept_local.append(k)
+        kept_sets.append(s)
+        for e in s:
+            inv[e].add(kept_idx)
+
+    # 把局部下标转换为原始链下标
+    return [idxs[k] for k in kept_local]
+
+
+def _all_covering_windows(chain: List[str], universe: Set[str], min_length: int) -> List[List[str]]:
+    """
+    返回 chain 中所有“覆盖了 universe 全部元素”的连续子链（长度>=min_length）。
+    这些窗口的元素集合恰好等于 universe。
+    用滑动窗口为每个左端点找到最短右端点，然后右端点向右扩展都合法。
+    """
+    need = {x: 1 for x in universe}
+    have = Counter()
+    covered = 0
+    need_total = len(need)
+
+    res = []
+    n = len(chain)
+    r = 0
+
+    for l in range(n):
+        # 扩右直到覆盖全部元素或到尾
+        while r < n and covered < need_total:
+            x = chain[r]
+            if x in need:
+                have[x] += 1
+                if have[x] == 1:  # 第一次覆盖该元素
+                    covered += 1
+            r += 1
+
+        if covered == need_total:
+            # 找到最短覆盖窗口 [l, r-1]，任何 r' >= r-1 也覆盖
+            min_r = r - 1
+            start_r = max(min_r, l + min_length - 1)
+            if start_r < n:
+                for rr in range(start_r, n):
+                    # 扩展不会引入 universe 之外的新元素（因为 universe=该链的全集）
+                    res.append(chain[l:rr+1])
+
+        # 左端点右移前，移除它的贡献
+        x = chain[l]
+        if x in need:
+            have[x] -= 1
+            if have[x] == 0:
+                covered -= 1
+
+    return res
+
+
+def get_frequent_subchains_with_subset_removal(
+    chains: List[List[str]],
+    min_length: int = 2,
+) -> List[List[str]]:
+    """
+    组合版本（仅针对 min_count=1 的场景）：
+    等价于：
+      A = get_frequent_subchains(chains, min_length=min_length, min_count=1)
+      B = remove_subset_paths(A)
+    但无需枚举所有子链，只生成最终会存活的那些子链。
+
+    说明：
+    - 先找出“事件集合严格极大”的原始链（长度>=min_length才可能产生子链）；
+    - 对这些链，枚举所有“覆盖其全集的子链窗口”（其元素集合 == 该链去重后的全集）。
+    - 输出即为两步管线的最终存活集合（顺序可能不同，但内容一致）。
+    """
+    # 1) 取严格极大集合对应的原始链
+    maximal_idxs = _maximal_chain_indices_by_set(chains, min_length=min_length)
+
+    # 2) 对每条极大链，枚举所有覆盖全集的窗口（长度>=min_length）
+    out: List[List[str]] = []
+    for i in maximal_idxs:
+        ch = chains[i]
+        uni = set(ch)
+        out.extend(_all_covering_windows(ch, uni, min_length))
+
+    # 可选：做一个稳定排序（纯为可读性；与原两步的“最终保留集合”内容一致）
+    # 排序规则与原 get_frequent_subchains 的次序接近：长度降序，词典序
+    out.sort(key=lambda seq: (-len(seq), tuple(seq)))
+    return out
+
 
 
 def get_frequent_subchains(chains: List[List[str]], min_length: int = 2, min_count: int = 2):
@@ -266,7 +402,7 @@ class EventCausalityBuilder:
     def precompute_event_cards(
         self,
         events: List[Entity],
-        per_task_timeout: float = 180,
+        per_task_timeout: float = 300,
         max_retries: int = 3,
         retry_timeout: float = 60.0,
     ) -> Dict[str, Dict[str, Any]]:
@@ -1094,7 +1230,7 @@ class EventCausalityBuilder:
 
             # —— 删除边
             for edge in removed_edges:
-                self.neo4j_utils.delete_relation_by_ids(edge[0], edge[1], "EVENT_CAUSES")
+                self.neo4j_utils.delete_relation_by_ids(edge[0], edge[1], ["EVENT_CAUSES", "EVENT_INDIRECT_CAUSES", "EVENT_PART_OF"])
 
             # —— 持久化本轮删除日志（EPG）
             base = self.config.storage.event_plot_graph_path
@@ -1166,9 +1302,10 @@ class EventCausalityBuilder:
         all_chains = self.get_all_event_chains(min_confidence=0.0)
         print("[✓] 当前事件链总数：", len(all_chains))
 
-        filtered_chains = get_frequent_subchains(all_chains, 2, 1)
-        filtered_chains = remove_subset_paths(filtered_chains)
-        filtered_chains = remove_similar_paths(filtered_chains, 0.7)
+        # filtered_chains = get_frequent_subchains(all_chains, 2, 1)
+        # filtered_chains = remove_subset_paths(filtered_chains)
+        filtered_chains = get_frequent_subchains_with_subset_removal(all_chains, 2)
+        filtered_chains = remove_similar_paths(filtered_chains, 0.75)
         print("[✓] 过滤后事件链总数：", len(filtered_chains))
 
         # —— 保存筛后链条到 EPG

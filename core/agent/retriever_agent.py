@@ -261,7 +261,7 @@ class QuestionAnsweringAgent:
     - 建议：优先调用 bm25_search_docs 检索原始文档再作答。
     - 补充：如果其他检索方式没有结果，也建议再试一次 bm25_search_docs，而不是直接空答。
 """
-
+        system_prompt = "你是一个可以基于问题选择工具回答的智能助手，希望你能灵活的使用工具，失败后用别的尝试。"
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_text }]
         resp = self.assistant.run_nonstream(
             messages=messages,

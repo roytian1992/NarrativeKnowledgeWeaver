@@ -126,12 +126,12 @@ class Neo4jUtils:
 
     def get_k_hop_subgraph(
         self,
-        center_ids: List[str],
+        center_ids: list[str],
         k: int = 2,
         limit_nodes: int = 200
-    ) -> Dict[str, Any]:
+    ) -> dict[str, any]:
         """
-        抽取以若干中心节点为起点的 k-hop 邻居子图。
+        抽取以若干中心节点为起点的 k-hop 邻居子图（无向），不依赖 APOC。
 
         Args:
             center_ids: 起点节点 ID 列表
@@ -140,51 +140,53 @@ class Neo4jUtils:
 
         Returns:
             {
-            "nodes": [
-                {id,name,labels,description,properties}, ...
-            ],
-            "relationships": [
-                {type,predicate,relation_name,confidence,properties,start,end}, ...
-            ]
+            "nodes": [{id,name,labels,description,properties}, ...],
+            "relationships": [{type,start,end,relation_name,confidence,properties}, ...]
             }
         """
         if not center_ids:
             return {"nodes": [], "relationships": []}
 
-        params = {"ids": center_ids, "k": k, "limit_nodes": limit_nodes}
+        # 保险起见，Clamp 一下 k
+        if k < 1:
+            k = 1
 
+        params = {"ids": center_ids, "limit_nodes": limit_nodes}
+
+        # 说明：
+        # 1) k 用 f-string 注入（Cypher 可变长度不能用参数传）
+        # 2) 先去重再截断，避免“先截断后去重”导致有效节点数偏少
+        # 3) 用一次性收集关系再投影，规避 OPTIONAL MATCH 产生的 NULL
         cypher = f"""
         MATCH (c)
         WHERE c.id IN $ids
-        CALL {{
-            WITH c
-            MATCH (c)-[*1..{k}]-(nbr)
-            RETURN collect(DISTINCT nbr) AS nbrs
-        }}
-        WITH collect(DISTINCT c) + apoc.coll.flatten(collect(nbrs)) AS nodes
-        WITH nodes[0..$limit_nodes] AS nodes
-        UNWIND nodes AS n
-        WITH collect(DISTINCT n) AS nodes
+        // 抽取所有 k-hop 内的邻居（无向）
+        OPTIONAL MATCH (c)-[*1..{k}]-(nbr)
+        WITH collect(DISTINCT c) AS cs, collect(DISTINCT nbr) AS rawNbrs
+        WITH cs + [x IN rawNbrs WHERE x IS NOT NULL] AS nodes_all
+        UNWIND nodes_all AS n
+        WITH collect(DISTINCT n)[0..$limit_nodes] AS nodes
+        // 在这些节点之间抽取关系
         UNWIND nodes AS n
         OPTIONAL MATCH (n)-[r]-(m)
         WHERE m IN nodes
+        WITH nodes, collect(DISTINCT r) AS rels
         RETURN
         [n IN nodes | {{
             id: n.id,
-            name: n.name,
+            name: coalesce(n.name, ''),
+            description: coalesce(n.description, ''),
             labels: labels(n),
-            description: n.description,
             properties: coalesce(n.properties, {{}})
         }}] AS nodes,
-        collect(DISTINCT {{
+        [r IN rels WHERE r IS NOT NULL | {{
             type: type(r),
-            predicate: coalesce(r.predicate, type(r)),
-            relation_name: coalesce(r.relation_name, ''),
-            confidence: coalesce(r.confidence, 0.0),
-            properties: coalesce(r.properties, {{}}),
             start: startNode(r).id,
-            end: endNode(r).id
-        }}) AS relationships
+            end: endNode(r).id,
+            relation_name: coalesce(r.relation_name, type(r)),
+            confidence: coalesce(r.confidence, 0.0),
+            properties: coalesce(r.properties, {{}})
+        }}] AS relationships
         """
 
         rows = self.execute_query(cypher, params)
@@ -243,29 +245,23 @@ class Neo4jUtils:
         dst_id: str,
         max_depth: int = 4,
         limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, any]]:
         """
         查找 src 与 dst 之间的 k-最短路径（无向）。
         - nodes:  [{id,name,labels,description,properties}, ...]
         - relationships: [{type,predicate,relation_name,confidence,properties,start,end,dir}, ...]
         - length: 路径长度（边数）
-
-        Args:
-            src_id: 起点节点 ID
-            dst_id: 终点节点 ID
-            max_depth: 最大搜索深度
-            limit: 返回路径数量上限（k）
         """
         if not src_id or not dst_id:
             return []
 
-        params: Dict[str, Any] = {"src_id": src_id, "dst_id": dst_id, "limit": limit}
+        params: dict[str, any] = {"src_id": src_id, "dst_id": dst_id, "limit": limit}
 
-        # 按路径长度升序，取前 limit 条
         cypher = f"""
         MATCH (src {{id: $src_id}}), (dst {{id: $dst_id}})
         MATCH p = (src)-[*1..{max_depth}]-(dst)
-        WITH p ORDER BY length(p) ASC
+        WITH p, length(p) AS len
+        ORDER BY len ASC
         LIMIT $limit
         RETURN
         [n IN nodes(p) | {{
@@ -284,29 +280,87 @@ class Neo4jUtils:
             start: startNode(r).id,
             end: endNode(r).id
         }}] AS rels,
-        length(p) AS length
+        len AS length
         """
 
-        rows = self.execute_query(cypher, params)
-        out: List[Dict[str, Any]] = []
+        rows = self.execute_query(cypher, params) or []
+        out: list[dict[str, any]] = []
+
+        import json
 
         for row in rows:
-            nodes = row["nodes"]
-            rels = row["rels"]
-            pos = {n["id"]: i for i, n in enumerate(nodes)}
+            nodes = row.get("nodes") or []
+            # 规范化节点字段
+            for n in nodes:
+                n["name"] = n.get("name") or ""
+                n["description"] = n.get("description") or ""
+                labels = n.get("labels") or []
+                if not isinstance(labels, (list, tuple)):
+                    labels = [labels]
+                n["labels"] = list(map(str, labels))
+                # 节点 properties 也兜底 JSON 字符串
+                props = n.get("properties")
+                if isinstance(props, str):
+                    try:
+                        props = json.loads(props)
+                        if not isinstance(props, dict):
+                            props = {}
+                    except Exception:
+                        props = {}
+                elif not isinstance(props, dict):
+                    props = {}
+                n["properties"] = props
 
-            rels_with_dir = []
-            for r in rels:
-                s, t = r.get("start"), r.get("end")
+            rels = row.get("rels") or []
+            rels_norm = []
+
+            for i, r in enumerate(rels):
+                # 1) properties 统一成 dict（支持 JSON 字符串）
+                props = r.get("properties")
+                if isinstance(props, str):
+                    try:
+                        props = json.loads(props)
+                        if not isinstance(props, dict):
+                            props = {}
+                    except Exception:
+                        props = {}
+                elif not isinstance(props, dict):
+                    props = {}
+                # 2) confidence 统一数值化
+                conf = r.get("confidence")
+                try:
+                    conf = float(conf)
+                except (TypeError, ValueError):
+                    conf = None
+
+                # 3) 用“路径序号”推断方向（更可靠）
+                s = r.get("start")
+                t = r.get("end")
                 dir_token = "->"
-                if s in pos and t in pos and pos[s] > pos[t]:
-                    dir_token = "<-"
-                rels_with_dir.append({**r, "dir": dir_token})
+                if i < len(nodes) - 1:
+                    left = nodes[i].get("id")
+                    right = nodes[i + 1].get("id")
+                    if s == right and t == left:
+                        dir_token = "<-"
+                    elif s == left and t == right:
+                        dir_token = "->"
+                    else:
+                        # 退化到基于位置的兜底
+                        pos = {n["id"]: idx for idx, n in enumerate(nodes)}
+                        if s in pos and t in pos and pos[s] > pos[t]:
+                            dir_token = "<-"
+
+                rels_norm.append({
+                    **r,
+                    "properties": props,
+                    "confidence": conf,
+                    "dir": dir_token
+                })
 
             out.append({
                 "nodes": nodes,
-                "relationships": rels_with_dir,
-                "length": int(row["length"])
+                "relationships": rels_norm,
+                "length": int(row.get("length", 0))
             })
 
         return out
@@ -479,7 +533,7 @@ class Neo4jUtils:
         self,
         source_id: str,
         target_id: str,
-        relation_type: str
+        relation_types: List[str],
     ) -> bool:
         """
         根据 source_id、target_id 和 relation_type 删除指定关系
@@ -492,18 +546,21 @@ class Neo4jUtils:
         Returns:
             bool: 是否成功删除了关系（True 表示至少删除了一条）
         """
-        cypher = f"""
-        MATCH (s)-[r:{relation_type}]->(t)
-        WHERE s.id = $source_id AND t.id = $target_id
-        DELETE r
-        RETURN COUNT(r) AS deleted_count
-        """
-        params = {"source_id": source_id, "target_id": target_id}
+        total_deleted = 0
+        for relation_type in relation_types:
+            cypher = f"""
+            MATCH (s)-[r:{relation_type}]->(t)
+            WHERE s.id = $source_id AND t.id = $target_id
+            DELETE r
+            RETURN COUNT(r) AS deleted_count
+            """
+            params = {"source_id": source_id, "target_id": target_id}
 
-        with self.driver.session() as session:
-            result = session.run(cypher, params)
-            record = result.single()
-            return record and record["deleted_count"] > 0
+            with self.driver.session() as session:
+                result = session.run(cypher, params)
+                record = result.single()
+                total_deleted += record["deleted_count"]
+        return f"一共删除：{total_deleted}条相关边。"
 
 
     def get_common_neighbors(
@@ -1189,7 +1246,7 @@ class Neo4jUtils:
                     for k, v in non_empty_props.items():
                         context += f"- {k}：{v}\n"
         except:
-            print("运行失败，获取到的node为： ", ent_node)
+            print("运行失败，获取到的node为： ", entity_id, " 内容为： ", ent_node)
 
         return context
     

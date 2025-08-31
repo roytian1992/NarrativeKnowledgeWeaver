@@ -163,7 +163,7 @@ class RelationalDatabaseBuilder:
             chunks = json.load(fr)
 
         all_rows, still_failed = asyncio.run(self._gather_with_retries(chunks))
-
+        os.makedirs(self.config.storage.sql_database_path, exist_ok=True)
         with open(os.path.join(self.config.storage.sql_database_path, "extraction_results.json"), "w") as f:
             json.dump(all_rows, f, ensure_ascii=False, indent=2)
 

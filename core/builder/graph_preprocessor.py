@@ -185,7 +185,7 @@ class GraphPreprocessor:
         for entity in tqdm(filtered_entities, desc="计算实体向量"):
             name_embedding = self.model.encode(entity["name"])
             desc_text = entity.get("summary", entity.get("description", ""))  # 优先 summary
-            description_embedding = self.model.encode(desc_text)
+            description_embedding = self.model.encode(desc_text.strip())
             entity["name_embedding"] = name_embedding
             entity["description_embedding"] = description_embedding
         return filtered_entities

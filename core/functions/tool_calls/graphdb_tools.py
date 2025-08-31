@@ -323,7 +323,7 @@ class FindPathsBetweenNodes(BaseTool):
     """
     在图中抽取两个节点之间的无向路径，并以自然语言格式返回。
     - 节点展示: name, id, labels, description
-    - 关系展示: relation_name/predicate(type), confidence, description/reason
+    - 关系展示: relation_name/predicate(type), description/reason   # ← 已去掉 confidence
     """
     name = "find_paths_between_nodes"
     description = "在图中抽取两个节点之间的无向路径（证据链），返回自然语言描述。"
@@ -346,17 +346,20 @@ class FindPathsBetweenNodes(BaseTool):
     def _format_node(self, node: Dict[str, Any]) -> str:
         name = node.get("name") or "(未命名)"
         eid = node.get("id") or "N/A"
-        labels = ",".join(node.get("labels", []))
+        labels = node.get("labels", [])
+        if "Entity" in labels:
+            labels.remove("Entity")
+        labels = ",".join(labels)
         desc = self._shorten(node.get("description", ""))
         return f"**{name}** (id={eid}, labels=[{labels}]) — {desc}"
 
+    # ↓↓↓ 只改这个方法：不再显示 confidence ↓↓↓
     def _format_rel(self, rel: Dict[str, Any]) -> str:
         rname = rel.get("relation_name") or rel.get("predicate") or rel.get("type") or "RELATED"
-        conf = rel.get("confidence")
-        conf_txt = f"(confidence={conf:.2f})" if conf is not None else ""
-        desc = rel.get("properties", {}).get("description") or rel.get("reason") or ""
+        desc = (rel.get("properties") or {}).get("description") or rel.get("reason") or ""
         desc_txt = f" — {self._shorten(desc)}" if desc else ""
-        return f"── {rname}{conf_txt}{desc_txt} ──>"
+        return f"── {rname}{desc_txt} ──>"
+    # ↑↑↑
 
     def _render_path(self, path: Dict[str, Any]) -> str:
         nodes = path.get("nodes", [])
@@ -400,6 +403,7 @@ class FindPathsBetweenNodes(BaseTool):
         except Exception as e:
             logger.exception("find_paths_between_nodes 执行失败")
             return f"执行失败: {str(e)}"
+
 
 @register_tool("top_k_by_centrality")
 class TopKByCentrality(BaseTool):
@@ -472,6 +476,8 @@ class TopKByCentrality(BaseTool):
             name = r.get("name") or "(无名)"
             nid = r.get("id") or ""
             labs = r.get("labels") or []
+            if "Entity" in labs:
+                labs.remove("Entity")
             score = r.get("score")
             labs_txt = "/".join(labs) if labs else "Unknown"
             score_txt = f"{score:.6f}" if isinstance(score, (int, float)) else str(score)
@@ -565,6 +571,8 @@ class QuerySimilarEntities(BaseTool):
             name = r.get("name") or "(未命名)"
             rid = r.get("id") or "UNKNOWN_ID"
             labels = r.get("labels") or []
+            if "Entity" in labels:
+                labels.remove("Entity")
             score = r.get("score")
             lab = "/".join(map(str, labels)) if labels else "未知类型"
             lines.append(f"- {name}  [ID: {rid}]  <{lab}>  score={score:.6f}")
@@ -578,8 +586,13 @@ class QuerySimilarEntities(BaseTool):
         for r in rows:
             out.append(f"\n实体：{r.get('name') or '(未命名)'}")
             out.append(f"id: {r.get('id') or 'UNKNOWN_ID'}")
-            if r.get("labels"):
-                out.append(f"实体类型：{', '.join(map(str, r['labels']))}")
+            if r.get("description"):
+                out.append(f"相关描述为: {r.get('description')}")
+            labels_raw = r.get("labels") or []
+            labels = [str(x) for x in labels_raw if str(x) != "Entity"]  # 过滤掉 "Entity"
+            if labels:
+                out.append(f"实体类型：{', '.join(labels)}")
+
             if r.get("score") is not None:
                 out.append(f"相似度分数：{r['score']:.6f}")
         return "\n".join(out)
@@ -629,11 +642,13 @@ class QuerySimilarEntities(BaseTool):
 
         return self._fmt_verbose(filtered) if include_meta else self._fmt_compact(filtered)
 
+
 @register_tool("get_k_hop_subgraph")
 class GetKHopSubgraph(BaseTool):
     """
-    从一个或多个中心节点出发，抽取其 k-hop 邻居子图。
-    ⚠️ 注意：k 不宜过大（建议 1–3），否则会导致结果过于庞大。
+    从一个或多个中心节点出发，抽取其 k-hop 邻居子图（简洁&稳健版）
+    - 兼容 nodes/relationships 的 properties 为 JSON 字符串或 dict
+    - 不展示 confidence
     """
     name = "get_k_hop_subgraph"
     description = (
@@ -649,31 +664,54 @@ class GetKHopSubgraph(BaseTool):
     def __init__(self, neo4j_utils):
         self.neo4j_utils = neo4j_utils
 
-    def _shorten(self, text: str, max_len: int = 120) -> str:
+    # ------------ 小工具函数 ------------
+    def _shorten(self, text: Any, max_len: int = 120) -> str:
         if not text:
             return ""
-        text = text.replace("\n", " ")
-        return text if len(text) <= max_len else text[:max_len] + "…"
+        s = str(text).replace("\n", " ")
+        return s if len(s) <= max_len else s[:max_len] + "…"
+
+    def _ensure_map(self, maybe_json: Any) -> Dict[str, Any]:
+        """把 JSON 字符串安全转为 dict；否则给空 dict。"""
+        if isinstance(maybe_json, dict):
+            return maybe_json
+        if isinstance(maybe_json, str):
+            s = maybe_json.strip()
+            if s.startswith("{") and s.endswith("}"):
+                try:
+                    return json.loads(s)
+                except Exception:
+                    return {}
+        return {}
 
     def _fmt_node(self, n: Dict[str, Any]) -> str:
         name = n.get("name") or "(未命名)"
         nid = n.get("id") or "N/A"
-        labels = ",".join(n.get("labels", []))
+        labels = n.get("labels", [])
+        if "Entity" in labels:
+            labels.remove("Entity")
+        labels = ",".join(labels)
         desc = self._shorten(n.get("description", ""))
         return f"- **{name}** [ID: {nid}, Labels: {labels}] — {desc}"
 
-    def _fmt_rel(self, r: Dict[str, Any], node_map: Dict[str, str]) -> str:
+    def _fmt_rel(self, r: Dict[str, Any], node_map: Dict[str, str]) -> Optional[str]:
+        # 必要字段
         rtype = r.get("relation_name") or r.get("predicate") or r.get("type") or "RELATED"
-        conf = r.get("confidence")
-        conf_txt = f", confidence={conf:.2f}" if conf is not None else ""
-        sname = node_map.get(r.get("start"), r.get("start"))
-        tname = node_map.get(r.get("end"), r.get("end"))
-        # 关系描述
-        props = r.get("properties") or {}
-        desc = props.get("description") or props.get("reason") or ""
-        desc_txt = f" — {self._shorten(desc)}" if desc else ""
-        return f"- {sname} ({r.get('start')}) -[{rtype}{conf_txt}]-> {tname} ({r.get('end')}){desc_txt}"
+        start_id = r.get("start") or r.get("start_id") or r.get("source") or r.get("from")
+        end_id   = r.get("end")   or r.get("end_id")   or r.get("target") or r.get("to")
+        if not (start_id and end_id):
+            return None
 
+        sname = node_map.get(str(start_id), str(start_id))
+        tname = node_map.get(str(end_id), str(end_id))
+
+        props = self._ensure_map(r.get("properties"))
+        # 描述优先级：properties.description -> properties.reason -> r.reason -> r.description
+        desc = props.get("description") or props.get("reason") or r.get("reason") or r.get("description") or ""
+        desc_txt = f" — {self._shorten(desc)}" if desc else ""
+        return f"- {sname} ({start_id}) -[{rtype}]-> {tname} ({end_id}){desc_txt}"
+
+    # ------------ 主逻辑 ------------
     def call(self, params: Any, **kwargs) -> str:
         logger.info("🔎 调用 get_k_hop_subgraph")
         try:
@@ -684,37 +722,62 @@ class GetKHopSubgraph(BaseTool):
         center_ids = data.get("center_ids")
         if not center_ids:
             return "❌ 必须提供至少一个 center_id"
+        if isinstance(center_ids, str):
+            center_ids = [center_ids]
 
         k = int(data.get("k", 2))
         limit_nodes = int(data.get("limit_nodes", 200))
 
         try:
-            subgraph = self.neo4j_utils.get_k_hop_subgraph(center_ids, k, limit_nodes)
-            nodes = subgraph.get("nodes", [])
-            rels = subgraph.get("relationships", [])
+            subgraph = self.neo4j_utils.get_k_hop_subgraph(center_ids, k, limit_nodes) or {}
+            nodes = subgraph.get("nodes") or []
+            rels = subgraph.get("relationships") or []
 
             if not nodes:
                 return f"⚠️ 在 {k}-hop 内未找到子图。"
 
-            node_map = {n["id"]: n.get("name") or n["id"] for n in nodes}
+            # id -> name
+            node_map: Dict[str, str] = {}
+            for n in nodes:
+                if isinstance(n, dict):
+                    nid = str(n.get("id") or "")
+                    if nid:
+                        node_map[nid] = n.get("name") or nid
 
             lines = [
-                f"抽取到 {len(nodes)} 个节点和 {len(rels)} 条关系 (中心节点: {', '.join(center_ids)}，跳数={k})",
+                f"抽取到 {len(nodes)} 个节点和 {len(rels)} 条关系 (中心节点: {', '.join(map(str, center_ids))}，跳数={k})",
                 "",
                 "节点："
             ]
             for n in nodes:
-                lines.append(self._fmt_node(n))
+                if isinstance(n, dict):
+                    lines.append(self._fmt_node(n))
 
-            if rels:
+            rel_lines: List[str] = []
+            for r in rels:
+                if not isinstance(r, dict):
+                    # 保险：如果整条关系也是 JSON 字符串（目前你这边是 dict），解一下
+                    if isinstance(r, str) and r.strip().startswith("{") and r.strip().endswith("}"):
+                        try:
+                            r = json.loads(r)
+                        except Exception:
+                            continue
+                    else:
+                        continue
+                line = self._fmt_rel(r, node_map)
+                if line:
+                    rel_lines.append(line)
+
+            if rel_lines:
                 lines.append("\n关系：")
-                for r in rels:
-                    lines.append(self._fmt_rel(r, node_map))
+                lines.extend(rel_lines)
 
             return "\n".join(lines)
+
         except Exception as e:
             logger.exception("get_k_hop_subgraph 执行失败")
             return f"执行失败: {str(e)}"
+
 
 
 @register_tool("find_related_events_and_plots")
