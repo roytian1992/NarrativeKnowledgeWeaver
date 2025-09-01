@@ -41,7 +41,7 @@ class VectorStore:
             )
 
             # 初始化嵌入模型
-            if self.config.vectordb_embedding.provider == "openai":
+            if self.config.vectordb_embedding.provider != "local":
                 from core.model_providers.openai_embedding import OpenAIEmbeddingModel
                 self.embedding_model = OpenAIEmbeddingModel(self.config.vectordb_embedding)
             else:

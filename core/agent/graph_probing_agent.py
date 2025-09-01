@@ -141,6 +141,7 @@ class GraphProbingAgent:
     def search_related_experience(self, state):
         
         documents = self.reflector.insight_memory.get(query="人物、关系、背景信息、故事、情节、事件", k=2*self.experience_limit)
+        
         documents = [doc.page_content for doc in documents]
         
         related_insights_for_background = self.reranker.rerank(query="背景信息、故事、情节、事件", 
