@@ -1,11 +1,6 @@
-"""
-事件因果图构建器
-负责构建事件因果关系的有向带权图和情节单元图谱
-支持：每一步单独运行、断点续跑、EPG路径持久化
-"""
-
 import json
 import pickle
+import glob
 import networkx as nx
 import hashlib
 from typing import List, Dict, Tuple, Optional, Any, Set
@@ -26,6 +21,121 @@ import logging
 from collections import defaultdict
 import os
 from core.builder.graph_builder import DOC_TYPE_META
+
+
+def _run_with_soft_timeout_and_retries(
+    self,
+    items: List[Any],
+    *,
+    work_fn,                      # (item) -> result
+    key_fn,                       # (item) -> hashable key
+    desc_label: str,
+    per_task_timeout: float = 600.0,
+    retries: int = 2,
+    retry_backoff: float = 1.0,
+    allow_placeholder_first_round: bool = False,
+    placeholder_fn=None,          # (item, exc=None) -> placeholder_result
+    should_retry=None             # (result) -> bool  True表示需要进入下一轮
+) -> Tuple[Dict[Any, Any], Set[Any]]:
+    """
+    通用并发执行器：逐轮并发 + 软超时 + 失败/超时仅重试未成功项。
+    返回：(results_map, still_failed_keys)
+    """
+    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, TimeoutError as FuturesTimeoutError
+    import time
+    from tqdm import tqdm
+
+    total = len(items)
+    if total == 0:
+        return {}, set()
+
+    results: Dict[Any, Any] = {}
+    remaining_items = items[:]  # 每轮仅提交未成功项
+    still_failed_keys: Set[Any] = set()
+
+    max_rounds = max(1, retries)
+    for round_id in range(1, max_rounds + 1):
+        if not remaining_items:
+            break
+
+        round_failures: Set[Any] = set()
+        round_timeouts: Set[Any] = set()
+
+        with ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix=f"concur-r{round_id}") as executor:
+            fut_info: Dict[Any, Dict[str, Any]] = {}
+            for it in remaining_items:
+                f = executor.submit(work_fn, it)
+                fut_info[f] = {"start": time.monotonic(), "item": it, "key": key_fn(it)}
+
+            pbar = tqdm(total=len(fut_info), desc=f"{desc_label}（第{round_id}/{max_rounds}轮）", ncols=100)
+            pending = set(fut_info.keys())
+
+            while pending:
+                done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+
+                # 收集已完成
+                for f in done:
+                    meta = fut_info.pop(f, None)
+                    key = meta["key"]
+                    item = meta["item"]
+                    try:
+                        res = f.result()
+                        results[key] = res
+                        # 若定义了 should_retry，并判断需要重试，则加入失败集合
+                        if callable(should_retry) and should_retry(res):
+                            round_failures.add(key)
+                    except Exception as e:
+                        # 异常：首轮可写占位
+                        if allow_placeholder_first_round and round_id == 1 and callable(placeholder_fn):
+                            try:
+                                results[key] = placeholder_fn(item, exc=e)
+                            except Exception:
+                                pass
+                        round_failures.add(key)
+                    pbar.update(1)
+
+                # 处理软超时：取消、可占位、记失败
+                now = time.monotonic()
+                to_forget = []
+                for f in list(pending):
+                    meta = fut_info[f]
+                    if now - meta["start"] >= per_task_timeout:
+                        key = meta["key"]
+                        item = meta["item"]
+                        try:
+                            f.cancel()
+                        except Exception:
+                            pass
+                        if allow_placeholder_first_round and round_id == 1 and callable(placeholder_fn):
+                            try:
+                                results[key] = placeholder_fn(item, exc=FuturesTimeoutError(f"soft-timeout {per_task_timeout}s"))
+                            except Exception:
+                                pass
+                        round_timeouts.add(key)
+                        pbar.update(1)
+                        to_forget.append(f)
+
+                for f in to_forget:
+                    pending.remove(f)
+                    fut_info.pop(f, None)
+
+            pbar.close()
+
+        # 下一轮仅重试当轮失败/超时项
+        keys_to_retry = round_failures | round_timeouts
+        still_failed_keys |= keys_to_retry
+        # 将 keys 映射回 item
+        key_set = set(keys_to_retry)
+        remaining_items = [it for it in items if key_fn(it) in key_set]
+
+        # 轮间退避
+        if remaining_items and round_id < max_rounds and retry_backoff > 0:
+            try:
+                time.sleep(retry_backoff)
+            except Exception:
+                pass
+
+    return results, still_failed_keys
 
 
 # -----------------------------
@@ -404,24 +514,18 @@ class EventCausalityBuilder:
         events: List[Entity],
         per_task_timeout: float = 300,
         max_retries: int = 3,
-        retry_timeout: float = 60.0,
+        retry_timeout: float = 60.0,   # 兼容原参；统一策略里用不到这个单独超时
     ) -> Dict[str, Dict[str, Any]]:
         """
         并发为所有事件生成 event_card：
-        - 先读 EPG 路径下的 event_cards.json（如存在）
-        - 只为缺失的事件补齐卡片
-        - 结束后写回 EPG 路径
-        产物：event_cards.json
+        - 读/写 EPG/event_cards.json
+        - 首轮失败/超时写占位；后续轮仅重试失败项
         """
-        import time
-        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
-
-        # —— EPG 路径
         base = self.config.storage.event_plot_graph_path
         os.makedirs(base, exist_ok=True)
         cache_path = os.path.join(base, "event_cards.json")
 
-        # —— 读取已存在的缓存
+        # 读取缓存
         if os.path.exists(cache_path):
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
@@ -433,7 +537,6 @@ class EventCausalityBuilder:
         else:
             self.event_cards = {}
 
-        # —— 只处理缺失的事件
         existing = set(self.event_cards.keys())
         pending_events = [e for e in events if e.id not in existing]
         if not pending_events:
@@ -469,114 +572,48 @@ class EventCausalityBuilder:
                     pass
             return "\n".join(ctx_set)
 
-        def _build_one(ev: Entity):
+        def _build_one(ev: Entity) -> str:
             info = self.neo4j_utils.get_entity_info(ev.id, "事件", True, True)
             related_ctx = _collect_related_context_by_section(ev)
             out = self.graph_analyzer.generate_event_context(info, related_ctx)
             card = json.loads(correct_json_format(out))["event_card"]
-            card = format_event_card(card)
-            return ev.id, card
+            card = format_event_card(card)  # 大多数实现会返回 str；如返回 dict 可 json.dumps
+            return card
 
-        def _run_batch(evts: List[Entity], timeout: float, allow_placeholder: bool, desc: str):
-            results, failed = {}, set()
-            executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="card")
-            try:
-                fut_info = {}
-                for ev in evts:
-                    f = executor.submit(_build_one, ev)
-                    fut_info[f] = {"start": time.monotonic(), "event": ev}
+        def _placeholder(ev: Entity, exc=None) -> str:
+            skeleton = {
+                "name": ev.properties.get("name") or ev.name or f"event_{ev.id}",
+                "summary": "",
+                "time_hint": "unknown",
+                "locations": [],
+                "participants": [],
+                "action": "",
+                "outcomes": [],
+                "evidence": ""
+            }
+            return json.dumps(skeleton, ensure_ascii=False)
 
-                pbar = tqdm(total=len(fut_info), desc=desc, ncols=100)
-                pending = set(fut_info.keys())
-
-                while pending:
-                    done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
-
-                    for f in done:
-                        ev = fut_info[f]["event"]
-                        try:
-                            eid, card = f.result()
-                            results[eid] = card
-                        except Exception:
-                            failed.add(ev.id)
-                            if allow_placeholder:
-                                skeleton = {
-                                    "name": ev.properties.get("name") or ev.name or f"event_{ev.id}",
-                                    "summary": "",
-                                    "time_hint": "unknown",
-                                    "locations": [],
-                                    "participants": [],
-                                    "action": "",
-                                    "outcomes": [],
-                                    "evidence": ""
-                                }
-                                results[ev.id] = json.dumps(skeleton, ensure_ascii=False)
-                        pbar.update(1)
-                        fut_info.pop(f, None)
-
-                    now = time.monotonic()
-                    to_forget = []
-                    for f in list(pending):
-                        start = fut_info[f]["start"]
-                        if now - start >= timeout:
-                            ev = fut_info[f]["event"]
-                            f.cancel()
-                            failed.add(ev.id)
-                            if allow_placeholder:
-                                skeleton = {
-                                    "name": ev.properties.get("name") or ev.name or f"event_{ev.id}",
-                                    "summary": "",
-                                    "time_hint": "unknown",
-                                    "locations": [],
-                                    "participants": [],
-                                    "action": "",
-                                    "outcomes": [],
-                                    "evidence": ""
-                                }
-                                results[ev.id] = json.dumps(skeleton, ensure_ascii=False)
-                            pbar.update(1)
-                            to_forget.append(f)
-
-                    for f in to_forget:
-                        pending.remove(f)
-                        fut_info.pop(f, None)
-
-                pbar.close()
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
-
-            return results, failed
-
-        # — 首轮：允许占位
-        head_map, failed_ids = _run_batch(
-            pending_events, timeout=per_task_timeout, allow_placeholder=True, desc="预生成事件卡片（首轮）"
+        # 统一并发执行
+        res_map, still_failed = self._run_with_soft_timeout_and_retries(
+            pending_events,
+            work_fn=_build_one,
+            key_fn=lambda e: e.id,
+            desc_label="预生成事件卡片",
+            per_task_timeout=per_task_timeout,
+            retries=max_retries,
+            retry_backoff=1.0,
+            allow_placeholder_first_round=True,
+            placeholder_fn=_placeholder,
+            should_retry=None  # 对于卡片，只在异常/超时重试；正常结果不重试
         )
-        for k, v in head_map.items():
+
+        # 写回
+        for k, v in res_map.items():
             self.event_cards[k] = v
-
-        # — 重试轮：仅失败项，不再写占位
-        need_ids = list(failed_ids)
-        for attempt in range(1, max_retries + 1):
-            if not need_ids:
-                break
-            try:
-                time.sleep(min(2 ** (attempt - 1), 5.0))
-            except Exception:
-                pass
-            id2evt = {e.id: e for e in pending_events}
-            retry_evts = [id2evt[i] for i in need_ids if i in id2evt]
-            retry_map, retry_failed = _run_batch(
-                retry_evts, timeout=retry_timeout, allow_placeholder=False, desc=f"预生成事件卡片（重试 {attempt}/{max_retries}）"
-            )
-            for k, v in retry_map.items():
-                self.event_cards[k] = v
-            need_ids = list(retry_failed)
-
-        # —— 写回缓存（EPG）
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(self.event_cards, f, ensure_ascii=False, indent=2)
 
-        print(f"🗂️ 事件卡片生成完成：总计 {len(self.event_cards)}，本次缺口余 {len(need_ids)}")
+        print(f"🗂️ 事件卡片生成完成：总计 {len(self.event_cards)}，本次缺口余 {len(still_failed)}")
         return self.event_cards
 
     # -----------------------------
@@ -639,24 +676,21 @@ class EventCausalityBuilder:
         pairs: List[Tuple[Entity, Entity]]
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """
-        并发检查事件对的因果关系（软超时 + 失败收集 + 末尾多轮重试）
-        - 依赖 self.event_cards（在主流程预生成），缺失项会兜底即时补建一次
-        - 首轮：完成即收集；超时/异常 -> 先占位 + 记入重试队列
-        - 末尾：仅对失败项做 N 轮重试；成功即覆盖旧结果
-        - 返回：{(src_id, tgt_id): result_dict}
+        并发检查事件对的因果关系（统一并发/软超时/重试）
+        - 首轮：失败/超时写占位
+        - 仅对失败项重试；成功覆盖旧结果
         """
         PER_TASK_TIMEOUT = 1800
         MAX_RETRIES = 2
         RETRY_BACKOFF = 2.0
-        RETRY_TIMEOUT = 600
 
         def _make_result(src_event, tgt_event,
-                         relation="NONE",
-                         reason="",
-                         temporal_order="Unknown",
-                         confidence=0.0,
-                         raw_result="",
-                         timeout=False) -> Dict[str, Any]:
+                        relation="NONE",
+                        reason="",
+                        temporal_order="Unknown",
+                        confidence=0.0,
+                        raw_result="",
+                        timeout=False) -> Dict[str, Any]:
             res = {
                 "src_event": src_event,
                 "tgt_event": tgt_event,
@@ -683,7 +717,7 @@ class EventCausalityBuilder:
                 info += f"- 实体名称：{ent_.name}，实体类型：{ent_type}，相关描述为：{ent_.description}\n"
             return info
 
-        def _ensure_card(e: Entity, info_text: str) -> Dict[str, Any]:
+        def _ensure_card(e: Entity, info_text: str):
             if e.id in self.event_cards:
                 return self.event_cards[e.id]
             out = self.graph_analyzer.generate_event_context(info_text, "")
@@ -692,24 +726,17 @@ class EventCausalityBuilder:
             self.event_cards[e.id] = card
             return card
 
-        def _process_pair(pair: Tuple[Entity, Entity]):
+        def _work(pair: Tuple[Entity, Entity]) -> Dict[str, Any]:
             src_event, tgt_event = pair
-            pair_key = (src_event.id, tgt_event.id)
             try:
-                info_1 = self.neo4j_utils.get_entity_info(
-                    src_event.id, entity_type="事件",
-                    contain_properties=True, contain_relations=True
-                )
-                info_2 = self.neo4j_utils.get_entity_info(
-                    tgt_event.id, entity_type="事件",
-                    contain_properties=True, contain_relations=True
-                )
+                info_1 = self.neo4j_utils.get_entity_info(src_event.id, "事件", True, True)
+                info_2 = self.neo4j_utils.get_entity_info(tgt_event.id, "事件", True, True)
                 related_context = info_1 + "\n" + info_2 + "\n" + _get_common_neighbor_info(src_event.id, tgt_event.id)
-                src_event_card = _ensure_card(src_event, info_1)
-                tgt_event_card = _ensure_card(tgt_event, info_2)
+                src_card = _ensure_card(src_event, info_1)
+                tgt_card = _ensure_card(tgt_event, info_2)
 
                 result_json = self.graph_analyzer.check_event_causality(
-                    src_event_card, tgt_event_card,
+                    src_card, tgt_card,
                     system_prompt=self.system_prompt_text,
                     related_context=related_context
                 )
@@ -725,7 +752,7 @@ class EventCausalityBuilder:
                 temporal_order = result_dict.get("temporal_order", "Unknown")
                 confidence = result_dict.get("confidence", 0.3)
 
-                return pair_key, _make_result(
+                return _make_result(
                     src_event, tgt_event,
                     relation=relation,
                     reason=reason,
@@ -734,9 +761,8 @@ class EventCausalityBuilder:
                     raw_result=raw_str,
                     timeout=False
                 )
-
             except Exception as e:
-                return pair_key, _make_result(
+                return _make_result(
                     src_event, tgt_event,
                     relation="NONE",
                     reason=f"检查过程出错: {e}",
@@ -744,142 +770,49 @@ class EventCausalityBuilder:
                     confidence=0.0,
                     raw_result="",
                     timeout=True
-                )
+                    )
 
-        def _run_batch(pairs_to_run: List[Tuple[Entity, Entity]], per_task_timeout: float,
-                       allow_placeholders: bool, desc: str):
-            results_batch: Dict[Tuple[str, str], Dict[str, Any]] = {}
-            failed_keys: set = set()
-            executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="causal")
-            try:
-                fut_info: Dict[Any, Dict[str, Any]] = {}
-                for pair in pairs_to_run:
-                    f = executor.submit(_process_pair, pair)
-                    fut_info[f] = {"start": time.monotonic(), "pair": pair}
+        def _placeholder(pair: Tuple[Entity, Entity], exc=None) -> Dict[str, Any]:
+            src_event, tgt_event = pair
+            return _make_result(
+                src_event, tgt_event,
+                relation="NONE",
+                reason="软超时/异常，占位返回",
+                temporal_order="Unknown",
+                confidence=0.0,
+                raw_result="",
+                timeout=True
+            )
 
-                pbar = tqdm(total=len(fut_info), desc=desc, ncols=100)
-                pending = set(fut_info.keys())
-
-                while pending:
-                    done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
-
-                    for f in done:
-                        pair = fut_info[f]["pair"]
-                        src_event, tgt_event = pair
-                        key = (src_event.id, tgt_event.id)
-                        try:
-                            k2, res = f.result()
-                            results_batch[k2] = res
-                            if res.get("causality_timeout"):
-                                failed_keys.add(k2)
-                        except Exception as e:
-                            res = _make_result(
-                                src_event, tgt_event,
-                                relation="NONE",
-                                reason=f"结果收集出错: {e}",
-                                temporal_order="Unknown",
-                                confidence=0.0,
-                                raw_result="",
-                                timeout=True
-                            )
-                            results_batch[key] = res
-                            failed_keys.add(key)
-                        pbar.update(1)
-                        fut_info.pop(f, None)
-
-                    now = time.monotonic()
-                    to_forget = []
-                    for f in list(pending):
-                        start = fut_info[f]["start"]
-                        if now - start >= per_task_timeout:
-                            pair = fut_info[f]["pair"]
-                            src_event, tgt_event = pair
-                            key = (src_event.id, tgt_event.id)
-                            f.cancel()
-                            if allow_placeholders:
-                                res = _make_result(
-                                    src_event, tgt_event,
-                                    relation="NONE",
-                                    reason="软超时，占位返回",
-                                    temporal_order="Unknown",
-                                    confidence=0.0,
-                                    raw_result="",
-                                    timeout=True
-                                )
-                                results_batch[key] = res
-                            failed_keys.add(key)
-                            pbar.update(1)
-                            to_forget.append(f)
-
-                    for f in to_forget:
-                        pending.remove(f)
-                        fut_info.pop(f, None)
-
-                pbar.close()
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
-
-            return results_batch, failed_keys
-
-        print(f"🔍 开始并发检查 {len(pairs)} 对事件的因果关系...")
-
-        key2pair: Dict[Tuple[str, str], Tuple[Entity, Entity]] = {
-            (src.id, tgt.id): (src, tgt) for (src, tgt) in pairs
-        }
-
-        head_results, failed_keys = _run_batch(
-            pairs_to_run=pairs,
-            per_task_timeout=PER_TASK_TIMEOUT,
-            allow_placeholders=True,
-            desc="并发检查因果关系（首轮）"
-        )
-        results: Dict[Tuple[str, str], Dict[str, Any]] = dict(head_results)
-
-        def _needs_retry(key: Tuple[str, str], res: Dict[str, Any]) -> bool:
+        def _should_retry(res: Dict[str, Any]) -> bool:
             if res.get("causality_timeout"):
                 return True
             reason = (res.get("reason") or "").strip()
             return ("出错" in reason)
 
-        needs_retry = [k for k in failed_keys if k in results and _needs_retry(k, results[k])]
-        print(f"⏩ 首轮后准备重试：{len(needs_retry)} / {len(pairs)}")
+        print(f"🔍 开始并发检查 {len(pairs)} 对事件的因果关系...")
 
-        for attempt in range(1, MAX_RETRIES + 1):
-            if not needs_retry:
-                break
-            backoff = (RETRY_BACKOFF ** (attempt - 1))
-            try:
-                time.sleep(min(backoff, 5.0))
-            except Exception:
-                pass
+        res_map, still_failed = self._run_with_soft_timeout_and_retries(
+            pairs,
+            work_fn=_work,
+            key_fn=lambda p: (p[0].id, p[1].id),
+            desc_label="并发检查因果关系",
+            per_task_timeout=PER_TASK_TIMEOUT,
+            retries=MAX_RETRIES,
+            retry_backoff=RETRY_BACKOFF,
+            allow_placeholder_first_round=True,
+            placeholder_fn=_placeholder,
+            should_retry=_should_retry
+        )
 
-            pairs_for_retry = [key2pair[k] for k in needs_retry if k in key2pair]
-            batch_desc = f"并发检查因果关系（重试第 {attempt}/{MAX_RETRIES} 轮）"
-            retry_results, retry_failed = _run_batch(
-                pairs_to_run=pairs_for_retry,
-                per_task_timeout=RETRY_TIMEOUT,
-                allow_placeholders=False,
-                desc=batch_desc
-            )
+        # 标注最终仍失败的键
+        for k in still_failed:
+            if k in res_map:
+                res_map[k]["final_fallback"] = True
+                res_map[k]["retries"] = MAX_RETRIES
 
-            improved = 0
-            for k, v in retry_results.items():
-                if not _needs_retry(k, v):
-                    results[k] = v
-                    improved += 1
-            print(f"🔁 重试第 {attempt} 轮：成功覆盖 {improved} 项，仍需重试 {len(retry_failed)} 项")
-
-            needs_retry = [k for k in retry_failed]
-
-        print(f"✅ 因果关系并发检查完成（成功 {len(results) - len(needs_retry)} / {len(pairs)}，仍失败 {len(needs_retry)}）")
-
-        for k in needs_retry:
-            if k in results:
-                r = results[k]
-                r["final_fallback"] = True
-                r["retries"] = MAX_RETRIES
-
-        return results
+        print(f"✅ 因果关系并发检查完成（成功 {len(pairs) - len(still_failed)} / {len(pairs)}，仍失败 {len(still_failed)}）")
+        return res_map
 
     # -----------------------------
     # 初始化：子图 + Louvain
@@ -899,6 +832,15 @@ class EventCausalityBuilder:
             write_property="community",
             force_run=True
         )
+
+        self.clear_directory(self.config.event_plot_graph_path)
+
+    def clear_directory(self, path):
+        for file in glob.glob(os.path.join(path, "*.json")):
+            try:
+                os.remove(file)
+            except Exception as e:
+                print(f"删除失败: {file} -> {e}")
 
     # -----------------------------
     # 主流程1：构建事件因果图（持久化）
@@ -1219,13 +1161,20 @@ class EventCausalityBuilder:
                 return None
 
             print(f"🧠 正在并发判断三元结构...")
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                futures = [executor.submit(process_triangle, tri) for tri in all_triangles]
-                for f in tqdm(as_completed(futures), total=len(futures), desc="LLM判断"):
-                    res = f.result()
-                    if res:
-                        removed_edges.append(res)
+            tri_map, tri_failed = self._run_with_soft_timeout_and_retries(
+                all_triangles,
+                work_fn=process_triangle,                 # (tri) -> Optional[Tuple[src, tgt]]
+                key_fn=lambda tri: tuple(tri["entities"]),
+                desc_label="LLM判断三元结构",
+                per_task_timeout=600.0,
+                retries=1,
+                retry_backoff=1.0,
+                allow_placeholder_first_round=False,
+                placeholder_fn=None,
+                should_retry=lambda r: r is None          # None 代表未能给出裁决
+            )
 
+            removed_edges = [edge for edge in tri_map.values() if edge]
             print(f"❌ 本轮待定移除边数量：{len(set(removed_edges))}")
 
             # —— 删除边
@@ -1369,17 +1318,22 @@ class EventCausalityBuilder:
                 print(f"[!] 处理事件链 {chain} 时出错: {e}")
                 return False
 
-        success_count = 0
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(process_chain, chain) for chain in filtered_chains]
-            for future in tqdm(as_completed(futures), total=len(futures), desc="并发生成情节图谱"):
-                try:
-                    if future.result():
-                        success_count += 1
-                except Exception as e:
-                    print(f"[!] 子任务异常：{e}")
+        chain_map, chain_failed = self._run_with_soft_timeout_and_retries(
+            filtered_chains,
+            work_fn=process_chain,                 # (chain) -> bool
+            key_fn=lambda ch: tuple(ch),
+            desc_label="并发生成情节图谱",
+            per_task_timeout=900.0,
+            retries=2,
+            retry_backoff=1.0,
+            allow_placeholder_first_round=False,
+            placeholder_fn=None,
+            should_retry=lambda ok: not bool(ok)   # False/异常/超时 -> 重试
+        )
 
-        print(f"[✓] 成功生成情节数量：{success_count}/{len(filtered_chains)}")
+        success_count = sum(1 for v in chain_map.values() if v)
+        print(f"[✓] 成功生成情节数量：{success_count}/{len(filtered_chains)} ；仍失败 {len(chain_failed)}")
+
         return
 
     # -----------------------------
@@ -1388,12 +1342,10 @@ class EventCausalityBuilder:
     def generate_plot_relations(self):
         """
         基于候选情节对，判定并写入情节间关系。
-        关系集（最终版）：
+        关系集：
         - 有向：PLOT_PREREQUISITE_FOR, PLOT_ADVANCES, PLOT_BLOCKS, PLOT_RESOLVES
         - 无向：PLOT_CONFLICTS_WITH, PLOT_PARALLELS
-        兼容旧类型：PLOT_CONTRIBUTES_TO / PLOT_SETS_UP → 统一映射为 PLOT_ADVANCES
-        产物：
-          - EPG/plot_relations_created.json
+        产物：EPG/plot_relations_created.json
         """
         # 预处理：向量、GDS 图与嵌入
         self.neo4j_utils.process_all_embeddings(entity_types=[self.meta["section_label"]])
@@ -1404,10 +1356,6 @@ class EventCausalityBuilder:
         all_plot_pairs = self.neo4j_utils.get_plot_pairs(threshold=0)
         print("[✓] 待判定情节关系数量：", len(all_plot_pairs))
 
-        LEGACY_MAP = {
-            "PLOT_CONTRIBUTES_TO": "PLOT_ADVANCES",
-            "PLOT_SETS_UP": "PLOT_ADVANCES"
-        }
         DIRECTED = {
             "PLOT_PREREQUISITE_FOR",
             "PLOT_ADVANCES",
@@ -1420,7 +1368,10 @@ class EventCausalityBuilder:
         }
         VALID_TYPES = DIRECTED | UNDIRECTED | {"None", None}
 
-        edges_to_add = []
+        # 并发参数
+        PER_TASK_TIMEOUT = 900.0
+        MAX_RETRIES = 2
+        RETRY_BACKOFF = 1.0
 
         def _make_edge(src_id, tgt_id, rtype, confidence, reason):
             return {
@@ -1431,82 +1382,84 @@ class EventCausalityBuilder:
                 "reason": reason or ""
             }
 
-        def _parse_direction_to_edge(pair, direction_str, rtype, confidence, reason):
-            """
-            将 A/B 方向映射为真实 src/tgt 边；返回 [edge] 或 []。
-            direction_str: "A->B" / "B->A"
-            """
-            if direction_str == "A->B":
-                return [_make_edge(pair["src"], pair["tgt"], rtype, confidence, reason)]
-            elif direction_str == "B->A":
-                return [_make_edge(pair["tgt"], pair["src"], rtype, confidence, reason)]
-            else:
-                print(f"[!] 跳过：有向关系缺少有效方向 direction={direction_str} pair={pair}")
-                return []
-
-        def process_pair(pair):
+        # 工作函数：返回 {"status": "ok"|"none"|"error", "edges": List[edge], "reason": str}
+        def _work(pair: dict) -> dict:
             try:
-                plot_A_info = self.neo4j_utils.get_entity_info(pair["src"], "情节", contain_properties=True, contain_relations=True)
-                plot_B_info = self.neo4j_utils.get_entity_info(pair["tgt"], "情节", contain_properties=True, contain_relations=True)
+                plot_A_info = self.neo4j_utils.get_entity_info(
+                    pair["src"], "情节", contain_properties=True, contain_relations=True
+                )
+                plot_B_info = self.neo4j_utils.get_entity_info(
+                    pair["tgt"], "情节", contain_properties=True, contain_relations=True
+                )
 
-                # 调用关系判定（LLM/规则）
-                result = self.graph_analyzer.extract_plot_relation(plot_A_info, plot_B_info, self.system_prompt_text)
+                # LLM/规则判定
+                result = self.graph_analyzer.extract_plot_relation(
+                    plot_A_info, plot_B_info, self.system_prompt_text
+                )
 
                 # 尝试修正/解析 JSON
                 try:
                     result = json.loads(correct_json_format(result))
                 except Exception:
-                    if isinstance(result, dict):
-                        pass
-                    else:
+                    if not isinstance(result, dict):
                         raise
 
-                # 读取字段
                 rtype = result.get("relation_type")
-                direction = result.get("direction", None)  # 有向时应为 "A->B" / "B->A"，无向或 None 用 null
+                direction = result.get("direction", None)  # "A->B"/"B->A"（有向）
                 confidence = result.get("confidence", 0.0)
                 reason = result.get("reason", "")
 
-                # 兼容旧枚举
-                if rtype in LEGACY_MAP:
-                    rtype = LEGACY_MAP[rtype]
-
-                # 过滤无效类型
+                # 过滤非法类型
                 if rtype not in VALID_TYPES:
-                    print(f"[!] 未知 relation_type={rtype}，跳过 pair={pair}")
-                    return []
+                    return {"status": "error", "edges": [], "reason": f"unknown relation_type: {rtype}"}
 
-                # None 或无关系
+                # 无关系
                 if rtype in {"None", None}:
-                    return []
+                    return {"status": "none", "edges": [], "reason": "no-relation"}
 
-                pair_edges = []
-
-                # 有向关系
+                # 生成边
                 if rtype in DIRECTED:
-                    pair_edges.extend(_parse_direction_to_edge(pair, direction, rtype, confidence, reason))
+                    if direction == "A->B":
+                        edges = [_make_edge(pair["src"], pair["tgt"], rtype, confidence, reason)]
+                    elif direction == "B->A":
+                        edges = [_make_edge(pair["tgt"], pair["src"], rtype, confidence, reason)]
+                    else:
+                        # 缺少或非法方向：作为错误以便重试
+                        return {"status": "error", "edges": [], "reason": f"missing/invalid direction: {direction}"}
+                else:  # 无向：写双向边
+                    edges = [
+                        _make_edge(pair["src"], pair["tgt"], rtype, confidence, reason),
+                        _make_edge(pair["tgt"], pair["src"], rtype, confidence, reason),
+                    ]
 
-                # 无向关系：写双向边
-                elif rtype in UNDIRECTED:
-                    pair_edges.append(_make_edge(pair["src"], pair["tgt"], rtype, confidence, reason))
-                    pair_edges.append(_make_edge(pair["tgt"], pair["src"], rtype, confidence, reason))
-
-                return pair_edges
+                return {"status": "ok", "edges": edges, "reason": ""}
 
             except Exception as e:
-                print(f"[⚠] 处理情节对 {pair} 出错: {e}")
-                return []
+                return {"status": "error", "edges": [], "reason": str(e)}
 
-        # 并发处理
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(process_pair, pair) for pair in all_plot_pairs]
-            for future in tqdm(as_completed(futures), total=len(futures), desc="抽取情节关系"):
-                try:
-                    res = future.result()
-                    if res:
-                        edges_to_add.extend(res)
-                except Exception as e:
-                    print(f"[⚠] future 结果处理出错: {e}")
+        # 仅对 "error" 重试；"none" 不重试；"ok" 不重试
+        def _should_retry(res: dict) -> bool:
+            return isinstance(res, dict) and res.get("status") == "error"
+
+        # 统一并发执行
+        res_map, still_failed = self._run_with_soft_timeout_and_retries(
+            all_plot_pairs,
+            work_fn=_work,
+            key_fn=lambda p: (p["src"], p["tgt"]),
+            desc_label="抽取情节关系",
+            per_task_timeout=PER_TASK_TIMEOUT,
+            retries=MAX_RETRIES,
+            retry_backoff=RETRY_BACKOFF,
+            allow_placeholder_first_round=False,
+            placeholder_fn=None,
+            should_retry=_should_retry
+        )
+
+        # 汇总边
+        edges_to_add = []
+        for out in res_map.values():
+            if isinstance(out, dict) and out.get("status") == "ok" and out.get("edges"):
+                edges_to_add.extend(out["edges"])
 
         # 批量写入 Neo4j + EPG
         if edges_to_add:
@@ -1519,3 +1472,6 @@ class EventCausalityBuilder:
                 json.dump(edges_to_add, f, ensure_ascii=False, indent=2)
         else:
             print("[!] 没有生成任何情节关系")
+
+        if still_failed:
+            print(f"[!] 仍失败的情节对数量：{len(still_failed)}")
