@@ -209,31 +209,14 @@ class RelationalDatabaseBuilder:
         conn.commit()
         print(f"✅ 构建SQL数据库成功: {db_path}")
         df_cmp.to_csv(os.path.join(self.config.storage.sql_database_path, "CMP_info.csv"), index=False)
+        conn.close()
 
-
-        {
-            "id": "doc_49_chunk_0",
-            "content": "太空电梯轿厢内，乘客区的乘客陆续落座。驾驶区和乘客区之间有一道门相隔，两个区域之间是一道玻璃墙，相互可以看到。此时乘客区三位和其他乘客一样身着抗荷服的人员——假韩朵朵（女，亚裔面孔，身材火辣）、假赫伯特（男，非裔面孔，身材精壮）、假山姆（男，欧裔面孔，戴眼镜）也正前往乘客区第一排准备落座。韩朵朵则站在驾驶区的一块屏幕前，做发射前的调试检查工作。刘培强有些不好意思，背手拿着花，蹑手蹑脚走到韩朵朵身后。\n刘培强：嗨。\n字卡：距袭击还剩4 分钟\n一旁的赫伯特冲刘培强做手势，示意加油。韩朵朵转过身看见刘培强和他身后的玫瑰花，一脸惊喜，一把接过。\n韩朵朵：送花啊？送谁啊？要不我帮你转交？\n刘培强：这不给那谁嘛。\n韩朵朵：谁？\n面对落落大方的韩朵朵，刘培强语无伦次，扭头准备跑路。一回头，发现大玻璃墙上贴满了对面乘客区来看热闹的脸，都对刘培强的中途落跑表示出强烈失望。\n刘培强：去！散了，散了。\n眼看刘培强就要跨出驾驶区的门，韩朵朵喊住他。\n韩朵朵：要不，等你想好了，我再帮你转交？反正，我在呢，一直都在！",
-            "document_id": "doc_49",
-            "start_pos": 0,
-            "end_pos": 451,
-            "metadata": {
-            "chunk_index": 0,
-            "chunk_type": "document",
-            "doc_title": "19、INT.日.利伯维尔 UEG 基地 太空电梯 02 号轿厢",
-            "scene_category": "INT",
-            "lighting": "日",
-            "space": "现实世界",
-            "region": "利伯维尔 UEG 基地",
-            "main_location": "太空电梯 02 号轿厢",
-            "sub_location": "驾驶区",
-            "summary": "刘培强试图向韩朵朵表白却语无伦次，被乘客区众人围观后试图逃离，韩朵朵主动提出帮忙转交玫瑰花",
-            "title": "19、INT.日.利伯维尔 UEG 基地 太空电梯 02 号轿厢",
-            "subtitle": "",
-            "order": 49,
-            "total_doc_chunks": 1
-            }
-        }
+    def build_scene_info(self):
+        db_path = os.path.join(self.config.storage.sql_database_path, "CMP.db")
+        os.makedirs(self.config.storage.sql_database_path, exist_ok=True)
+        if os.path.exists(db_path):
+            os.remove(db_path)
+        conn = sqlite3.connect(db_path)
 
         rows = []
         base = self.config.storage.knowledge_graph_path
@@ -258,5 +241,6 @@ class RelationalDatabaseBuilder:
             "subtitle": "子场次名",
         }).drop_duplicates()
         df_scene.to_sql("Scene_info", conn, if_exists="replace", index=False)
-        conn.close()
+        conn.commit()
         df_scene.to_csv(os.path.join(self.config.storage.sql_database_path, "Scene_info.csv"), index=False)
+        conn.close()

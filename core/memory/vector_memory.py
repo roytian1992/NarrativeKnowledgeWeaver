@@ -34,25 +34,23 @@ class VectorMemory(BaseMemory):
     def _init_vector_db(self) -> None:
         """初始化向量数据库"""
         try:
-            if self.config.graph_embedding.provider == "openai":
+            if self.config.graph_embedding.provider != "local":
                 from core.model_providers.openai_embedding import OpenAIEmbeddingModel
                 self.embedding_model = OpenAIEmbeddingModel(self.config.graph_embedding)
-                
-                
-            else:
-                from langchain_community.embeddings import HuggingFaceEmbeddings
-            
-                # 初始化嵌入模型
-                self.embedding_model = HuggingFaceEmbeddings(
-                    model_name=self.config.graph_embedding.model_name,
+                # 初始化向量数据库
+                self.vector_db = Chroma(
+                    collection_name="memory",
+                    embedding_function=self.embedding_model,
+                    persist_directory=self.memory_path
                 )
-            
-            # 初始化向量数据库
-            self.vector_db = Chroma(
-                collection_name="memory",
-                embedding_function=self.embedding_model.model,
-                persist_directory=self.memory_path
-            )
+            else:
+                from sentence_transformers import SentenceTransformer
+                self.embedding_model = SentenceTransformer(self.config.graph_embedding.model_name)
+                self.vector_db = Chroma(
+                    collection_name="memory",
+                    embedding_function=self.embedding_model,
+                    persist_directory=self.memory_path
+                )
             
             # print("向量记忆初始化成功")
         except Exception as e:

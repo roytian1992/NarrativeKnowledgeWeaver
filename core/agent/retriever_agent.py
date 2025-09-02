@@ -398,11 +398,11 @@ class QuestionAnsweringAgent:
             documents.append(Document(page_content=content, metadata=meta))
 
         return [
-            Search_By_Character(self.db_path),
-            Search_By_Scene(self.db_path),
+            # Search_By_Character(self.db_path),
+            # Search_By_Scene(self.db_path),
             Chunk_To_Scene(self.db_path),
             Scene_To_Chunks(self.db_path),
-            NLP2SQL_Query(self.db_path, self.llm),
+            # NLP2SQL_Query(self.db_path, self.llm),
             BM25SearchDocsTool(documents)
         ]
 

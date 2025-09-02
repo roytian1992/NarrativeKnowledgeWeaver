@@ -108,67 +108,98 @@ class OpenAICompatEmbeddings:
 
 
 # --- 统一的嵌入封装 ---
+# --- 统一的嵌入封装 ---
 class OpenAIEmbeddingModel:
+    """
+    兼容 LangChain Embeddings 接口与原生 chromadb 的 callable：
+    - embed_documents(List[str]) -> List[List[float]]
+    - embed_query(str) -> List[float]
+    - __call__(List[str]) -> List[List[float]]  # 原生 chromadb 可直接当函数用
+    """
     def __init__(self, config):
         self.base_url   = config.base_url
         self.api_key    = getattr(config, "api_key", "x")
         self.model      = config.model_name
         self.max_tokens = getattr(config, "max_tokens", None)
-        self.dimensions = getattr(config, "dimensions", None)
+        self.dimensions = getattr(config, "dimensions", None)  # 不主动传给 API
         self.normalize  = True
+        self.batch_size = getattr(config, "batch_size", 128)
 
         from openai import OpenAI
         self.cli = OpenAI(base_url=self.base_url, api_key=self.api_key)
 
         name = (self.model or "").lower()
-        # 仅对“确实有双头/指令前缀”的模型启用前缀，其余（含 Qwen）一律空前缀
-        self._is_dual = any(k in name for k in ["bge", "gte", "m3"])
+        # 对带双头前缀的模型使用 'passage:' / 'query:'；Qwen 之类用空前缀
+        self._is_dual   = any(k in name for k in ["bge", "gte", "m3"])
         self.doc_prefix = "passage: " if self._is_dual else ""
         self.qry_prefix = "query: "   if self._is_dual else ""
 
-    # 统一的预处理（不做奇怪的 input_type；Qwen 走空前缀）
+    # 统一的预处理（可选字符级截断，默认足够宽松）
     def _prep(self, texts, prefix):
         outs = []
         for t in texts:
             s = prefix + (t or "")
-            # 一般不建议做字符截断；如需保险也让阈值足够大
             if self.max_tokens and self.max_tokens > 0:
-                # 可选：保留，但 Qwen 上通常没必要
-                s = s  # 不截断或你自己的 tokenizer 截断
+                s = s[: self.max_tokens - 10]  # 近似安全截断；通常对 Qwen 不需要
             outs.append(s)
         return outs
 
-    def _embed(self, texts):
+    def _l2_norm(self, vec):
+        s = (sum(x * x for x in vec) ** 0.5)
+        if s < 1e-12:
+            return vec[:]  # 零向量直接返回；也可以返回原值避免 NaN
+        inv = 1.0 / (s + 1e-12)
+        return [x * inv for x in vec]
+
+    def _embed(self, texts: List[str]) -> List[List[float]]:
+        # 不传 dimensions，避免部分后端不支持
         resp = self.cli.embeddings.create(model=self.model, input=texts)
         vecs = [d.embedding for d in resp.data]
         if self.normalize:
-            # L2 归一
-            out = []
-            for v in vecs:
-                s = (sum(x*x for x in v) ** 0.5) or 1e-12
-                out.append([x/s for x in v])
-            return out
+            vecs = [self._l2_norm(v) for v in vecs]
         return vecs
 
-    # --- 关键：encode() 走“文档分支”，与 ST.encode([...]) 对齐 ---
-    def encode(self, text_or_texts):
+    # =============== 核心公开接口 ===============
+
+    # 与 SentenceTransformer.encode([...]) 语义一致（文档分支）
+    def encode(self, text_or_texts: Union[str, List[str]]) -> Union[List[float], List[List[float]]]:
         if isinstance(text_or_texts, str):
-            texts = [text_or_texts]
-            inputs = self._prep(texts, self.doc_prefix)  # 文档前缀（Qwen为空）
-            vecs = self._embed(inputs)
-            return vecs[0]
+            inputs = self._prep([text_or_texts], self.doc_prefix)
+            return self._embed(inputs)[0]
         else:
             inputs = self._prep(list(text_or_texts), self.doc_prefix)
-            return self._embed(inputs)
+            # 批处理
+            out: List[List[float]] = []
+            for i in range(0, len(inputs), self.batch_size):
+                out.extend(self._embed(inputs[i:i + self.batch_size]))
+            return out
 
-    # 分离出的查询接口（只有明确需要时才用）
-    def encode_query(self, text_or_texts):
+    # 专门的查询分支（双头模型用 query 前缀；其它沿用 doc 前缀）
+    def encode_query(self, text_or_texts: Union[str, List[str]]) -> Union[List[float], List[List[float]]]:
+        prefix = self.qry_prefix if self._is_dual else self.doc_prefix
         if isinstance(text_or_texts, str):
-            texts = [text_or_texts]
-            inputs = self._prep(texts, self.qry_prefix if self._is_dual else self.doc_prefix)
-            vecs = self._embed(inputs)
-            return vecs[0]
+            inputs = self._prep([text_or_texts], prefix)
+            return self._embed(inputs)[0]
         else:
-            inputs = self._prep(list(text_or_texts), self.qry_prefix if self._is_dual else self.doc_prefix)
-            return self._embed(inputs)
+            inputs = self._prep(list(text_or_texts), prefix)
+            out: List[List[float]] = []
+            for i in range(0, len(inputs), self.batch_size):
+                out.extend(self._embed(inputs[i:i + self.batch_size]))
+            return out
+
+    # -------- LangChain Embeddings 接口所需 --------
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """给向量库写入文档用。"""
+        if not texts:
+            return []
+        return self.encode(texts)  # 文档分支
+
+    def embed_query(self, text: str) -> List[float]:
+        """给检索时的查询用。"""
+        return self.encode_query(text)
+
+    # -------- 原生 chromadb 友好：可当 callable 使用 --------
+    def __call__(self, texts: List[str]) -> List[List[float]]:
+        return self.embed_documents(texts)
+
 
