@@ -1,0 +1,13 @@
+{
+  "id": "extract_wardrobe_minimal_chain_v2",
+  "category": "regular_function",
+  "name": "Wardrobe Extraction (Chain of Thought Version)",
+  "description": "Extract character's worn items, allowing reasonable inference; results are unified in the 'results' array.",
+  "template": "Think internally following these steps, but only output JSON:\n1) Identify characters in the text.n2) Locate **explicit clothing clues** in the original text; extraction is allowed if any of the following conditions are met:\n   - Clothing nouns directly appear and are associated with a person (e.g., wearing/donning + hat, jacket, shirt, long skirt, boots, gloves, scarf, etc.).\n   - Clothing verbs trigger (e.g., wear, put on, drape, tie, button, unbutton, zip up, change into, take off) and point to specific clothing items.\n   - Explicit scene language + clothing words co-occur (e.g., \"change into uniform,\" \"enter sterile room in protective suit\").\n   - Strong scene-specific clothing: In **highly restricted professional or ceremonial settings**, even if specific clothing is not mentioned, it can be reasonably inferred: pilot/flying fighter jet → flight suit; astronaut/spacewalk → spacesuit; military training/combat → military uniform/combat fatigues; wedding → wedding dress/gown; funeral → mourning attire/black clothes.\n   ※ Do not guess based on weak clues like \"someone appeared/walked in/is outdoors/weather.\"\n3) Filter: Do not treat characters/locations/organizations (e.g., space station, library) as clothing; distinguish from styling (e.g., hairstyles) and prop items.\n4) Fill in standardized names, appearance, status, etc., and add additional information or notes in the 'notes' field.\n5) Generate one record corresponding to one character and one item.\n\n{content}\n\nOutput JSON object:\n{{\n  \"results\": [\n    {{\n      \"name\": \"\",\n      \"category\": \"wardrobe\",\n      \"subcategory\": \"\",\n      \"appearance\": \"\",\n      \"status\": \"\",\n      \"character\": \"\",\n      \"evidence\": \"\"\n      \"notes\": \"\"\n    }}\n  ]\n}}",
+  "variables": [
+    {
+      "name": "content",
+      "description": "Text content"
+    }
+  ]
+}

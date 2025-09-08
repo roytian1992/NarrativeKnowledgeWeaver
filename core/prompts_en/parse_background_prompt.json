@@ -1,0 +1,13 @@
+{
+  "id": "parse_background_only",
+  "category": "regular_function",
+  "name": "Extract Background Information (Narrative Style - Supports Incremental Updates)",
+  "description": "Generate a narrative-style background summary",
+  "template": "Read the insight text and generate a JSON as required.\n\n[Goal]\n- Produce a background summary in the style of a book/script synopsis (120-220 words), single paragraph, coherent, highlighting core plans/conflicts and key clues.\n- If a previous version of the background (previous_background) is provided, make minimal modifications and updates without violating the facts of the current text: retain valid information, merge redundancies, and unify terminology.\n\n[Rules]\n1) Standardize previous version: If previous_background is empty, only blank, or \"none/NULL/None\" (case-insensitive), it is considered that no previous version was provided.\n2) Fact priority: Do not fabricate information that does not appear in both parties.\n3) Style constraints: Avoid listing and slogan-like expressions; reduce timeline stacking; maintain consistent proper nouns.\n\nOnly output the top-level key background.\n\n[Previous Background (can be empty or \"none\")]\n{current_background}\n\n[Output Format]\n```json\n{\n  \"background\": \"...\"\n}\n```",
+  "variables": [
+    {
+      "name": "current_background",
+      "description": "Previous background text; can be an empty string or \"none\" to indicate no previous version."
+    }
+  ]
+}

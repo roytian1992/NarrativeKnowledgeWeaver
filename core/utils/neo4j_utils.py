@@ -721,43 +721,89 @@ class Neo4jUtils:
         return labels
 
 
-    def get_relation_summary(self, src_id: str, tgt_id: str, relation_type: str=None) -> Optional[str]:
+    def get_relation_summary(self, src_id: str, tgt_id: str, relation_type: Optional[str] = None) -> Optional[str]:
         """
-        直接在 Neo4j 中查找 src_id 到 tgt_id 之间的特定关系，并返回格式化描述
-        
-        Args:
-            src_id: 源实体 ID
-            tgt_id: 目标实体 ID
-            relation_type: 关系类型（如 "EVENT_CAUSES"）
-        
-        Returns:
-            格式化描述字符串或 None
+        在 Neo4j 中查找 src_id -> tgt_id 的特定关系（或任意关系），返回格式化描述。
+        - 若 relation_type 为合法的 Cypher 标识符，则内联匹配类型；
+        - 否则使用 WHERE type(r) = $relation_type 进行过滤（支持包含空格的类型字符串）。
+        - 若两者都失败，最后再用反引号转义作为兜底（安全地双反引号转义 `）。
         """
-        cypher = f"""
-        MATCH (s {{id: $src_id}})-[r:{relation_type}]->(t {{id: $tgt_id}})
-        RETURN r, s.id AS source_id, t.id AS target_id
-        LIMIT 1
-        """
-        results = self.execute_query(cypher, {"src_id": src_id, "tgt_id": tgt_id})
+        VALID_TYPE_TOKEN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+        def _safe_entity_text(e):
+            if not e:
+                return ("<unknown>", "")
+            name = getattr(e, "name", None) or e.get("name", "<unknown>")
+            desc = getattr(e, "description", None) or e.get("description", "")
+            return (str(name), str(desc))
+    
+        params = {"src_id": src_id, "tgt_id": tgt_id}
+        cypher = None
+
+        # 优先：安全路径（推荐）——不内联类型，使用 type(r) 过滤
+        if relation_type and not VALID_TYPE_TOKEN.match(relation_type):
+            cypher = """
+            MATCH (s {id: $src_id})-[r]->(t {id: $tgt_id})
+            WHERE type(r) = $relation_type
+            RETURN r, s.id AS source_id, t.id AS target_id
+            LIMIT 1
+            """
+            params["relation_type"] = relation_type
+        elif relation_type and VALID_TYPE_TOKEN.match(relation_type):
+            # 合法标识符时，可内联以获得最优性能
+            cypher = f"""
+            MATCH (s {{id: $src_id}})-[r:{relation_type}]->(t {{id: $tgt_id}})
+            RETURN r, s.id AS source_id, t.id AS target_id
+            LIMIT 1
+            """
+        else:
+            # relation_type 为空：返回任意一条两节点之间的边
+            cypher = """
+            MATCH (s {id: $src_id})-[r]->(t {id: $tgt_id})
+            RETURN r, s.id AS source_id, t.id AS target_id
+            LIMIT 1
+            """
+
+        try:
+            results = self.execute_query(cypher, params)
+        except Exception:
+            # 兜底：将关系类型用反引号安全转义后内联（仅当给定了类型）
+            if relation_type:
+                escaped = relation_type.replace("`", "``")
+                cypher_fallback = f"""
+                MATCH (s {{id: $src_id}})-[r:`{escaped}`]->(t {{id: $tgt_id}})
+                RETURN r, s.id AS source_id, t.id AS target_id
+                LIMIT 1
+                """
+                results = self.execute_query(cypher_fallback, {"src_id": src_id, "tgt_id": tgt_id})
+            else:
+                raise
 
         if not results:
             return None
 
         record = results[0]
         relation = record["r"]
-        description = ""
-        subject_name = self.get_entity_by_id(src_id).name
-        subject_description = self.get_entity_by_id(src_id).description
-        object_name = self.get_entity_by_id(tgt_id).name
-        object_description = self.get_entity_by_id(tgt_id).description
-        if relation_type in EVENT_PLOT_GRAPH_RELS:
-            if relation.get("reason", ""):
-                description = " 理由: " + str(relation.get("reason"))
-            return f"{src_id} --> {tgt_id}\n{subject_description}-->{object_description}{description}"
-            
-        relation_name = relation.get("relation_name", relation.get("predicate", relation_type))
-        description = ":" + relation.get("description", "无相关描述")
-        return f"{subject_name}({subject_description})-{relation_name}->{object_name}({object_description}){description}"
+
+        subject = self.get_entity_by_id(src_id)
+        obj = self.get_entity_by_id(tgt_id)
+        subject_name, subject_description = _safe_entity_text(subject)
+        object_name, object_description = _safe_entity_text(obj)
+
+        # EVENT_PLOT_GRAPH_RELS 分支
+        try:
+            in_plot_rels = EVENT_PLOT_GRAPH_RELS  # 假设外部定义
+        except NameError:
+            in_plot_rels = set()
+
+        if relation_type in in_plot_rels:
+            reason = relation.get("reason", "")
+            reason_part = f" 理由: {reason}" if reason else ""
+            return f"{src_id} --> {tgt_id}\n{subject_description}-->{object_description}{reason_part}"
+
+        relation_name = relation.get("relation_name") or relation.get("predicate") or (relation_type or type(relation).__name__)
+        desc = relation.get("description", "无相关描述")
+        return f"{subject_name}({subject_description})-{relation_name}->{object_name}({object_description}):{desc}"
 
 
     def delete_relation_type(self, relation_type):

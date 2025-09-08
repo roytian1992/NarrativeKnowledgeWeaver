@@ -1,0 +1,25 @@
+{
+  "id": "reflect_attributes_prompt",
+  "category": "reflection",
+  "name": "Attribute Extraction Reflection Prompt (Completeness + Correctness, 0-10 Score)",
+  "description": "Checks if entity attribute extraction is complete and consistent with the original text; outputs a 0-10 score and lists fields that need to be retried.",
+  "template": "You are a knowledge graph quality review expert, responsible for checking the **completeness and correctness** of entity attribute extraction.\n\n## 1. Entity Information\n- Entity Type: `{entity_type}`\n- Entity Attribute Description:\n{description}\n\n## 2. Attributes to be Extracted Definition\n{attribute_definitions}\n\n## 3. Current Extraction Results\n{attributes}\n\n## 4. Evaluation Requirements\n- **Completeness**: Are all required fields present? Are there empty strings \"\" or missing fields?\n- **Correctness**: Can the value of each extracted field be fully supported by the original text, and is there no obvious contradiction or misattribution?\n- If a field value cannot be located in the original text, contradicts the original text, or is clearly off-topic, it should be judged as **needs retry**.\n- In the feedback, provide a **brief reason** (≤30 characters) for each problematic field, such as: quoting original text snippets or writing \"not found in original text/contradicts original text\".\n\n## 6. Scoring Criteria (score: 0-10, comprehensive completeness + correctness)\n- **10**: All fields are complete and can be consistently located in the original text.\n- **9**: Only 1 non-critical field has slight uncertainty or insufficient evidence.\n- **8**: ≤2 non-critical fields are missing/insufficient evidence/slightly inconsistent.\n- **7**: There are 2-3 issues, but not involving obvious errors in critical fields.\n- **4-6**: More issues or missing/inconsistent critical fields.\n- **1-3**: Most fields are missing or inconsistent with the original text.\n- **0**: Results are basically irrelevant to the original text or the structure is unusable.\n\n## 7. Output Format (only output the following JSON)\n{{\n  \"feedbacks\": [\"Point out missing/inconsistent fields and brief reasons one by one\"],\n  \"score\": an integer or decimal from 0-10,\n  \"attributes_to_retry\": [\"Field names that need to be re-extracted (including missing and incorrect)\"]\n}}",
+  "variables": [
+    {
+      "name": "entity_type",
+      "description": "Entity type, such as person, event, etc."
+    },
+    {
+      "name": "description",
+      "description": "Brief natural language description of entity attributes"
+    },
+    {
+      "name": "attribute_definitions",
+      "description": "Attribute definitions and meanings, formatted list"
+    },
+    {
+      "name": "attributes",
+      "description": "Extraction results, formatted as {\"attributes\": {...}}"
+    }
+  ]
+}

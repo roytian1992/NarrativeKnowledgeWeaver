@@ -1,0 +1,17 @@
+{
+  "id": "reflect_costume_extraction_v1",
+  "category": "reflection",
+  "name": "Wardrobe, Styling, and Prop Extraction Quality Reflection (Minimal Fields)",
+  "description": "Based on the original text and extraction records, reflect on the quality of wardrobe, styling, and prop extraction from three dimensions: accuracy, consistency, and redundancy; provide actionable, itemized improvement suggestions and scores.",
+  "template": "You are a senior wardrobe, styling, and prop supervisor and data governance engineer. Please reflect on the quality of this text and its extraction records, outputting only JSON (do not explain the process).\n\nI. Input\n- Original text:\n{content}\n- Extraction records (fixed fields: name, category, subcategory, appearance, status, character, evidence; may be multiple entries):\n{logs}\nNote: If the original text itself lacks sufficient information, then missing extraction records are reasonable. In this case, you can directly output score=10, without providing feedbacks.\n\nII. Evaluation Dimensions\n1) Accuracy:\n   - Is the category reasonable (wardrobe / styling / prop)?\n   - Is the subcategory appropriate (e.g., suit, boots, ponytail, mask, tablet, curtain, etc.)?\n   - Is the character an actual character in the text or one that can be inferred via a single path; if an item has multiple characters, is it split into multiple entries?\n   - Can the evidence directly support this entry; are appearance/status consistent with the original text; is there excessive speculation?\n2) Consistency:\n   - Is the 'name' standard unified (remove personal pronouns/possessives, avoid 'someone's coat')?\n   - Are similar items named, capitalized, and terminologically consistent; are similar subcategories unified?\n3) Redundancy:\n   - Are there duplicate records, low-value items, or items unrelated to character appearance (e.g., pure system commands without visible objects)?\n\nIII. Omissions and Inferences\n- Reasonable inferences are allowed but must have a single path basis (e.g., 'pulling the curtains' can infer 'curtains'; 'looking at the screen' can infer 'display screen').\n- Scenarios without basis or with multiple interpretations should be left blank or deleted; if appearance/status can be supplemented by text, please point out where it can be supplemented.\n\nIV. Scoring Rules (0–10)\n0: Extraction missing or largely incorrect, needs rework.\n3: Usable but with many issues, requires significant modification.\n5: Basically usable, several points for improvement.\n7: Good quality, only minor adjustments needed.\n10: Excellent quality, no modifications needed.\n\nV. Output Requirements\n- Output only JSON, in the form of:\n{{\n  \"feedbacks\": [\n    \"<prop> Suggestion…\",\n    \"<styling> Suggestion…\",\n    \"<ward> Suggestion…\"\n  ],\n  \"score\": Integer\n}}\n- Feedbacks are specific actionable suggestions for single or groups of issues, each prefixed by:\n  • <prop> for props\n  • <styling> for styling\n  • <ward> for wardrobe/footwear/accessories\n- If logs are empty: score=0, feedbacks only contain one entry: 'Extraction log missing'.\n\nPlease provide the JSON now.",
+  "variables": [
+    {
+      "name": "content",
+      "description": "Script text content (for verification and reasonable inference)"
+    },
+    {
+      "name": "logs",
+      "description": "List of extracted records (fields: name, category, subcategory, appearance, status, character, evidence)"
+    }
+  ]
+}

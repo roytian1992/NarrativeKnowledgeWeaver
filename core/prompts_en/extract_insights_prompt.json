@@ -1,0 +1,13 @@
+{
+  "id": "story_insight_prompt_v1_terms",
+  "category": "regular_function",
+  "name": "Story Insight Summary (with Professional Terms)",
+  "description": "Extract insights from four perspectives: plot, character relationships, emotional development, and key events, using prefixes <Plot>/<Relationship>/<Emotion>/<Event>/<Term>; only <Term> is mandatory, other prefixes are optional depending on the sufficiency of text information; pay attention to professional terms/abbreviations in the text.",
+  "template": "You are a senior story analyst. Please read the text below and output only a few key insights, focusing on the plot, character relationships, emotional development, and key events; also pay attention to and describe professional terms/abbreviations in the text. Prefix rules: Insights can use one of the following prefixes: <Plot>, <Relationship>, <Emotion>, <Event>, <Term>; only <Term> is mandatory, others are optional; multiple entries can use the same prefix; if information is insufficient, do not write. Terminology processing rules: When explicit professional terms or abbreviations are found, they must be listed separately with the <Term> prefix, and their meaning, function, or status in the text must be summarized in one sentence. Relationship micro-syntax (suggestion): <Relationship> can be expressed as \"Subject—[Relationship Type]→Object; Trigger:…; Trend:…\". General requirements: Do not fabricate; each item should be as concise as possible and no more than two sentences. [Text] {text} [Angle description] Plot: Summarize the main goal, core conflict, important turning points, or outcome tendencies. Character relationships: Point out the relationship types (alliance/opposition/subordination/deviation, etc.) between key characters and their evolutionary triggers and trends. Emotional development: Outline the overall emotional curve and obvious turning points. Key events: Use professional narration to record \"occurrences/turning points/decision points/conflict escalation/resolution nodes\" and other event cores. [Output Format]\n```json\n{\n  \"insights\": \"...\"\n}\n```",
+  "variables": [
+    {
+      "name": "text",
+      "description": "Input story text (usually no more than 500 words)"
+    }
+  ]
+}

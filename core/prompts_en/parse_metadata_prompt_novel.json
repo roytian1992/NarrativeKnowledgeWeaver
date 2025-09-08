@@ -1,0 +1,17 @@
+{
+  "id": "parse_novel_metadata",
+  "category": "regular_function",
+  "name": "Novel chapter metadata extraction",
+  "description": "Used to extract metadata such as space, region, and location from novel chapter content",
+  "template": "Please parse the following novel chapter and extract structured metadata:\n\nChapter title: {title}\n\nChapter content: {text}\n\n**Please extract the following fields:**\n- **space**: Space type (real world/virtual space/fantasy/null)\n- **region**: Region (e.g., \"Paris,\" \"Fantasy Continent,\" \"East Coast\")\n- **main_location**: Main setting (e.g., \"Train Station,\" \"Forest,\" \"Palace\")\n- **time_period**: Time information (e.g., \"Night,\" \"Early Spring,\" \"Future\")\n- **summary**: A one-sentence plot summary of the chapter\n\n**Return format (strictly follows JSON):**\n```json\n{\n  \"metadata\": {\n    \"space\": \"Real world/virtual space/fantasy/null\",\n    \"region\": \"Region information or null\",\n    \"main_location\": \"Main setting location or null\",\n    \"time_period\": \"Time information or null\",\n    \"summary\": \"A one-sentence plot summary\"\n  }\n}\n```\n\nPlease strictly follow the JSON output format and do not add any comments or instructions.",
+  "variables": [
+    {
+      "name": "title",
+      "description": "Novel chapter title"
+    },
+    {
+      "name": "text",
+      "description": "Novel chapter content"
+    }
+  ]
+}

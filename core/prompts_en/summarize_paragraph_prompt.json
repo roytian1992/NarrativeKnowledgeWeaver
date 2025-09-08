@@ -1,0 +1,17 @@
+{
+  "id": "summarize_text",
+  "category": "regular_function",
+  "name": "Generate Summary for Short Text",
+  "description": "Generates a concise and objective summary for a given text, with a maximum length of max_length characters, outputting in a structured JSON format.",
+  "template": "You are a language expert skilled in Chinese text comprehension and summarization. Your task is to read a Chinese text and generate a concise summary no longer than {max_length} characters.\n\nFollow these requirements:\n1. The summary should cover the core information of the text, avoiding irrelevant details;\n2. The summary must be objective and accurate, without fabricating unprovided information;\n3. Do not use redundant expressions such as lists, headings, quotes, or repetitive content;\n4. Please output only a valid JSON object with the following structure:\n```json\n{{\n  \"summary\": \"<summary_content>\"\n}}\n```\nNow, start summarizing based on the original text below:\n\n{text}",
+  "variables": [
+    {
+      "name": "text",
+      "description": "The original Chinese text paragraph to be summarized"
+    },
+    {
+      "name": "max_length",
+      "description": "The maximum length of the summary (in characters), such as 150 or 200"
+    }
+  ]
+}

@@ -390,8 +390,8 @@ class KnowledgeGraphBuilder:
             settings = {"background": "", "abbreviations": []}
  
         self.system_prompt_text = self.construct_system_prompt(
-            background=settings["background"],
-            abbreviations=settings["abbreviations"]
+            background=settings.get("background", ""),
+            abbreviations=settings.get("abbreviations", "")
         )
 
         # 抽取 agent
@@ -437,7 +437,7 @@ class KnowledgeGraphBuilder:
     #  3) 实体 / 关系 抽取
     # ═════════════════════════════════════════════════════════════════════
     def extract_entity_and_relation(self, verbose: bool = True):
-        asyncio.run(self.extract_entity_and_relation_async(verbose=verbose))
+        return asyncio.run(self.extract_entity_and_relation_async(verbose=verbose))
             
     async def extract_entity_and_relation_async(self, verbose: bool = True):
         """
@@ -559,10 +559,11 @@ class KnowledgeGraphBuilder:
         base = self.config.storage.knowledge_graph_path
         with open(os.path.join(base, "extraction_results_refined.json"), "w") as f:
             json.dump(extraction_results, f, ensure_ascii=False, indent=2)
+        return
         
 
     def extract_entity_attributes(self, verbose: bool = True) -> Dict[str, Entity]:
-        asyncio.run(self.extract_entity_attributes_async(verbose=verbose))
+        return asyncio.run(self.extract_entity_attributes_async(verbose=verbose))
     
     async def extract_entity_attributes_async(self, verbose: bool = True) -> Dict[str, Entity]:
         """
@@ -645,7 +646,12 @@ class KnowledgeGraphBuilder:
             print(f"✅ 属性抽取完成，共处理实体 {len(updated_entities)} 个")
             print(f"💾 已保存至：{output_path}")
 
-        return updated_entities
+        return {
+            "status": "success",
+            "processed_entities": len(updated_entities),
+            "output_path": output_path
+        }
+
 
     # ═════════════════════════════════════════════════════════════════════
     #  5) 构建并存储图谱
@@ -706,6 +712,8 @@ class KnowledgeGraphBuilder:
         if verbose:
             print("💾 存储到数据库...")
         self._store_knowledge_graph(verbose)
+        if verbose:
+            print("💾 优化事件节点属性、计算图指标...")
         self.neo4j_utils.enrich_event_nodes_with_context()
         self.neo4j_utils.compute_centrality(exclude_rel_types=[self.meta['contains_pred']])
 

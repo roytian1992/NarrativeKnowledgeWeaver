@@ -1,0 +1,17 @@
+{
+  "id": "reflect_schema_prompt",
+  "category": "reflection",
+  "name": "Overall Schema Quality Assessment",
+  "description": "Read feedbacks, assess the overall quality of the current entity/relationship schema, output a score from 0–10 (higher is better) and a brief reason (focusing on major shortcomings and risks); do not propose specific modification plans.",
+  "template": "Please read the [Feedback List] and evaluate the overall quality of the current **entity schema** and **relationship schema**. Judge solely based on the feedback, do not generate new schemas or renaming proposals. Output an integer `score` from 0–10 (higher score indicates better quality and less need for further adjustment), and 1–2 sentences for `reason` (focusing on major shortcomings and risks, and indicating whether the problem is concentrated in entities/relationships or both, if necessary).\n\n[Scoring Criteria (Addition/Subtraction Logic)]\n- Coverage and Expressiveness: Can common objects/relationships be naturally expressed by the existing schema; full coverage adds points, systemic gaps subtract points.\n- Boundary Clarity: Are entity/relationship definitions easy to distinguish and less confusing; clear boundaries add points, persistent misuse/ambiguity subtracts points.\n- Domain/Range and Direction: Do participating types and directions match usage; good match adds points, systemic mismatch subtracts points.\n- Constraint Robustness: Are symmetry/asymmetry/cardinality/temporal constraints clear and stable; clear and robust adds points, missing or repeatedly violated subtracts points.\n- Feedback Consistency and Coverage: High-confidence, cross-document consistent positive signals add points; if multiple negative feedbacks consistently appear, subtract points; contradictory feedback or only scattered minor issues subtract fewer points.\n- Substitutability: Can the problem be easily avoided through prompts/post-processing; if avoidable, subtract fewer points, if difficult to circumvent, subtract more points.\n\n[Score Range Explanation (for your internal judgment, do not output this section directly)]\n- 9–10: Excellent/stable quality, sufficient coverage, clear boundaries, reasonable constraints; generally no further adjustment needed.\n- 7–8: Good quality, only minor edge cases or textual optimizations; can stop here, or make very minor refinements.\n- 5–6: General quality, local gaps or vague boundaries exist; minor targeted adjustments recommended.\n- 3–4: Low quality, multiple medium issues affect usage; suggested further adjustments.\n- 0–2: Very poor quality, core defects hinder extraction; immediate comprehensive adjustments required.\n\n[Current Schema]\n{schema}\n\n[Feedback List]\n{feedbacks}\n\n[Output Format (JSON only)]\n```json\n{{\n  \"score\": 0,\n  \"reason\": \"Point out major shortcomings and risks in 1–2 sentences (based on feedback); if necessary, indicate whether the problem is concentrated in entities/relationships or both. Do not discuss whether to continue adjusting.\"\n}}\n```",
+  "variables": [
+    {
+      "name": "schema",
+      "description": "Current graph schema"
+    },
+    {
+      "name": "feedbacks",
+      "description": "Collection of feedbacks from the reflection/review phase (list of strings or merged text)"
+    }
+  ]
+}

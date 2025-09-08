@@ -107,6 +107,7 @@ class VDBGetDocsByChunkIDsTool(BaseTool):
         logger.info("🔍 按 chunk_id 获取内容 vdb_get_docs_by_chunk_ids")
         params_dict: Dict[str, Any] = json.loads(params)
         ids = params_dict.get("ids") or []
+        ids = list(set(ids))
 
         results = self.doc_vs.search_by_ids(ids)
         texts = [r.content for r in results]

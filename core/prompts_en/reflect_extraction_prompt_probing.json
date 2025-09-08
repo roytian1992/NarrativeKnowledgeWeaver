@@ -1,0 +1,21 @@
+{
+  "id": "reflect_extraction_prompt_v5_schema_feedback",
+  "category": "reflection",
+  "name": "Knowledge Graph Quality Reflection (Schema Modification Suggestions Only)",
+  "description": "Reflect on and score the extraction quality, and provide story insights; current_issues only include 'must-modify' suggestions for the Schema (coverage, boundaries, granularity, domain/range and direction, constraints, etc.), no instance-level error correction, no renaming or new definition text.",
+  "template": "You are a senior knowledge graph engineer and story interpreter. Please evaluate, score, and output insights based on the following information.\n\n## I. Background Information\n- **Entity Type List**:\n{entity_type_description_text}\n- **Relation Type List** (cannot be modified, deleted, subdivided, merged, or added):\n{relation_type_description_text}\n- If the extraction log `logs` is empty: directly output `score = 0`, `current_issues` only contains \"Missing extraction log\", and `insights` is an empty array.\n\n## II. Limitations of current_issues \n- Only provide feedback on **Schema adaptability**'s **must-modify** issues; do not write optimization items that can be changed or not.\n- Typical must-modify scenarios (examples):\n  - Coverage gaps: common expressions cannot be represented by existing entities/relations;\n  - Boundary confusion: continuous mixed use with adjacent types/relations, affecting judgment;\n  - Improper domain/range or direction: participating types or directionality systematically inconsistent with actual usage;\n  - Missing or unclear constraints: symmetry/asymmetry/cardinality/temporal order leading to stability issues.\n- If \"undefined relation types/usage not in Schema\" appear, they can be written into `current_issues` as **extension/mapping requirement signals**; **do not** give new names, only describe the direction in natural language (e.g., \"need to supplement 'belonging/subordinate' directed relations\").\n- Do not comment on specific triples one by one; do not provide modified Schema text.\n\n## III. Evaluation Dimensions\n1. **Accuracy**: Is the triple logic valid; are undefined/incorrect relation types used.\n2. **Consistency**: Is entity naming unified; is there ambiguity or duplication.\n3. **Redundancy**: Are there low-value, irrelevant, or duplicate entities/relations.\n\n## IV. Scoring Rules (0–10 points)\n| Score | Scenario Example |\n| ---- | -------------------------------- |\n| 0    | Most of the extracted content is wrong or missing, needs complete rework |\n| 3    | Some results are usable, but there are many problems, needs re-extraction |\n| 5    | Quality is acceptable, with several points for improvement |\n| 7    | Quality is good, with only a few points for improvement |\n| 10   | Excellent quality, no changes needed |\n> If score ≥ 8, `insights` can be left blank.\n\n## V. Output Format (only return this JSON, no extra text)\n```json\n{\n  \"current_issues\": [\"Only list must-modify suggestions about the schema, using <entity> and <relation> as prefixes to indicate whether the suggestion is for an entity or a relation.\"],\n  \"insights\": [\"Provide insights from the perspectives of story plot, character relationships, emotional trends, key events, etc. Similar to insights from reading an article (can be left blank)\"],\n  \"score\": integer score (0~10)\n}\n```\n\n## VI. Logs to be evaluated\n{logs}",
+  "variables": [
+    {
+      "name": "logs",
+      "description": "Current extracted entity and triple logs (string list or formatted text)"
+    },
+    {
+      "name": "entity_type_description_text",
+      "description": "Entity type list and their descriptions"
+    },
+    {
+      "name": "relation_type_description_text",
+      "description": "Relation type list and their descriptions"
+    }
+  ]
+}

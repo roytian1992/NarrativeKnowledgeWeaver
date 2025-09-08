@@ -1,0 +1,21 @@
+{
+  "id": "reflect_extraction_prompt_v3",
+  "category": "reflection",
+  "name": "Knowledge Graph Quality Reflection Prompt (Story Insight Version)",
+  "description": "Guides LLM to reflect on entity/triplet extraction quality from three dimensions: accuracy, consistency, and redundancy, and provides a score and story-related insights. Allows pointing out the use of incorrect or undefined relation types in extraction, but prohibits modifying the definition itself.",
+  "template": "You are a senior knowledge graph engineer and story interpreter. You will reflect on the quality of the extraction results and record your findings and insights while reading the original text, which can help people better understand the story and plot.\n\n## I. Background Information\n- **Entity Type List**:\n{entity_type_description_text}\n**Relation Type List** (You cannot modify, delete, subdivide, merge, or add):\n{relation_type_description_text}\n- If the extraction log `logs` is empty, please return `score = 0` directly, and state \"Missing extraction log\" in `current_issues`, with `insights` empty.\n\n> Note:\n> - You **can point out** the use of **incorrect or undefined relation types** in the extraction.\n> - You **cannot suggest** modifying, renaming, subdividing, or adding any relation type definitions (cannot suggest creating new relations).\n\n## II. Evaluation Dimensions\n1. **Accuracy**: Is the triplet logic valid? Are there any undefined or incorrect relation types used?\n2. **Consistency**: Is entity naming unified? Is there any ambiguity or duplication in references?\n3. **Redundancy**: Are there any low-value, irrelevant, or duplicate entities/relations?\n\n## III. Scoring Rules (0–10 points)\n| Score | Example Scenario |\n| ---- | -------------------------------- |\n| 0    | Most of the extracted content is incorrect or missing, requiring a complete redo |\n| 3    | Some results are basically usable, but there are many problems, requiring re-extraction |\n| 5    | Quality is acceptable, with a few minor improvements needed |\n| 7    | Quality is good, with only a very few minor improvements needed, and no particularly erroneous points that must be corrected |\n| 10   | Excellent quality, no changes needed |\n> If the score is ≥ 8, `insights` can be left blank.\n\n## IV. Output Requirements\nPlease strictly output in the following JSON format:\n```json\n{\n  \"current_issues\": [\"List current issues and specific entities or relations that need correction\"],\n  \"insights\": [\"Based on the extraction results, summarize findings and insights from the story plot, character relationships, emotional trends, key events, etc., while reading\"],\n  \"score\": Integer score (0~10)\n}\n```\n\n## V. Logs to be Evaluated\n{logs}",
+  "variables": [
+    {
+      "name": "logs",
+      "description": "Current extracted entity and triplet logs (can be a list of strings or formatted text)"
+    },
+    {
+      "name": "entity_type_description_text",
+      "description": "List of currently used entity types and their descriptions"
+    },
+    {
+      "name": "relation_type_description_text",
+      "description": "List of currently used relation types and their descriptions"
+    }
+  ]
+}

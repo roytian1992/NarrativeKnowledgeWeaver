@@ -1,0 +1,21 @@
+{
+  "id": "reflect_extraction_prompt_allow_empty_v2",
+  "category": "reflection",
+  "name": "Knowledge Graph Quality Reflection Prompts (Null Extraction Permitted • Story Insight Edition)",
+  "description": "To evaluate the quality of knowledge extraction from shorter text segments, allowing entities/relations to be null. The model is required to assess their reasonableness, score them based on dimensions of accuracy, consistency, and redundancy, and generate story-related insights.",
+  "template": "You are a senior knowledge graph engineer and story interpreter, who will reflect on the quality of extraction results and record your discoveries and insights from reading the original text, which can help in understanding the story and plot.\n\n## I. Background Information\n- **Entity Type List**:\n{entity_type_description_text}\n**Relation Type List** (You cannot modify, delete, subdivide, merge, or add):\n{relation_type_description_text}\n\n## II. Notes\n*   The extracted logs (`logs`) may be empty or contain very little content. This is normal.\n*   If you determine that the current text itself does not contain any extractable valid information, then an empty extraction is **justified**, and you may appropriately assign a score of 7 or 10 based on the actual quality.\n*   Conversely, if extractable information exists but was not identified, you should point out the omission and deduct points.\n\n> Note:\n> *   You **may point out** if the extraction used **incorrect or undefined relation types**.\n> *   You **may not suggest** modifying, renaming, subdividing, or adding any relation type definitions.\n\n## III. Evaluation Dimensions\n1.  **Accuracy**: Is the triplet logic valid? Are there incorrect or undefined relation types?\n2.  **Consistency**: Is entity naming unified? Are there referential ambiguities or duplications?\n3.  **Redundancy**: Is there irrelevant, redundant, or low-value information?\n\n## IV. Scoring Rules (0-10 Points)\n\n| Score | Scenario Description |\n| :--- | :----------------------------------------------------------------------------------------------------------------------------- |\n| 0    | Sufficient text information, but extraction results are severely missing or incorrect.                                          |\n| 3    | Significant information not extracted or structure is disorganized.                                                             |\n| 5    | Minor omissions or unclear expression, but the basic structure is correct.                                                     |\n| 7    | Accurate extraction, with only minor room for optimization.                                                                    |\n| 10   | Extraction result is empty and reasonable, or all extraction tasks have been accurately completed.                               |\n\n> If the score is 8 or higher, the `insights` field can be left blank.\n\n## V. Output Format\nPlease strictly follow the JSON format below for output:\n```json\n{\n  \"current_issues\": [\"List current issues and specific entities or relationships that need correction.\"],\n  \"insights\": [\"Based on the extraction results, summarize findings and insights from reading, considering aspects such as plot, character relationships, emotional development, and key events.\"],\n  \"score\": \"Integer score (0-10)\"\n}\n```\n\n## VI. Logs to be Evaluated\n{logs}",
+  "variables": [
+    {
+      "name": "logs",
+      "description": "Logs of currently extracted entities and triples (can be a list of strings or formatted text)"
+    },
+    {
+      "name": "entity_type_description_text",
+      "description": "List of currently used entity types and their descriptions"
+    },
+    {
+      "name": "relation_type_description_text",
+      "description": "List of currently used relationship types and their descriptions"
+    }
+  ]
+}

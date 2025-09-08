@@ -1,0 +1,17 @@
+{
+  "id": "event_context_synthesis_mini_cot_v2",
+  "category": "context_engineering",
+  "name": "Event context distillation (single event·minimal thinking chain-figure modeling)",
+  "description": "Combining the figure and the original text, only the minimum necessary information of the target event is extracted and a lightweight event_card is generated for subsequent correlation/causal judgments; the introduction of external knowledge or speculation is prohibited.",
+  "template": "You are an event graph modeling engineer.Please conduct concise thinking chain reasoning internally, but in the end, only JSON is output, and no external reasoning process is revealed.\n\n---\n\n## Target Events\n{event_info}\n\n{related_context}\n\n---\n\n## Thinking chain steps (only internally, not externally)\n1) Relevance filtering: Only content that directly describes the ontology of the event or provides evidence of time/place/participant/action/result is retained; the rest are discarded.\n2) Grain size judgment: If the expression is more like the superior/lower macro-particle size event, the statement closest to the \"ontology\" of this event is retained to avoid incorporation into other events.\n3) Time clue: Synthesize the time clues that can be determined into a concise time_hint (if unknown, write unknown).\n4) Location and participants: Extract ≤2 locations and ≤3 core participants’ names (can be group abbreviation).\n5) Actions and results: Refine verb phrases with ≤8 words as action; extract ≤2 direct results as outcomes.\n6) Excerpt of evidence: Select 1-2 most direct original evidence sentences from the figure or text.\n7) Output: Stop thinking and generate JSON only in \"output format\".\n\n---\n\n## Output format (strictly followed)\n```json\n{{\n\"event_card\": {{\n\"name\": \"Event name (from input or text induction)\",\n\"summary\": \"≤30 words, outline the ontology of the event (based on evidence only)\",\n\"time_hint\": \"unknown / relative expression / brief time segment\",\n\"locations\": [\"≤2 location names, available\"],\n\"participants\": [\"≤3 key roles/group names, available for vacancy\"],\n\"action\": \"≤8-character verb phrase, such as causing tide abnormality\",\n\"outcomes\": [\"≤2 direct results, can be empty\"],\n\"evidence\": \"The most direct evidence sentence with the event (original text)\"\n}}\n}}\n```\nOnly the above JSON is output, no explanation or extra text is output.",
+  "variables": [
+    {
+      "name": "event_info",
+      "description": "Target event name or brief description (extract anchor points)"
+    },
+    {
+      "name": "related_context",
+      "description": "The event's candidate paragraph set (may contain noise) in the original text"
+    }
+  ]
+}

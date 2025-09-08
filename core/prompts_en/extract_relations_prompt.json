@@ -1,0 +1,21 @@
+{
+  "id": "extract_relations_prompt",
+  "category": "regular_function",
+  "name": "Relation Extraction Tool Prompt",
+  "description": "Used to prompt LLM for relation extraction",
+  "template": "Identify relations between entities from the following text. The **entities (types)** already identified in the current text are:\n\n{entity_list}\n\nIdentify relations between these entities from the following text. **Only use the following relation type enumeration values, do not use natural language or other undefined relation types!**\n\n{relation_type_description_text}\n\n**Do not create new relation types, and the relation field must strictly correspond to one of the English enumeration values above.**\n\nOutput format is strictly as follows (field names must be consistent, do not modify field names):\n```json\n{\n  \"relations\": [\n    {\n      \"subject\": \"Subject Entity\",\n      \"relation_type\": \"Relation Type (one of the English enumeration values above)\",\n      \"relation_name\": \"Specific relation name, cannot be empty, distinguish from relation type\",\n      \"object\": \"Object Entity\",\n      \"description\": \"Description of the relation and basis for extraction (can be an empty string)\"\n    }\n  ]\n}\n```\n\n**Note:**\n- Do not treat expressions like Concept, Event, Object, Action as entities.\n- Only consider relations between listed entities; if no entities are listed, no extraction is needed.\n- If meaningful relations between entities cannot be clearly inferred, **it is better not to extract**\n- Do not extract relations that are logically unclear, have unclear subjects/objects, or ambiguous semantics\n- Only output content in JSON format, do not add extra comments or natural language.\n- Do not output text outside of JSON.\n- Content related to special script elements like cue cards and narrations can be ignored.\n\nText content:\n{text}",
+  "variables": [
+    {
+      "name": "text",
+      "description": "Text content to be extracted"
+    },
+    {
+      "name": "entity_list",
+      "description": "List of entities identified in the text"
+    },
+    {
+      "name": "relation_type_description_text",
+      "description": "List of relation types (auto-generated, English enumeration values + description, separated by newlines)"
+    }
+  ]
+}

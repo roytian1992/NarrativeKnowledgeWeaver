@@ -168,6 +168,7 @@ class RelationalDatabaseBuilder:
             json.dump(all_rows, f, ensure_ascii=False, indent=2)
 
         print(f"✅ 服化道抽取完成: 成功 {len(all_rows)} 行, 失败 {len(still_failed)} 行 (最大尝试 {self.max_retries} 轮)")
+        return
 
     def build_relational_database(self):
         with open(os.path.join(self.config.storage.sql_database_path, "extraction_results.json"), "r") as f:
@@ -214,8 +215,8 @@ class RelationalDatabaseBuilder:
     def build_scene_info(self):
         db_path = os.path.join(self.config.storage.sql_database_path, "CMP.db")
         os.makedirs(self.config.storage.sql_database_path, exist_ok=True)
-        if os.path.exists(db_path):
-            os.remove(db_path)
+        # if os.path.exists(db_path):
+        #     os.remove(db_path)
         conn = sqlite3.connect(db_path)
 
         rows = []

@@ -1,0 +1,13 @@
+{
+  "id": "extract_styling_minimal_chain_v2",
+  "category": "regular_function",
+  "name": "Styling Extraction (Chain of Thought Version)",
+  "description": "Extract character styling, allowing for reasonable inference; results are uniformly placed in the results array.",
+  "template": "Think internally according to the following steps, but only output JSON:\n1) Identify the characters in the text.\n2) Determine their state or scene (e.g., just woke up, injured, ritual, etc.).\n3) Infer styling characteristics (makeup/hair/special effects makeup), for example: messy hair, ponytail, smoky eye makeup, light makeup, blood special effects makeup, old age makeup, etc.\n4) Fill in standardized names, appearance, status, etc., and add additional supplementary information in notes.\n5) Generate one record corresponding to one character and styling.\n\n{content}\n\nOutput JSON object:\n{{\n  \"results\": [\n    {{\n      \"name\": \"\",\n      \"category\": \"styling\",\n      \"subcategory\": \"\",\n      \"appearance\": \"\",\n      \"status\": \"\",\n      \"character\": \"\",\n      \"evidence\": \"\",\n      \"notes\": \"\"\n    }}\n  ]\n}}",
+  "variables": [
+    {
+      "name": "content",
+      "description": "Text content"
+    }
+  ]
+}

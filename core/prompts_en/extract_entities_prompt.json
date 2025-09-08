@@ -1,0 +1,17 @@
+{
+  "id": "extract_entities_prompt",
+  "category": "regular_function",
+  "name": "Entity Extraction Prompt",
+  "description": "Used to prompt LLM for entity extraction",
+  "template": "Identify and extract entities from the following text, and return strictly in the following format:\n\n**Entity type (type field) can only use the following English enumeration values. Customization, translation, or extension is prohibited, and Chinese type names are prohibited:**\n\n{entity_type_description_text}\n\n**Strict requirements:**\n- The type field must be exactly equal to one of the above enumeration values, case-sensitive.\n- If the entity type is uncertain, use Concept by default.\n- It is prohibited to use personal pronouns (He, She, They, I, We, and etc.) as entity names..\n\n**Scope field description:**\n- The scope field is used to mark the semantic range of the entity, and can only be \"global\" or \"local\", and must be included.\n  - If the entity has a clear semantic identity, is named, or it has the possibility of reappearing across chapters/scenes (such as specific named characters or concepts), the scope is \"global\";\n  - If the entity is a one-time general reference, context-dependent, and does not have an independent identity (such as \"a researcher\", \"a passenger\", \"a box\"), the scope is \"local\".\n\n**Other requirements:**\n- If there are no aliases, an empty array aliases: [] can be returned.\n- Extraction should revolve around events, prioritizing the identification of roles involved in the event, objects used, and organizations and locations involved.\n- Ignore invalid objects, environmental descriptions, or natural phenomena (e.g., \"waves\", \"dust\", \"light\").\n- Do not add natural language explanations, comments, or additional instructions.\n\nText content:\n{text}\n\nPlease return strictly in the following JSON format:\n```json\n{\n  \"entities\": [\n    {\n      \"name\": \"Entity Name\",\n      \"type\": \"Entity Type (one of the English enumeration values)\",\n      \"scope\": \"global or local\",\n      \"description\": \"Simple description of the entity and basis for extraction\",\n      \"aliases\": [\"Alias1\", \"Alias2\"]\n    }\n  ]\n}\n```",
+  "variables": [
+    {
+      "name": "text",
+      "description": "Text content to be extracted"
+    },
+    {
+      "name": "entity_type_description_text",
+      "description": "Entity type list (auto-generated, English enumeration values + descriptions, separated by newlines)"
+    }
+  ]
+}

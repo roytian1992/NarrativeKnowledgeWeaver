@@ -1,0 +1,17 @@
+{
+  "id": "schema_feedback_merge_topn_min",
+  "category": "regular_function",
+  "name": "Schema Suggestion Merging TOPN (feedbacks only)",
+  "description": "Filter, merge, deduplicate, and sort a large number of suggestions related to graph Schema.",
+  "template": "You are a knowledge graph construction expert. Extract all suggestions related to graph Schema (i.e., entity types and relationship types) from the input, filter and merge them, but do not show any reasoning process in the output. Rules: Focus only on the Schema layer (entities/relationships/attributes/constraints/naming/granularity/domain-value range/direction/cardinality/disjointness/inheritance, etc.); merge synonymous or duplicate items into one sentence; if there are conflicts, retain the one that covers more broadly and is implementable; each item should be a refined sentence that can be executed, without instance-level details or new concepts, and the total number should not exceed {max_items}.\\n\\n[Input]\\n{context}\\n\\n[Output only the following JSON, with only feedbacks at the top level]\\n```json\\n{{\\\"feedbacks\\\": [\\\"Question or Suggestion 1\\\", \\\"Question or Suggestion 2\\\", \\\"Question or Suggestion 3\\\", ...]}}```",
+  "variables": [
+    {
+      "name": "context",
+      "description": "Original suggestion set text or JSON (each suggestion should contain a unique id and text)"
+    },
+    {
+      "name": "max_items",
+      "description": "Number of merged items to be output (integer)"
+    }
+  ]
+}
