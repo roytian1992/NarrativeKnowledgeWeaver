@@ -90,6 +90,7 @@ class InformationExtractor:
         system_prompt: str,
         original_text: str = None,
         previous_reflection: dict|str = None,
+        enable_thinking: bool = True,
         version: str = "default", 
     ) -> str:
         """反思抽取结果的质量"""
@@ -103,7 +104,7 @@ class InformationExtractor:
                 "version": version,
             }
         result = self.extraction_reflection.call(
-            params=json.dumps(params)
+            params=json.dumps(params), enable_thinking=enable_thinking
         )
         # print("[CHECK] 传入日志: ", logs)
         # print("[CHECK] reflection result: ", result)

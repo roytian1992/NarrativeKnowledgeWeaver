@@ -289,15 +289,6 @@ def _trie_insert(root: _TrieNode, chain: List[str]) -> None:
         node.count += 1
     node.end_count += 1
 
-def _is_substring(sub: List[str], full: List[str]) -> bool:
-    """判断 sub 是否为 full 的连续子串。"""
-    n, m = len(sub), len(full)
-    if n == 0 or n > m:
-        return False
-    for i in range(m - n + 1):
-        if full[i:i+n] == sub:
-            return True
-    return False
 
 def _collect_segments_from_trie(
     root: _TrieNode,
@@ -369,7 +360,6 @@ def segment_trunks_and_branches(
     chains: List[List[str]],
     min_len: int = 2,
     drop_contained: bool = True,
-    *,
     include_cutpoint: bool = False,
     keep_terminal_pairs: bool = False,
 ) -> List[List[str]]:
@@ -412,57 +402,6 @@ def segment_trunks_and_branches(
     return kept
 
 
-
-def _trie_insert(root: _TrieNode, chain: List[str]) -> None:
-    node = root
-    node.count += 1
-    for t in chain:
-        if t not in node.children:
-            node.children[t] = _TrieNode(t)
-        node = node.children[t]
-        node.count += 1
-    node.end_count += 1
-
-def _collect_segments_from_trie(root: _TrieNode, min_len: int = 2) -> List[List[str]]:
-    """
-    规则：
-    - 从根向下累计 path。
-    - 遇到“分叉点”（children>=2）或“有链在此结束”（end_count>0）即切段：
-        * 输出从上一次切点后的路径到当前节点作为一个段；
-        * 对每个子节点，从下一位置另起一段（不重复包含切点）。
-    """
-    segments: List[List[str]] = []
-    stack: List[Tuple[_TrieNode, List[str], int]] = [(root, [], 0)]  # (node, path, last_cut_index)
-
-    while stack:
-        node, path, last_cut = stack.pop()
-
-        if node.token is not None:
-            path = path + [node.token]
-
-        is_branch = len(node.children) >= 2
-        is_chain_end_here = node.end_count > 0
-
-        if is_branch or is_chain_end_here:
-            if len(path) - last_cut >= min_len:
-                segments.append(path[last_cut:])
-
-            for child in node.children.values():
-                stack.append((child, path, len(path)))  # 子段从下一个位置开始
-        else:
-            for child in node.children.values():
-                stack.append((child, path, last_cut))
-
-    # 去重（保持插入顺序的基础上去重）
-    seen = set()
-    uniq_segments: List[List[str]] = []
-    for seg in segments:
-        tup = tuple(seg)
-        if tup not in seen:
-            seen.add(tup)
-            uniq_segments.append(seg)
-    return uniq_segments
-
 def _is_substring(sub: List[str], full: List[str]) -> bool:
     """判断 sub 是否为 full 的有序子串（连续）。"""
     n, m = len(sub), len(full)
@@ -472,38 +411,6 @@ def _is_substring(sub: List[str], full: List[str]) -> bool:
         if full[i:i+n] == sub:
             return True
     return False
-
-def segment_trunks_and_branches(
-    chains: List[List[str]],
-    min_len: int = 2,
-    drop_contained: bool = True
-) -> List[List[str]]:
-    """
-    把多条链按“主干—分支”结构切段：
-        例： [A,B,C,D,E,F,G], [A,B,C,D,H,I,K]
-          -> [A,B,C,D], [E,F,G], [H,I,K]
-    参数：
-        - min_len:   最短段长
-        - drop_contained: 是否去掉被更长段完全包含的短段（基于有序子串判断）
-    """
-    root = _TrieNode()
-    for ch in chains:
-        if ch:
-            _trie_insert(root, ch)
-
-    segs = _collect_segments_from_trie(root, min_len=min_len)
-
-    if not drop_contained:
-        return segs
-
-    # 去掉被更长段完全包含的短段
-    segs_sorted = sorted(segs, key=lambda s: (-len(s), s))
-    kept: List[List[str]] = []
-    for s in segs_sorted:
-        if not any(_is_substring(s, t) for t in kept):
-            kept.append(s)
-    return kept
-
 
 # ----------------------------------------------------------------------
 # =============== 可选：序列相似度（LCS）& MMR 多样化 ===============

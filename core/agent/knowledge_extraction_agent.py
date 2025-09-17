@@ -2,17 +2,19 @@ import json
 from enum import Enum
 from langgraph.graph import StateGraph, END
 from core.utils.format import correct_json_format
+from typing import List, Dict, Any, Tuple, Set
 from core.builder.manager.information_manager import InformationExtractor
 import asyncio  
 import os
+
 
 def generate_suggestions(related_insights, related_history):
     suggestions = ""
     if related_insights:
         suggestions += "之前的阅读的过程中有以下这些发现：\n" + "\n".join(related_insights) + "\n"
-        
+
     if related_history:
-        suggestions += "之前的一些抽取示例：\n" + "\n".join(related_history)
+        suggestions += "之前的一些抽取示例：\n" + "\n".join(related_history) + "\n"
         suggestions += "\n其中7分以上为优秀示例，5分以下可以视作反面示例。"
     return suggestions
 
@@ -58,6 +60,7 @@ class InformationExtractionAgent:
         related_history, related_insights = self.reflector._search_relevant_reflections(content)
         
         suggestions = generate_suggestions(related_insights, related_history)
+        # print("[DEBUG] suggestions: ", suggestions)
 
         reflection_results = {"suggestions": suggestions, 
                               "related_insights": related_insights,
@@ -144,6 +147,7 @@ class InformationExtractionAgent:
             original_text=state["content"],
             previous_reflection=reflection_results,
             system_prompt=self.system_prompt,
+            enable_thinking=False if self.mode == "probing" else True,
             version=version
         )
         result = json.loads(correct_json_format(result))

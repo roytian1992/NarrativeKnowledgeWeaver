@@ -25,7 +25,7 @@ class ExtractionReflector:
         # 修复提示词模板
         self.repair_template = extraction_refletion_repair_template
     
-    def call(self, params: str, **kwargs) -> str:
+    def call(self, params: str, enable_thinking=True, **kwargs) -> str:
         """
         调用提取反思，保证返回correct_json_format处理后的结果
         
@@ -106,7 +106,7 @@ class ExtractionReflector:
                 required_fields=self.required_fields,
                 field_validators=self.field_validators,
                 max_retries=2,
-                enable_thinking=True,
+                enable_thinking=enable_thinking,
                 repair_template=self.repair_template
             )
             if status == "success":

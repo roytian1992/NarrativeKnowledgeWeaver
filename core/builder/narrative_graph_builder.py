@@ -32,7 +32,7 @@ from core.builder.event_processor import (
 )
 
 PER_TASK_TIMEOUT = 600.0
-MAX_RETRIES = 2
+MAX_RETRIES = 3
 RETRY_BACKOFF = 30
 
 
@@ -331,9 +331,10 @@ class EventCausalityBuilder:
             info = self.neo4j_utils.get_entity_info(ev.id, "事件", True, True)
             related_ctx = _collect_related_context_by_section(ev)
             llm_timeout = max(5.0, min(per_task_timeout - 5.0, 1200.0))
-            out = _gen_event_ctx_with_timeout(info, related_ctx, timeout=llm_timeout)
-            card = json.loads(correct_json_format(out))["event_card"]
-            card = format_event_card(card)
+            # out = _gen_event_ctx_with_timeout(info, related_ctx, timeout=llm_timeout)
+            # card = json.loads(correct_json_format(out))["event_card"]
+            # card = format_event_card(card)
+            card = related_ctx
             return card
 
         def _placeholder(ev: Entity, exc=None) -> str:
@@ -423,7 +424,7 @@ class EventCausalityBuilder:
         pairs: List[Tuple[Entity, Entity]]
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         PER_TASK_TIMEOUT = 1800
-        MAX_RETRIES = 2
+        MAX_RETRIES = 3
         RETRY_BACKOFF = 2.0
 
         def _make_result(src_event, tgt_event,
@@ -964,6 +965,7 @@ class EventCausalityBuilder:
         all_chains = self.get_all_event_chains(min_confidence=self.min_edge_confidence)
         print("[✓] 当前事件链总数（按阈值过滤后）：", len(all_chains))
 
+
         # 2) 结构化切分（主干/分支），把长链拆成“情节候选段”
         filtered_chains = segment_trunks_and_branches(
             all_chains,
@@ -1053,7 +1055,7 @@ class EventCausalityBuilder:
             work_fn=process_chain,
             key_fn=lambda ch: tuple(ch),
             desc_label="并发生成情节图谱",
-            per_task_timeout=300.0,
+            per_task_timeout=600.0,
             retries=3,
             retry_backoff=60,
             allow_placeholder_first_round=False,
@@ -1063,6 +1065,9 @@ class EventCausalityBuilder:
 
         success_count = sum(1 for v in chain_map.values() if v)
         print(f"[✓] 成功生成情节数量：{success_count}/{len(filtered_chains)} ；仍失败 {len(chain_failed)}")
+
+        # with open(os.path.join(base, "plot_nodes_created.json"), "w", encoding="utf-8") as f:
+        #     json.dump(chain_map, f, ensure_ascii=False, indent=2)
 
         return
 

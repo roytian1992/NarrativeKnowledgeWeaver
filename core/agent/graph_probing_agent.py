@@ -378,6 +378,19 @@ class GraphProbingAgent:
     
     def reflect_graph_schema(self, state):
         current_schema = state["schema"]
+        BATCH_SIZE = 300
+
+        # 按批次处理 feedbacks
+        summaries = []
+        for i in range(0, len(self.feedbacks), BATCH_SIZE):
+            batch = self.feedbacks[i:i + BATCH_SIZE]
+            all_feedbacks = "\n".join(batch)
+            result = self.prober.summarize_feedbacks(context=all_feedbacks, max_items=20)
+            parsed = json.loads(correct_json_format(result)).get("feedbacks", [])
+            summaries.extend(parsed)
+
+        self.feedbacks = summaries
+
         result = self.prober.reflect_schema(schema=json.dumps(current_schema, indent=2, ensure_ascii=False), feedbacks=self.feedbacks)
         result = json.loads(correct_json_format(result))
         score = float(result["score"])
@@ -413,12 +426,7 @@ class GraphProbingAgent:
         else:
             best_output = state.get("best_output", {})
         
-        
-        # print("[CHECK] 中途产生的建议的数量： ", len(self.feedbacks))
-        all_feadbacks = "\n".join(self.feedbacks)
-        result = self.prober.summarize_feedbacks(context=all_feadbacks, max_items=20)
-        # print("[CHECK]: ", result)
-        self.feedbacks = json.loads(correct_json_format(result)).get("feedbacks", [])
+ 
         # print("[CHECK] 最终建议的数量： ", len(self.feedbacks))
         self.feedbacks.append(state.get("entity_type_distribution",""))
         self.feedbacks.append(state.get("relation_type_distribution",""))

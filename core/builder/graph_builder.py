@@ -776,12 +776,12 @@ class KnowledgeGraphBuilder:
                     existing_chunk_id = existing_entity.source_chunks[0]
                     existing_section_name = self.chunk2section_map[existing_chunk_id]
                     current_section_name = md["doc_title"]
+                    suffix = 1
                     if current_section_name != existing_section_name: # 如果不属于同章节的local，需要重命名。
-                        new_name = f"{ent_data['name']}_in_{chunk_id}"
-                        suffix = 1
+                        new_name = f"{ent_data['name']}_in_{suffix}"
                         while new_name in entity_map:        # 仍冲突则追加 _n
                             suffix += 1
-                            new_name = f"{ent_data['name']}_in_{chunk_id}_{suffix}"
+                            new_name = f"{ent_data['name']}_{suffix}"
                         ent_data["name"] = new_name
 
                 # 创建 / 合并
