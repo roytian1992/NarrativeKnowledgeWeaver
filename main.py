@@ -68,6 +68,7 @@ def main():
     # builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35) # from_scratch 的时候建议 0.35
     # builder.initialize_agents()
     # builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
+    # builder.retry_failed_extractions(verbose=args.verbose) # 实体和关系抽取查漏补缺修复工具
     # builder.run_extraction_refinement(verbose=args.verbose) # 实体消歧
     # builder.extract_entity_attributes(verbose=args.verbose) # 属性抽取
     # kg = builder.build_graph_from_results(verbose=args.verbose)

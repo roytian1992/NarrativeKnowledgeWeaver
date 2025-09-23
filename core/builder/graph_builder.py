@@ -1024,3 +1024,130 @@ class KnowledgeGraphBuilder:
             "document_vector_store": self.document_vector_store.get_stats(),
             "sentence_vector_store": self.sentence_vector_store.get_stats(),
         }
+        
+    # ═════════════════════════════════════════════════════════════════════
+    #  实体和关系抽取查漏补缺修复工具，大规模文本全量抽取重试仍有失败场景下使用
+    # ═════════════════════════════════════════════════════════════════════
+    def retry_failed_extractions(self, verbose: bool = True):
+        """
+        检查 extraction_results.json 中失败的文本块，进行重新抽取
+        """
+        return asyncio.run(self.retry_failed_extractions_async(verbose=verbose))
+
+    async def retry_failed_extractions_async(self, verbose: bool = True):
+        """
+        异步重新抽取失败的文本块，更新 extraction_results.json
+        """
+        base = self.config.storage.knowledge_graph_path
+        extraction_results_path = os.path.join(base, "extraction_results.json")
+
+        # 检查文件是否存在
+        if not os.path.exists(extraction_results_path):
+            if verbose:
+                print("❌ extraction_results.json 文件不存在，无法进行重新抽取")
+            return
+
+        # 加载现有结果
+        with open(extraction_results_path, "r", encoding="utf-8") as f:
+            existing_results = json.load(f)
+
+        # 筛选出失败的文本块
+        failed_results = [result for result in existing_results if result.get("error")]
+
+        if not failed_results:
+            if verbose:
+                print("✅ 没有发现失败的文本块，无需重新抽取")
+            return
+
+        if verbose:
+            print(f"🔍 发现 {len(failed_results)} 个失败的文本块，开始重新抽取...")
+
+        # 加载原始文本块数据
+        all_chunks_path = os.path.join(base, "all_document_chunks.json")
+        if not os.path.exists(all_chunks_path):
+            if verbose:
+                print("❌ all_document_chunks.json 文件不存在，无法获取原始文本块")
+            return
+
+        with open(all_chunks_path, "r", encoding="utf-8") as f:
+            all_chunks_data = json.load(f)
+
+        # 创建 chunk_id 到 TextChunk 的映射
+        chunk_map = {chunk_data["id"]: TextChunk(**chunk_data) for chunk_data in all_chunks_data}
+
+        # 获取需要重新抽取的文本块
+        failed_chunk_ids = {result["chunk_id"] for result in failed_results}
+        chunks_to_retry = [chunk_map[chunk_id] for chunk_id in failed_chunk_ids if chunk_id in chunk_map]
+
+        if not chunks_to_retry:
+            if verbose:
+                print("❌ 无法找到对应的原始文本块数据")
+            return
+
+        # 使用extract_entity_and_relation函数相同的异步抽取逻辑
+        sem = asyncio.Semaphore(self.max_workers)
+
+        async def _arun_once(ch: TextChunk):
+            async with sem:
+                try:
+                    if not ch.content.strip():
+                        result = {"entities": [], "relations": []}
+                    else:
+                        result = await self.information_extraction_agent.arun(
+                            ch.content,
+                            timeout=self.config.agent.async_timeout,
+                            max_attempts=self.config.agent.async_max_attempts,
+                            backoff_seconds=self.config.agent.async_backoff_seconds
+                        )
+                    result.update(chunk_id=ch.id, chunk_metadata=ch.metadata)
+                    return result
+                except Exception as e:
+                    if verbose:
+                        print(f"[ERROR] 重新抽取失败 chunk_id={ch.id} | {e.__class__.__name__}: {e}")
+                    return {
+                        "chunk_id": ch.id,
+                        "chunk_metadata": ch.metadata,
+                        "entities": [],
+                        "relations": [],
+                        "error": f"{e.__class__.__name__}: {e}"
+                    }
+
+        # 并发重新抽取
+        tasks = [_arun_once(ch) for ch in chunks_to_retry]
+        retry_results = []
+
+        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="重新抽取中"):
+            result = await coro
+            retry_results.append(result)
+
+        # 统计重新抽取结果
+        retry_total = len(retry_results)
+        retry_success = sum(1 for r in retry_results if not r.get("error"))
+        retry_failed = retry_total - retry_success
+
+        # 更新原始结果：用成功的重新抽取结果替换失败的原始结果
+        retry_result_map = {r["chunk_id"]: r for r in retry_results}
+        updated_results = []
+
+        for original_result in existing_results:
+            chunk_id = original_result["chunk_id"]
+            if chunk_id in retry_result_map:
+                # 如果重新抽取成功，使用新结果；否则保留原始失败结果
+                new_result = retry_result_map[chunk_id]
+                if not new_result.get("error"):
+                    updated_results.append(new_result)
+                else:
+                    updated_results.append(original_result)  # 保留原始失败结果
+            else:
+                updated_results.append(original_result)
+
+        # 写回文件
+        with open(extraction_results_path, "w", encoding="utf-8") as f:
+            json.dump(updated_results, f, ensure_ascii=False, indent=2)
+
+        if verbose:
+            print(f"🔄 重新抽取完成:")
+            print(f"   - 重新抽取总数: {retry_total}")
+            print(f"   - 重新抽取成功: {retry_success}")
+            print(f"   - 重新抽取失败: {retry_failed}")
+            print(f"💾 已更新至：{extraction_results_path}")
