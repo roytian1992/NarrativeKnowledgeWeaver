@@ -17,9 +17,23 @@ from core.utils.format import correct_json_format
 
 
 # =========================
-# 相似度与聚类工具
+# Similarity & clustering utilities
 # =========================
 def compute_weighted_similarity_and_laplacian(entity_dict, alpha=0.8, knn_k=40):
+    """
+    Compute a weighted similarity matrix (name vs. description), build a symmetric
+    k-NN graph, derive its Laplacian, and estimate cluster count from spectral gaps.
+
+    Args:
+        entity_dict (Dict[str, Dict[str, Any]]): name -> { 'name_embedding', 'description_embedding', ... }
+        alpha (float): Weight for name vs. description similarities (0..1).
+        knn_k (int): Number of neighbors for the k-NN graph.
+
+    Returns:
+        Tuple[int, np.ndarray]:
+            - estimated_k: Estimated number of clusters from Laplacian eigen-gaps.
+            - sim: Weighted similarity matrix.
+    """
     names = list(entity_dict.keys())
     name_embs = np.vstack([entity_dict[n]['name_embedding'] for n in names])
     desc_embs = np.vstack([entity_dict[n]['description_embedding'] for n in names])
@@ -31,20 +45,31 @@ def compute_weighted_similarity_and_laplacian(entity_dict, alpha=0.8, knn_k=40):
     n = sim.shape[0]
     adj = np.zeros((n, n))
     for i in range(n):
-        idx = np.argsort(sim[i])[-(knn_k + 1):-1]  # 排除自己
+        idx = np.argsort(sim[i])[-(knn_k + 1):-1]  # exclude self
         adj[i, idx] = sim[i, idx]
-    adj = np.maximum(adj, adj.T)  # 对称化
+    adj = np.maximum(adj, adj.T)  # symmetrize
 
     deg = np.diag(adj.sum(axis=1))
     lap = deg - adj
 
     eigvals = np.linalg.eigvalsh(lap)
     gaps = np.diff(eigvals)
-    estimated_k = int(np.argmax(gaps[1:]) + 1)  # 跳过第一个gap
+    estimated_k = int(np.argmax(gaps[1:]) + 1)  # skip the first gap
     return estimated_k, sim
 
 
 def run_kmeans_clustering(entity_dict, n_clusters, alpha=0.8):
+    """
+    Run KMeans on concatenated (weighted) embeddings to produce clusters.
+
+    Args:
+        entity_dict (Dict[str, Dict[str, Any]]): name -> { 'name_embedding', 'description_embedding', ... }
+        n_clusters (int): Number of clusters.
+        alpha (float): Weight for name vs. description embeddings in concatenation.
+
+    Returns:
+        List[List[str]]: Clusters as lists of names; only clusters with size >= 2 are returned.
+    """
     names = list(entity_dict.keys())
     name_embs = np.vstack([entity_dict[n]['name_embedding'] for n in names])
     desc_embs = np.vstack([entity_dict[n]['description_embedding'] for n in names])
@@ -69,41 +94,53 @@ def run_kmeans_clustering(entity_dict, n_clusters, alpha=0.8):
 
 
 # =========================
-# 主类
+# Main class
 # =========================
 class GraphPreprocessor:
-    """知识图谱预处理（并发软超时 + 多类型保留 + 可配置清洗/优先级 + scope 收敛）"""
+    """Knowledge-graph preprocessing (concurrent soft timeout, multi-type retention, configurable cleanup/priority, and scope convergence)."""
 
-    # ---- 你可以按需调整默认类型优先级（从高到低）----
+    # Default type priority (high -> low)
     TYPE_PRIORITY: Tuple[str, ...] = (
         "Event", "Action", "Object", "Location", "Character", "Organization", "Concept"
     )
 
-    # ---- 多类型行为的默认策略 ----
-    ALLOW_MULTI_TYPE: bool = True                   # ★ 允许同名实体保留多类型
-    MAX_TYPES_PER_NODE: int = 3                     # ★ 最多保留几个类型（优先级截断）；None 表示不截断
-    STRIP_CONCEPT_WHEN_OTHERS: bool = True          # ★ 若包含 Concept 且有其他类型，移除 Concept
-    UNIFY_ACTION_TO_EVENT: bool = True              # ★ 若 Action 和 Event 同时存在，就把 Action → Event（只保留 Event）
+    # Default strategies for multi-typed entities
+    ALLOW_MULTI_TYPE: bool = True                   # Allow multiple types per entity name
+    MAX_TYPES_PER_NODE: int = 3                     # Keep at most N types (by priority); None = no cap
+    STRIP_CONCEPT_WHEN_OTHERS: bool = True          # If Concept co-exists with others, drop Concept
+    UNIFY_ACTION_TO_EVENT: bool = True              # If Action and Event co-exist, keep Event only
 
     def __init__(self, config: KAGConfig, llm, system_prompt):
+        """
+        Args:
+            config (KAGConfig): Configuration object.
+            llm: Backing LLM instance used by the document parser.
+            system_prompt (str): System prompt passed into merge/summarize validators.
+        """
         self.config = config
         self.system_prompt_text = system_prompt
         self.document_parser = DocumentParser(config, llm)
         self.model = self.load_embedding_model()
-        # 从配置读取并发数；若无则退回默认 4
+        # Load concurrency level from config if available; else fallback to 4
         self.max_worker = getattr(self.config.document_processing, "max_workers", 4)
 
-    # ---------- 通用并发：软超时 ----------
+    # ---------- Generic concurrency: soft timeout ----------
     def _max_workers(self) -> int:
         return int(getattr(self, "max_workers", getattr(self, "max_worker", 4)))
 
     def _soft_timeout_pool(self, work_items, submit_fn, *,
                            per_task_timeout: float = 180.0,
-                           desc: str = "并发任务",
+                           desc: str = "Concurrent tasks",
                            thread_prefix: str = "pool"):
         """
-        通用并发执行器：软超时（不阻塞收尾）、完成即收集、异常/超时降级。
-        返回：List[Tuple[bool timeout_or_error, Any item, Any result_or_exc]]
+        Generic concurrent executor with soft timeouts:
+        - Non-blocking timeouts,
+        - Gather-on-completion,
+        - Graceful degradation on exceptions/timeouts.
+
+        Returns:
+            List[Tuple[bool, Any, Any]]:
+                (timeout_or_error, item, result_or_exception)
         """
         max_workers = self._max_workers()
         executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=thread_prefix)
@@ -120,7 +157,7 @@ class GraphPreprocessor:
             pending = set(fut_info.keys())
             while pending:
                 done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
-                # 收集已完成
+                # Collect finished tasks
                 for f in done:
                     item = fut_info[f]["item"]
                     try:
@@ -131,7 +168,7 @@ class GraphPreprocessor:
                     pbar.update(1)
                     fut_info.pop(f, None)
 
-                # 软超时
+                # Soft timeouts
                 now = now_clock()
                 to_forget = []
                 for f in pending:
@@ -149,8 +186,11 @@ class GraphPreprocessor:
             executor.shutdown(wait=False, cancel_futures=True)
         return results
 
-    # ---------- 模型与数据准备 ----------
+    # ---------- Model & data prep ----------
     def load_embedding_model(self):
+        """
+        Load the embedding model based on configuration.
+        """
         if self.config.graph_embedding.provider == "openai":
             from core.model_providers.openai_embedding import OpenAIEmbeddingModel
             model = OpenAIEmbeddingModel(self.config.graph_embedding)
@@ -160,6 +200,16 @@ class GraphPreprocessor:
         return model
 
     def collect_global_entities(self, extraction_results):
+        """
+        Collect and merge entities marked as 'global' across extraction results,
+        grouped by allowed types. Concatenate descriptions for duplicates.
+
+        Args:
+            extraction_results (List[Dict[str, Any]]): Extraction outputs with 'entities'.
+
+        Returns:
+            Dict[str, Dict[str, Dict[str, Any]]]: type -> name -> entity dict
+        """
         global_entities: Dict[str, List[Dict[str, Any]]] = dict()
         for result in extraction_results:
             for entity in result.get("entities", []):
@@ -182,9 +232,18 @@ class GraphPreprocessor:
         return merged_global_entities
 
     def compute_embeddings(self, filtered_entities: List[Dict[str, Any]]):
-        for entity in tqdm(filtered_entities, desc="计算实体向量"):
+        """
+        Compute and attach embeddings for entity name and description/summary.
+
+        Args:
+            filtered_entities: List of entity dicts.
+
+        Returns:
+            The same list with 'name_embedding' and 'description_embedding' populated.
+        """
+        for entity in tqdm(filtered_entities, desc="Compute entity embeddings"):
             name_embedding = self.model.encode(entity["name"])
-            desc_text = entity.get("summary", entity.get("description", ""))  # 优先 summary
+            desc_text = entity.get("summary", entity.get("description", ""))  # prefer summary
             description_embedding = self.model.encode(desc_text.strip())
             entity["name_embedding"] = name_embedding
             entity["description_embedding"] = description_embedding
@@ -192,6 +251,17 @@ class GraphPreprocessor:
 
     def add_entity_summary(self, merged_global_entities: Dict[str, Dict[str, Dict[str, Any]]],
                            per_task_timeout: float = 180.0):
+        """
+        Summarize entity descriptions in parallel (soft timeout). If a description
+        is already short, use it as-is.
+
+        Args:
+            merged_global_entities: type -> name -> entity dict
+            per_task_timeout: Per-task timeout in seconds.
+
+        Returns:
+            Dict[str, List[Dict[str, Any]]]: type -> list of entities (with 'summary')
+        """
         entity_list: List[Dict[str, Any]] = []
         for t in merged_global_entities:
             entity_list.extend(list(merged_global_entities[t].values()))
@@ -208,7 +278,7 @@ class GraphPreprocessor:
 
         results = self._soft_timeout_pool(
             entity_list, summarize_entity, per_task_timeout=per_task_timeout,
-            desc="生成摘要（并发）", thread_prefix="summ"
+            desc="Summarize entities (concurrent)", thread_prefix="summ"
         )
 
         updated: List[Dict[str, Any]] = []
@@ -225,6 +295,16 @@ class GraphPreprocessor:
         return merged_new
 
     def detect_candidates(self, merged_global_entities: Dict[str, List[Dict[str, Any]]]):
+        """
+        Detect candidate groups of same-named entities to be merged.
+        Uses spectral estimation for cluster count and KMeans for grouping.
+
+        Args:
+            merged_global_entities: type -> list of entities (with embeddings)
+
+        Returns:
+            List[List[str]]: Candidate groups (lists of names) to consider for merging.
+        """
         candidates = []
         for t, ent_list in merged_global_entities.items():
             by_name = {}
@@ -244,6 +324,15 @@ class GraphPreprocessor:
         return candidates
 
     def merge_entities(self, all_candidates_with_info, per_task_timeout: float = 120.0):
+        """
+        For each candidate group, ask the LLM to propose merges (canonical name + aliases).
+
+        Args:
+            all_candidates_with_info: List of groups, each a list of entity dicts with name/summary.
+
+        Returns:
+            Dict[str, str]: alias -> canonical_name mapping.
+        """
         def _empty():
             return {"merges": [], "unmerged": []}
 
@@ -253,9 +342,10 @@ class GraphPreprocessor:
                 for i, e in enumerate(group):
                     name = e.get("name")
                     summary = e.get("summary") or e.get("description") or ""
-                    parts.append(f"实体{i + 1}的名称：{name}\n - 该实体的相关描述为：{summary}\n")
+                    parts.append(
+                        f"Entity {i + 1} name: {name}\n - Description: {summary}\n"
+                    )
                 entity_descriptions = "\n".join(parts)
-                # print("[CHECK] entity_descriptions: ", entity_descriptions)
                 raw = self.document_parser.merge_entities(
                     entity_descriptions=entity_descriptions,
                     system_prompt=self.system_prompt_text
@@ -270,12 +360,12 @@ class GraphPreprocessor:
                 return {"merges": merges, "unmerged": unmerged}
             except Exception as e:
                 names = [str(ent.get("name", "")) for ent in group]
-                print(f"❗实体合并失败: {names} -> {e}")
+                print(f"[!] Entity merge failed: {names} -> {e}")
                 return _empty()
 
         results = self._soft_timeout_pool(
             all_candidates_with_info, _run_group, per_task_timeout=per_task_timeout,
-            desc="实体合并判断（并发）", thread_prefix="merge"
+            desc="Entity merge decision (concurrent)", thread_prefix="merge"
         )
 
         rename_map: Dict[str, str] = {}
@@ -290,27 +380,30 @@ class GraphPreprocessor:
                         rename_map[alias] = canonical
         return rename_map
 
-    # ---------- 统一应用规则，深拷贝并返回 ----------
+    # ---------- Apply rules on a deep copy and return ----------
     def _apply_entity_rules(
         self,
         extraction_results: List[Dict[str, Any]],
         *,
         type_rules: Optional[Dict[str, Dict[str, str]]] = None,   # {entity_name: {old_type: new_type, ...}}
         scope_rules: Optional[Dict[str, str]] = None,              # {entity_name: "global"/"local"}
-        normalize_types: bool = True                                # ★ 应用映射后，是否规范化 type/types
+        normalize_types: bool = True                                # Apply mapping then normalize type/types
     ) -> Tuple[List[Dict[str, Any]], int, int]:
         """
-        深拷贝 extraction_results，在副本上应用规则并返回。
-        加强点：
-        - 对同一实体实例，合并其当前的单类型 `type` 与多标签 `types`，统一做类型映射与清洗；
-        - 清洗使用本类的优先级与策略（去 Concept、Action→Event、排序、限幅）；
-        - 最终同时写回 `types` 与主类型 `type`，确保不会出现【非 Concept 存在时仍保留 Concept】。
+        Apply type/scope rules on a deep copy of `extraction_results`.
+
+        Enhancements:
+        - Merge `type` and `types` for each entity, apply mappings and cleanup once;
+        - Cleanup uses the class strategies (drop Concept, Action→Event, sort by priority, cap count);
+        - Write back both `types` and primary `type`.
+
+        Returns:
+            (new_results, type_changed_count, scope_changed_count)
         """
         new_results = deepcopy(extraction_results)
         type_changed = 0
         scope_changed = 0
 
-        # 便捷：把映射表取一个安全的空映射
         type_rules = type_rules or {}
         scope_rules = scope_rules or {}
 
@@ -321,7 +414,7 @@ class GraphPreprocessor:
                 if not nm:
                     continue
 
-                # ---- 1) 统一汇总当前类型集合（type ∪ types）----
+                # 1) Aggregate current types (type ∪ types)
                 current_types: List[str] = []
                 if isinstance(ent.get("type"), str) and ent["type"].strip():
                     current_types.append(ent["type"].strip())
@@ -330,7 +423,7 @@ class GraphPreprocessor:
                         if isinstance(t, str) and t.strip():
                             current_types.append(t.strip())
 
-                # 去重（保留顺序）
+                # Deduplicate while preserving order
                 seen = set()
                 merged_types = []
                 for t in current_types:
@@ -338,18 +431,18 @@ class GraphPreprocessor:
                         seen.add(t)
                         merged_types.append(t)
 
-                before_types = list(merged_types)  # 记录变化
+                before_types = list(merged_types)
 
-                # ---- 2) 先做类型映射（按实体名命中时把 old_type → new_type）----
+                # 2) Apply per-entity type mapping (old_type -> new_type)
                 if nm in type_rules and isinstance(type_rules[nm], dict):
-                    mapping = type_rules[nm]           # {old_type: new_type}
+                    mapping = type_rules[nm]
                     mapped = []
                     for t in merged_types:
                         new_t = mapping.get(t, t)
                         mapped.append(new_t)
                     merged_types = mapped
 
-                # ---- 3) 规范化 scope（若有规则）----
+                # 3) Normalize scope via rules
                 if nm in scope_rules and isinstance(scope_rules[nm], str):
                     tgt_norm = scope_rules[nm].strip().lower()
                     if tgt_norm in ("global", "local"):
@@ -358,43 +451,40 @@ class GraphPreprocessor:
                             ent["scope"] = tgt
                             scope_changed += 1
 
-                # ---- 4) 规范化类型集合（去 Concept、Action→Event、排序、限幅）----
+                # 4) Normalize type set (drop Concept, unify Action->Event, sort, cap)
                 if normalize_types:
-                    # 用类内清洗逻辑（会依据 STRIP_CONCEPT_WHEN_OTHERS / UNIFY_ACTION_TO_EVENT / TYPE_PRIORITY / MAX_TYPES_PER_NODE）
                     cleaned_list = self._sanitize_type_set(set(merged_types))
                 else:
-                    # 仅去重
                     cleaned_list = list(dict.fromkeys(merged_types))
 
-                # 保底：至少给一个类型
+                # Ensure at least one type remains
                 if not cleaned_list:
                     cleaned_list = ["Concept"]
 
-                # ---- 5) 写回：types 与主类型 type ----
-                # 如果允许多标签：写回完整；否则仅保留主类型
+                # 5) Write back `types` and primary `type`
                 if self.ALLOW_MULTI_TYPE:
                     ent["types"] = cleaned_list
                 else:
                     ent["types"] = [cleaned_list[0]]
 
                 old_type = ent.get("type")
-                ent["type"] = cleaned_list[0]  # 主类型用于兼容下游
+                ent["type"] = cleaned_list[0]
 
-                # 变化统计：只要集合或主类型发生改变，就计数
                 if cleaned_list != before_types or ent["type"] != old_type:
                     type_changed += 1
 
         return new_results, type_changed, scope_changed
 
-    # ---------- 多类型：集合清洗 & 主类型选择 & 限幅 ----------
+    # ---------- Multi-type: set cleanup & primary selection ----------
     def _sanitize_type_set(self, tset: set) -> List[str]:
         """
-        对一个同名实体的类型集合做清洗与裁剪，返回排序后的类型列表（高优先在前）。
-        规则：
-        - 若包含 Concept 且存在其他类型：删除 Concept（可配置）
-        - 若 Action 和 Event 同时存在：把 Action → Event（可配置）
-        - 结果按 TYPE_PRIORITY 排序；若有未知类型，排在已知类型之后、Concept 之前
-        - 若设置了 MAX_TYPES_PER_NODE，则按顺序截断
+        Clean and sort a set of types, returning an ordered list by priority.
+
+        Rules:
+        - If Concept co-exists with other types, remove Concept (configurable).
+        - If Action and Event co-exist, keep Event only (configurable).
+        - Sort by TYPE_PRIORITY; unknown types are placed after known types but above Concept.
+        - If MAX_TYPES_PER_NODE is set, truncate to that many types.
         """
         pr_index = {t: i for i, t in enumerate(self.TYPE_PRIORITY)}
         s = set(tset)
@@ -403,12 +493,12 @@ class GraphPreprocessor:
             s.discard("Concept")
 
         if self.UNIFY_ACTION_TO_EVENT and "Action" in s and "Event" in s:
-            s.discard("Action")  # 只保留 Event
+            s.discard("Action")  # keep Event
 
         def score(t: str) -> int:
             if t == "Concept":
-                return 10_000_000  # 最低
-            return pr_index.get(t, 10_000)  # 未知类型排在已知之后，但高于 Concept
+                return 10_000_000  # lowest priority
+            return pr_index.get(t, 10_000)  # unknown types after known, before Concept
 
         ordered = sorted(s, key=score)
         if self.MAX_TYPES_PER_NODE is not None and self.MAX_TYPES_PER_NODE > 0:
@@ -417,6 +507,9 @@ class GraphPreprocessor:
 
     @staticmethod
     def _collect_type_sets(results: List[Dict[str, Any]]) -> Dict[str, set]:
+        """
+        Collect the union of types per entity name from both `type` and `types`.
+        """
         m = defaultdict(set)
         for doc in results:
             for ent in doc.get("entities", []):
@@ -424,7 +517,6 @@ class GraphPreprocessor:
                 tp = ent.get("type")
                 if nm and isinstance(tp, str):
                     m[nm].add(tp)
-                # 同时兼容已有的多类型字段，合并起来（如果之前就存过）
                 if nm and isinstance(ent.get("types"), list):
                     for t in ent["types"]:
                         if isinstance(t, str):
@@ -433,43 +525,44 @@ class GraphPreprocessor:
 
     def _attach_multilabel(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        ★ 核心：为每个实体写入 `types`（多标签）并设置主类型 `type` 为其中优先级最高的一个。
-        - 若 ALLOW_MULTI_TYPE=False，则退化为只保留主类型（与之前单类型一致）。
+        Attach `types` (multi-label) and set primary `type` to the highest-priority label.
+        If ALLOW_MULTI_TYPE is False, only keep the primary type.
         """
         new_results = deepcopy(results)
         type_sets = self._collect_type_sets(new_results)
 
-        # 逐实体计算清洗后的类型列表
         per_name_types: Dict[str, List[str]] = {}
         for name, s in type_sets.items():
             cleaned = self._sanitize_type_set(s)
-            # 如果清洗后为空（极端情况），至少保留 Concept 兜底
             if not cleaned:
                 cleaned = ["Concept"]
             per_name_types[name] = cleaned
 
-        # 写回：types & type（主类型）
         for doc in new_results:
             for ent in doc.get("entities", []):
                 nm = ent.get("name")
                 if nm in per_name_types:
                     types_list = per_name_types[nm]
                     ent["types"] = types_list if self.ALLOW_MULTI_TYPE else [types_list[0]]
-                    ent["type"] = types_list[0]  # 主类型用于兼容下游
+                    ent["type"] = types_list[0]
         return new_results
 
-    # ---------- 类型细化（并发 + 规则 + 多类型写回） ----------
+    # ---------- Type refinement (concurrent + rules + multi-label writeback) ----------
     def refine_entity_types(self, extraction_results, per_task_timeout: float = 120.0):
-        # 统计：实体 -> 类型集合
+        """
+        Refine entity types by:
+        - Collecting multi-typed entities,
+        - Applying deterministic rules (Concept removal, Action→Event),
+        - Asking the LLM for additional filtering when necessary,
+        - Applying rules and writing back multi-label `types` and primary `type`.
+        """
         entity_type_checker: Dict[str, set] = {}
         for doc in extraction_results:
             for ent in doc.get("entities", []):
                 entity_type_checker.setdefault(ent["name"], set()).add(ent["type"])
 
-        # 仅保留多类型
         entity_type_checker = {k: v for k, v in entity_type_checker.items() if len(v) > 1}
 
-        # 规则预过滤：把 Concept → 非 Concept（若存在），Action → Event（可配置）
         type_rules: Dict[str, Dict[str, str]] = {}
 
         def best_non_concept(ts: set) -> Optional[str]:
@@ -491,7 +584,6 @@ class GraphPreprocessor:
                 type_rules.setdefault(name, {})
                 type_rules[name]["Action"] = "Event"
 
-        # 待检查名单（LLM 验证）
         to_check = [(n, t) for n, t in entity_type_checker.items() if n not in type_rules]
 
         def _check_entity(item):
@@ -509,7 +601,7 @@ class GraphPreprocessor:
         if to_check:
             results = self._soft_timeout_pool(
                 to_check, _check_entity, per_task_timeout=per_task_timeout,
-                desc="检查实体类型（并发）", thread_prefix="etype"
+                desc="Validate entity types (concurrent)", thread_prefix="etype"
             )
             for timeout_or_error, _item, res in results:
                 if timeout_or_error or res is None:
@@ -518,18 +610,20 @@ class GraphPreprocessor:
                 if rules:
                     type_rules[entity] = {**type_rules.get(entity, {}), **rules}
 
-        # 先应用规则（在副本上）
         new_results, _type_changed, _ = self._apply_entity_rules(
             extraction_results=extraction_results, type_rules=type_rules, scope_rules=None
         )
-        # ★ 写回多类型（不会收敛成单一类型）
         new_results = self._attach_multilabel(new_results)
         return new_results
 
-    # ---------- scope 标准化与收敛（不影响类型多标签） ----------
+    # ---------- Scope normalization & convergence (independent of multi-label) ----------
     @staticmethod
     def _norm_scope(val: Optional[str]) -> Optional[str]:
-        """统一 scope 取值到 {'global','local'}，其余返回 None。"""
+        """
+        Normalize scope to {'global','local'}; return None for other values.
+
+        Note: This mapping intentionally preserves multilingual keys.
+        """
         if not isinstance(val, str):
             return None
         v = val.strip().lower()
@@ -541,6 +635,9 @@ class GraphPreprocessor:
 
     @staticmethod
     def _collect_scope_counts(results: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+        """
+        Count occurrences of normalized scope per entity name.
+        """
         counts = defaultdict(lambda: {"global": 0, "local": 0})
         for doc in results:
             for ent in doc.get("entities", []):
@@ -553,12 +650,21 @@ class GraphPreprocessor:
     def refine_entity_scope(self, extraction_results, per_task_timeout: float = 180.0,
                             tie_breaker: str = "global"):
         """
-        1) 先按 LLM 判定（并发+软超时）；
-        2) 全量标准化；
-        3) 多数票兜底；平局按 tie_breaker；
-        4) 返回深拷贝的新对象（同名不再出现多 scope）。
+        Scope refinement procedure:
+        1) Query LLM for suggestions (concurrent + soft timeout);
+        2) Normalize all scopes;
+        3) Majority vote fallback; ties resolved via `tie_breaker`;
+        4) Return a deep-copied result where the same name does not carry multiple scopes.
+
+        Args:
+            extraction_results: Original extraction results.
+            per_task_timeout: Timeout for concurrent LLM checks.
+            tie_breaker: 'global' or 'local' for perfect ties.
+
+        Returns:
+            New results with unified scopes per entity name.
         """
-        # 找出多 scope 的实体
+        # Identify names with multiple scopes
         entity_scope_checker: Dict[str, set] = {}
         for doc in extraction_results:
             for ent in doc.get("entities", []):
@@ -580,7 +686,7 @@ class GraphPreprocessor:
         if to_check_names:
             results = self._soft_timeout_pool(
                 to_check_names, _check_scope, per_task_timeout=per_task_timeout,
-                desc="检查实体scope（并发）", thread_prefix="escope"
+                desc="Validate entity scope (concurrent)", thread_prefix="escope"
             )
             for timeout_or_error, _item, res in results:
                 if timeout_or_error or res is None:
@@ -589,24 +695,24 @@ class GraphPreprocessor:
                 if scope_std in ("global", "local"):
                     scope_rules[name] = scope_std
 
-        # 先应用已判定规则
+        # Apply LLM-derived scope rules first
         new_results, _, _ = self._apply_entity_rules(
             extraction_results=extraction_results, type_rules=None, scope_rules=scope_rules
         )
 
-        # 全量标准化
+        # Normalize all scopes
         for doc in new_results:
             for ent in doc.get("entities", []):
                 sc = self._norm_scope(ent.get("scope"))
                 if sc in ("global", "local"):
                     ent["scope"] = sc
 
-        # 多数票兜底
+        # Majority-vote fallback
         counts = self._collect_scope_counts(new_results)
         fallback_rules: Dict[str, str] = {}
         for name, c in counts.items():
             g, l = c["global"], c["local"]
-            if g > 0 and l > 0:  # 冲突
+            if g > 0 and l > 0:
                 if g > l:
                     target = "global"
                 elif l > g:
@@ -621,8 +727,20 @@ class GraphPreprocessor:
             )
         return new_results
 
-    # ---------- 其他辅助 ----------
+    # ---------- Misc helpers ----------
     def get_entity_info(self, entity_name, extraction_results, scope=None, entity_type=None):
+        """
+        Retrieve entities matching the provided filters.
+
+        Args:
+            entity_name (str): Name to match.
+            extraction_results: Source results.
+            scope (Optional[str]): 'global' or 'local' to filter by scope.
+            entity_type (Optional[str]): Primary type to filter by.
+
+        Returns:
+            List[Dict[str, Any]]: Matching entities.
+        """
         results = []
         for doc in extraction_results:
             for ent in doc.get("entities", []):
@@ -636,27 +754,55 @@ class GraphPreprocessor:
         return results
 
     def prepare_context_by_type(self, entity_name, extraction_results, types):
+        """
+        Build a type-focused context string for LLM validation.
+
+        Args:
+            entity_name (str): Entity name.
+            extraction_results: Source results.
+            types (List[str]): Types to include.
+
+        Returns:
+            str: Formatted context.
+        """
         context = ""
         for type_ in types:
-            context += f"实体类型：{type_}\n"
+            context += f"Entity type: {type_}\n"
             results = self.get_entity_info(entity_name, extraction_results, entity_type=type_)
             for result in results:
-                context += f"- 实体名称: {result['name']}，相关描述为：{result.get('description','')}\n"
+                context += f"- Name: {result['name']}, Description: {result.get('description','')}\n"
             context += "\n"
         return context
 
     def prepare_context_by_scope(self, entity_name, extraction_results):
+        """
+        Build a scope-focused context string for LLM validation.
+
+        Args:
+            entity_name (str): Entity name.
+            extraction_results: Source results.
+
+        Returns:
+            str: Formatted context.
+        """
         context = ""
         for scope_ in ["global", "local"]:
-            context += f"实体scope：{scope_}\n"
+            context += f"Entity scope: {scope_}\n"
             results = self.get_entity_info(entity_name, extraction_results, scope=scope_)
             for result in results:
-                context += f"- 实体名称: {result['name']}，相关描述为：{result.get('description','')}\n"
+                context += f"- Name: {result['name']}, Description: {result.get('description','')}\n"
             context += "\n"
         return context
 
-    # ---------- 实体消歧主流程 ----------
+    # ---------- End-to-end entity disambiguation ----------
     def run_entity_disambiguation(self, extraction_results):
+        """
+        End-to-end pipeline:
+        - Collect and merge global entities (summarize -> embed -> cluster -> LLM merge),
+        - Build alias->canonical rename map,
+        - Apply renames to entities and relations,
+        - Re-attach multi-label types to avoid Concept bleed and preserve labels.
+        """
         merged_global_entities = self.collect_global_entities(extraction_results)
         merged_global_entities = self.add_entity_summary(merged_global_entities)
 
@@ -684,7 +830,7 @@ class GraphPreprocessor:
                   open(os.path.join(base, "rename_map.json"), "w", encoding="utf-8"),
                   ensure_ascii=False, indent=2)
 
-        # 对实体/关系名应用重命名（原地改写即可）
+        # Apply renames in-place for entities and relations
         for result in extraction_results:
             for ent in result.get("entities", []):
                 ent["name"] = rename_map.get(ent["name"], ent["name"])
@@ -696,6 +842,6 @@ class GraphPreprocessor:
                 rel["subject"] = rename_map.get(rel["subject"], rel["subject"])
                 rel["object"] = rename_map.get(rel["object"], rel["object"])
 
-        # ★ 重命名后再写回多类型，避免 Concept 污染且保留多标签
+        # Re-attach multi-label types post-rename
         extraction_results = self._attach_multilabel(extraction_results)
         return extraction_results

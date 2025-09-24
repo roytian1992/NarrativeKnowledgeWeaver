@@ -1,29 +1,35 @@
 import json
-import os
-from typing import List, Dict, Any, Optional, Tuple, Callable
-from collections import deque
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from tqdm import tqdm
+from typing import List, Dict, Any, Optional
 from itertools import chain
+
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 from core.models.data import Document, TextChunk
 from ..utils.config import KAGConfig
 from core.builder.manager.document_manager import DocumentParser
 from core.utils.prompt_loader import PromptLoader
 from core.utils.format import correct_json_format, safe_text_for_json
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError, wait, FIRST_COMPLETED
-import time
+from core.utils.function_manager import run_concurrent_with_retries
 
 
 class DocumentProcessor:
-    """通用文档处理器"""
+    """
+    Narrative-aware document processor (single-pass design):
+      1) Split once with a recursive splitter (base_splitter), then optionally refine via
+         Sliding Semantic Split (LLM boundary detection).
+      2) Run sliding-window summaries directly on the *post-split* chunks (if enabled).
+      3) Compute document-level metadata ONCE from (Title, Aggregated Summary), and
+         attach it to each chunk as `doc_metadata` (if enabled).
+    """
 
     # ------------------------------------------------------------------ #
-    # 初始化
+    # Initialization
     # ------------------------------------------------------------------ #
-    def __init__(self, config: KAGConfig, llm, doc_type="screenplay", max_worker=4):
+    def __init__(self, config: KAGConfig, llm, doc_type: str = "screenplay", max_worker: int = 4):
         self.config = config
         self.llm = llm
         self.doc_type = doc_type
+
         prompt_dir = config.knowledge_graph_builder.prompt_dir
         self.prompt_loader = PromptLoader(prompt_dir)
 
@@ -33,133 +39,16 @@ class DocumentProcessor:
         self.max_content = config.document_processing.max_content_size
         self.max_workers = config.document_processing.max_workers
 
+        # Base recursive splitter
         self.base_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
         )
 
-        # 防止单块文本过长
-        self.pre_splitter = RecursiveCharacterTextSplitter(chunk_size=self.max_content, chunk_overlap=0)
+        # LLM-powered parser utilities
         self.document_parser = DocumentParser(config, llm)
 
     # ------------------------------------------------------------------ #
-    # 通用：窗口化并发 + 软超时 + 多轮重试
-    # ------------------------------------------------------------------ #
-    def _run_windowed_with_retries(
-        self,
-        items: List[Any],
-        task_fn: Callable[[Any], Any],
-        *,
-        per_task_timeout: float = 120.0,
-        max_retry_rounds: int = 1,
-        max_in_flight: Optional[int] = None,
-        desc_prefix: str = "并发任务",
-        treat_empty_as_failure: bool = False,
-        is_empty_fn: Optional[Callable[[Any], bool]] = None,
-    ) -> Tuple[Dict[int, Any], List[int]]:
-        """
-        通用并发调度器：保持窗口大小、对“真正开始时间”进行软超时控制、失败重试 N 轮。
-        返回：({idx: result}, still_failed_indices)
-        """
-        if max_in_flight is None:
-            max_in_flight = int(self.max_workers)
-
-        def _run_round(round_indices: List[int], attempt_idx: int) -> Tuple[Dict[int, Any], List[int]]:
-            results_round: Dict[int, Any] = {}
-            failures_round: List[int] = []
-            todo = deque(round_indices)
-
-            executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix=f"dp_a{attempt_idx}")
-            fut_info: Dict[Any, Dict[str, Any]] = {}
-            pending = set()
-
-            def _submit_one(idx: int):
-                item = items[idx]
-                start_box = {"t": None}
-                def _wrapper(_item, _box):
-                    _box["t"] = time.monotonic()
-                    return task_fn(_item)
-                f = executor.submit(_wrapper, item, start_box)
-                fut_info[f] = {"idx": idx, "start_box": start_box}
-                pending.add(f)
-
-            # 初始填满窗口
-            while todo and len(pending) < max_in_flight:
-                _submit_one(todo.popleft())
-
-            pbar = tqdm(total=len(round_indices), desc=f"{desc_prefix} 第{attempt_idx+1}轮", ncols=100)
-            try:
-                while pending:
-                    done, _ = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
-                    for f in done:
-                        info = fut_info.pop(f)
-                        idx = info["idx"]
-                        try:
-                            res = f.result()
-                            # 空结果是否视为失败
-                            if treat_empty_as_failure:
-                                empty = False
-                                if is_empty_fn is not None:
-                                    empty = bool(is_empty_fn(res))
-                                else:
-                                    empty = (res is None) or (res == []) or (res == {})
-                                if empty:
-                                    failures_round.append(idx)
-                                else:
-                                    results_round[idx] = res
-                            else:
-                                results_round[idx] = res
-                        except Exception as e:
-                            failures_round.append(idx)
-                        pending.remove(f)
-                        pbar.update(1)
-                        # 补位
-                        if todo and len(pending) < max_in_flight:
-                            _submit_one(todo.popleft())
-
-                    # 软超时判定：只对“已真正开始”计时
-                    now = time.monotonic()
-                    to_timeout = []
-                    for f in pending:
-                        sb = fut_info[f]["start_box"]
-                        t0 = sb.get("t")
-                        if t0 is not None and (now - t0) >= per_task_timeout:
-                            to_timeout.append(f)
-
-                    for f in to_timeout:
-                        info = fut_info.pop(f)
-                        idx = info["idx"]
-                        try:
-                            f.cancel()
-                        finally:
-                            failures_round.append(idx)
-                            pending.remove(f)
-                            pbar.update(1)
-                            if todo and len(pending) < max_in_flight:
-                                _submit_one(todo.pop() if todo else None)
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
-                pbar.close()
-
-            return results_round, failures_round
-
-        # 第 1 轮
-        indices = list(range(len(items)))
-        all_results: Dict[int, Any] = {}
-        round_results, failures = _run_round(indices, attempt_idx=0)
-        all_results.update(round_results)
-
-        # 重试轮
-        attempt = 1
-        while failures and attempt <= max_retry_rounds:
-            round_results, failures = _run_round(failures, attempt_idx=attempt)
-            all_results.update(round_results)
-            attempt += 1
-
-        # 返回：成功结果 & 未成功的 index 列表
-        return all_results, failures
-
-    # ------------------------------------------------------------------ #
-    # 语义滑动拆分（增强：小型重试+兜底）
+    # Sliding Semantic Split (LLM boundary detection with small retries)
     # ------------------------------------------------------------------ #
     def sliding_semantic_split(
         self,
@@ -168,54 +57,61 @@ class DocumentProcessor:
         per_chunk_retry: int = 2,
         per_chunk_backoff: float = 0.75
     ) -> List[str]:
-        """对初步切段结果进行二次语义切分（可选）"""
-        results, carry = [], ""
+        """
+        Apply LLM-based boundary detection over merged windows to produce
+        discourse-consistent segments, following the paper's "Sliding Semantic Splitting".
+        """
+        results: List[str] = []
+        carry = ""
 
         for i, seg in enumerate(segments):
-            text_input = carry + seg
+            # Merge carry with current base chunk to form the candidate window
+            text_input = (carry + seg).strip()
             total_len = len(text_input)
 
-            # 长度太短：直接输出上一段，当前段暂存
+            # If too short for a meaningful split, flush old carry and keep seg as new carry
             if total_len < (self.chunk_size + 100) * 0.5:
                 if carry:
-                    results.append(carry.strip())
+                    results.append(carry)
                 carry = seg
                 continue
 
             max_segments = self.max_segments - 1 if total_len < self.chunk_size + 100 else self.max_segments
-            min_length = int(total_len / self.max_segments)
+            min_length = max(1, int(total_len / self.max_segments))
 
             payload = {
-                "text": safe_text_for_json(text_input.strip()),
+                "text": safe_text_for_json(text_input),
                 "min_length": min_length,
                 "max_segments": max_segments
             }
 
-            # 小型重试，避免偶发失败
-            last_err = None
+            # Use the global concurrent runner to standardize retry/timeout behavior at call sites.
+            # Here, we just implement a local, small retry loop because this is a single-call path.
+            last_err: Optional[Exception] = None
             for attempt in range(per_chunk_retry + 1):
                 try:
-                    result = self.document_parser.split_text(json.dumps(payload, ensure_ascii=False))
-                    parsed = json.loads(correct_json_format(result))
-                    sub_segments = parsed.get("segments", [])
-                    if not isinstance(sub_segments, list) or not sub_segments:
-                        raise ValueError(f"splitter returned invalid data on chunk {i}: {sub_segments}")
-                    results.extend([s for s in sub_segments[:-1] if isinstance(s, str) and s.strip()])
-                    carry = sub_segments[-1]
+                    raw = self.document_parser.split_text(json.dumps(payload, ensure_ascii=False))
+                    parsed = json.loads(correct_json_format(raw))
+                    subs = parsed.get("segments", [])
+                    if not isinstance(subs, list) or not subs:
+                        raise ValueError(f"Splitter returned invalid data on chunk {i}: {subs}")
+
+                    # Append all but the last as finalized segments; keep the last as new carry.
+                    results.extend([s for s in subs[:-1] if isinstance(s, str) and s.strip()])
+                    carry = subs[-1] if isinstance(subs[-1], str) else ""
                     last_err = None
                     break
                 except Exception as e:
                     last_err = e
                     if attempt < per_chunk_retry:
-                        try:
-                            time.sleep(min(per_chunk_backoff * (attempt + 1), 2.0))
-                        except Exception:
-                            pass
+                        # small linear backoff
+                        import time as _t
+                        _t.sleep(min(per_chunk_backoff * (attempt + 1), 2.0))
                     else:
-                        # 最后一次仍失败：抛出详细错误
-                        print("[CHECK] payload: ", payload)
-                        print("[CHECK] result: ", locals().get("result", "N/A"))
-                        raise RuntimeError(f"splitter error on chunk {i}: {e}")
+                        # Final failure: surface debug info for diagnosis
+                        print("[CHECK] sliding_semantic_split payload:", payload)
+                        print("[CHECK] splitter raw result:", locals().get("raw", "N/A"))
+                        raise RuntimeError(f"Sliding semantic split failed on chunk {i}: {e}") from e
 
         if isinstance(carry, str) and carry.strip():
             results.append(carry.strip())
@@ -223,346 +119,263 @@ class DocumentProcessor:
         return results
 
     # ------------------------------------------------------------------ #
-    # 元数据抽取（单文档序列版）
+    # JSON loader (each input item -> ONE document; no pre-partitions)
     # ------------------------------------------------------------------ #
-    def extract_metadata(self, documents: List[Dict]) -> List[Dict]:
-        previous_summary = ""
-        documents_ = []
-        for i, doc in enumerate(documents):
-            summary_result = self.document_parser.summarize_paragraph(doc["content"], 200, previous_summary)
-            summary_result = json.loads(correct_json_format(summary_result))
-            summary = summary_result.get("summary", "")
-
-            metadata_result = self.document_parser.parse_metadata(
-                doc["content"], doc.get("title", ""), doc.get("subtitle", ""), self.doc_type
-            )
-            metadata_result = json.loads(correct_json_format(metadata_result))
-            metadata = metadata_result.get("metadata", {})
-
-            previous_summary += summary
-            doc["metadata"] = metadata
-            documents_.append(doc)
-        return documents_
-
-    # ------------------------------------------------------------------ #
-    # 元数据抽取（并发+多轮重试版）
-    # ------------------------------------------------------------------ #
-    def extract_metadata_parallel(
-        self,
-        document_tracker: Dict[str, List[Dict]],
-        *,
-        per_task_timeout: float = 300.0,
-        max_retry_rounds: int = 1,
-        max_in_flight: Optional[int] = None
-    ) -> Dict[str, List[Dict]]:
+    def load_from_json(self, json_file_path: str) -> List[Document]:
         """
-        对 document_tracker 中的每个文档列表并发执行 extract_metadata，窗口化调度，失败可重试。
-        返回同结构的 result_tracker；失败的键返回 []。
+        Load a JSON list of items into a list of Documents.
+        Each input item becomes ONE document (no pre-splitting into partitions).
         """
-        kv_pairs = list(document_tracker.items())
-
-        def _task(pair):
-            key, doc_list = pair
-            return self.extract_metadata(doc_list)
-
-        # treat_empty_as_failure: 抽取空也算失败（可按需调整）
-        all_results_idx, still_failed_idx = self._run_windowed_with_retries(
-            items=kv_pairs,
-            task_fn=_task,
-            per_task_timeout=per_task_timeout,
-            max_retry_rounds=max_retry_rounds,
-            max_in_flight=max_in_flight or self.max_workers,
-            desc_prefix="元数据抽取中",
-            treat_empty_as_failure=False,  # 抽空不一定是错误，保留为 False
-        )
-
-        result_tracker: Dict[str, List[Dict]] = {}
-        for i, (key, _) in enumerate(kv_pairs):
-            if i in all_results_idx:
-                result_tracker[key] = all_results_idx[i]
-            else:
-                print(f"[!] 抽取 {key} 失败（重试后仍失败），返回空列表")
-                result_tracker[key] = []
-
-        return result_tracker
-
-    # ------------------------------------------------------------------ #
-    # 洞见抽取
-    # ------------------------------------------------------------------ #
-    def extract_insights(
-        self,
-        chunks: List[TextChunk],
-        *,
-        per_task_timeout: float = 120.0,
-        max_retry_rounds: int = 1,
-        treat_empty_as_failure: bool = False,
-        max_in_flight: int = None,   # 并发窗口；默认用 self.max_workers
-    ) -> List[TextChunk]:
-
-        if max_in_flight is None:
-            max_in_flight = int(self.max_workers)
-
-        def _stamp_result(
-            ch: TextChunk,
-            insights: List[str],
-            attempt: int,
-            status: str = "ok",   # ok | timeout | exception | empty_failed
-            reason: str = "",
-        ) -> TextChunk:
-            new_meta = dict(ch.metadata or {})
-            new_meta["insights"] = insights or []
-            new_meta["insights_attempt"] = attempt
-            if status == "timeout":
-                new_meta["insights_timeout"] = True
-            if status != "ok":
-                new_meta["insights_failed"] = True
-                if reason:
-                    new_meta["insights_failed_reason"] = reason
-            if hasattr(ch, "model_copy"):
-                return ch.model_copy(update={"metadata": new_meta})
-            else:
-                return ch.copy(update={"metadata": new_meta}, deep=True)
-
-        def _parse_insights(raw: Any) -> List[str]:
-            data = raw if isinstance(raw, dict) else json.loads(correct_json_format(raw))
-            ins = data.get("insights", [])
-            if ins is None:
-                return []
-            if isinstance(ins, list):
-                return [x for x in ins if isinstance(x, str)]
-            return [str(ins)]
-
-        def _run_wrapper(ch: TextChunk, start_box: Dict[str, float]) -> List[str]:
-            start_box["t"] = time.monotonic()
-            raw = self.document_parser.extract_insights(ch.content or "")
-            return _parse_insights(raw)
-
-        def _run_round(round_chunks: List[TextChunk], attempt_idx: int) -> Tuple[List[TextChunk], List[TextChunk]]:
-            results_in_order: List[TextChunk] = []
-            failures: List[TextChunk] = []
-            todo = deque(round_chunks)
-
-            executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix=f"insight_a{attempt_idx}")
-            fut_info: Dict[Any, Dict[str, Any]] = {}
-            pending = set()
-
-            def _submit_one(ch: TextChunk):
-                start_box = {"t": None}
-                f = executor.submit(_run_wrapper, ch, start_box)
-                fut_info[f] = {
-                    "ch": ch,
-                    "attempt": attempt_idx,
-                    "start_box": start_box,
-                }
-                pending.add(f)
-
-            while todo and len(pending) < max_in_flight:
-                _submit_one(todo.popleft())
-
-            pbar = tqdm(total=len(round_chunks), desc=f"洞见抽取 第{attempt_idx+1}轮", ncols=100)
-
-            try:
-                while pending:
-                    done, _ = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
-                    for f in done:
-                        info = fut_info.pop(f)
-                        ch = info["ch"]
-                        try:
-                            insights = f.result()
-                            if treat_empty_as_failure and not insights:
-                                failures.append(ch)
-                                results_in_order.append(_stamp_result(
-                                    ch, [], attempt=attempt_idx, status="empty_failed", reason="empty insights"
-                                ))
-                            else:
-                                results_in_order.append(_stamp_result(
-                                    ch, insights, attempt=attempt_idx, status="ok"
-                                ))
-                        except Exception as e:
-                            failures.append(ch)
-                            results_in_order.append(_stamp_result(
-                                ch, [], attempt=attempt_idx, status="exception", reason=str(e)[:200]
-                            ))
-                        pending.remove(f)
-                        pbar.update(1)
-                        if todo and len(pending) < max_in_flight:
-                            _submit_one(todo.popleft())
-
-                    now = time.monotonic()
-                    to_timeout = []
-                    for f in pending:
-                        sb = fut_info[f]["start_box"]
-                        t0 = sb.get("t")
-                        if t0 is not None and (now - t0) >= per_task_timeout:
-                            to_timeout.append(f)
-
-                    for f in to_timeout:
-                        info = fut_info.pop(f)
-                        ch = info["ch"]
-                        try:
-                            f.cancel()
-                        finally:
-                            failures.append(ch)
-                            results_in_order.append(_stamp_result(
-                                ch, [], attempt=attempt_idx, status="timeout",
-                                reason=f"soft_timeout_{per_task_timeout}s"
-                            ))
-                            pending.remove(f)
-                            pbar.update(1)
-                            if todo and len(pending) < max_in_flight:
-                                _submit_one(todo.popleft())
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
-                pbar.close()
-
-            return results_in_order, failures
-
-        all_results: List[TextChunk] = []
-        round_results, failures = _run_round(chunks, attempt_idx=0)
-        all_results.extend(round_results)
-
-        attempt = 1
-        while failures and attempt <= max_retry_rounds:
-            round_results, failures = _run_round(failures, attempt_idx=attempt)
-            all_results.extend(round_results)
-            attempt += 1
-
-        if failures:
-            for ch in failures:
-                all_results.append(_stamp_result(
-                    ch, [], attempt=attempt-1, status="exception", reason="exhausted_retries"
-                ))
-
-        return all_results
-
-    # ------------------------------------------------------------------ #
-    # 加载 JSON 文件
-    # ------------------------------------------------------------------ #
-    def extract_metadata_wrapper(self, documents: List[Dict]) -> List[Dict]:
-        """可单独暴露的包装（保留原函数名以兼容）"""
-        return self.extract_metadata(documents)
-
-    def load_from_json(self, json_file_path: str, extract_metadata: bool = False) -> List[Document]:
+        import json as _json
         with open(json_file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        self.document_tracker = dict()
-        for data_ in data:
-            content = data_.get("content", "")
-            if len(content) >= self.max_content:
-                text_chunks = self.pre_splitter.split_text(content)
-                if len(text_chunks[-1]) <= 0.25 * self.max_content and len(text_chunks) >= 2:
-                    text_chunks[-2] += text_chunks[-1]
-                    text_chunks.pop()
-            else:
-                text_chunks = [content]
-
-            num_partitions = len(text_chunks)
-            for i, text_chunk in enumerate(text_chunks):
-                copy_ = data_.copy()
-                copy_["content"] = text_chunk
-                copy_["metadata"] = copy_.get("metadata", {})
-                copy_["metadata"]["partition"] = f"{data_['_id']}_{i+1}_{num_partitions}"
-
-                if data_["_id"] not in self.document_tracker:
-                    self.document_tracker[data_["_id"]] = [copy_]
-                else:
-                    self.document_tracker[data_["_id"]].append(copy_)
-
-        if extract_metadata:
-            self.document_tracker = self.extract_metadata_parallel(
-                self.document_tracker,
-                per_task_timeout=300.0,
-                max_retry_rounds=1,
-                max_in_flight=self.max_workers
-            )
-
-        data_chunks = list(chain.from_iterable(self.document_tracker.values()))
+            data = _json.load(f)
 
         documents: List[Document] = []
-        for i, item in enumerate(data_chunks):
-            doc_dict = self._create_document_from_item(item, i)
-            documents.append(doc_dict)
-
+        for i, item in enumerate(data):
+            documents.append(self._create_document_from_item(item, i))
         return documents
 
     # ------------------------------------------------------------------ #
-    # 核心：JSON -> 内部文档 dict
+    # Core: JSON item -> internal document dict
     # ------------------------------------------------------------------ #
     def _create_document_from_item(self, item: Dict[str, Any], index: int) -> Dict:
+        """
+        Build a normalized internal document dict from a raw JSON item.
+        """
         doc_id = f"doc_{index}"
-        title = item.get("title", "")
-        subtitle = item.get("subtitle", "")
-        raw_text = item.get("content", "")
+        title = item.get("title", "") or ""
+        subtitle = item.get("subtitle", "") or ""
+        raw_text = item.get("content", "") or ""
         metadata = item.get("metadata", {}) or {}
-        partition = metadata.get("partition", f"{doc_id}-1")
+
+        # Keep a minimal partition marker for downstream compatibility
+        metadata.setdefault("partition", f"{item.get('_id', doc_id)}_1_1")
 
         doc = {
             "id": doc_id,
             "doc_type": "document",
             "title": title,
-            "partition": partition,
+            "partition": metadata["partition"],
             "subtitle": subtitle,
             "metadata": metadata,
             "content": raw_text.strip()
         }
-
         return doc
 
     # ------------------------------------------------------------------ #
-    # TextChunk -> Document（上游接口所需）
+    # Convert TextChunk -> Document (for upstream interfaces)
     # ------------------------------------------------------------------ #
     def prepare_document(self, chunk: TextChunk) -> Document:
+        """
+        Wrap a TextChunk back into a Document-like object for upstream tools.
+        """
         return Document(id=chunk.id, content=chunk.content, metadata=chunk.metadata)
 
     # ------------------------------------------------------------------ #
-    # 分块策略
+    # Unified chunking + sliding-window summary + doc-level metadata
     # ------------------------------------------------------------------ #
-    def prepare_chunk(self, document: Dict) -> Dict[str, List[TextChunk]]:
+    def prepare_chunk(
+        self,
+        document: Dict,
+        *,
+        use_semantic_split: bool = True,
+        extract_summary: bool = False,
+        extract_metadata: bool = False,
+        summary_max_words: int = 200,
+    ) -> Dict[str, List[TextChunk]]:
         document_chunks: List[TextChunk] = []
 
-        meta = document.get("metadata", {}).copy()
-        title = document.get("title", "")
-        subtitle = document.get("subtitle", "")
-
+        # ---- Common doc fields ----
+        meta = (document.get("metadata") or {}).copy()
+        title = document.get("title", "") or ""
+        subtitle = document.get("subtitle", "") or ""
         meta["title"] = title
         meta["subtitle"] = subtitle
-        meta["order"] = int(document['id'].split("_")[-1])
+        meta["order"] = int(str(document["id"]).split("_")[-1]) if "id" in document else 0
 
-        document_content = document.get("content", "")
-        chunk_index, current_pos = 0, 0
+        text = document.get("content", "") or ""
+        current_pos = 0
 
-        # --- 描述块处理 ---
-        if len(document_content) <= self.chunk_size + 100:
-            split_docs = [document_content]
+        # ---- (1) Split once ----
+        if len(text) <= self.chunk_size + 100:
+            split_docs = [text]
         else:
-            split_docs = self.base_splitter.split_text(document_content)
-            split_docs = self.sliding_semantic_split(split_docs)
+            split_docs = self.base_splitter.split_text(text)
+            if use_semantic_split:
+                split_docs = self.sliding_semantic_split(split_docs)
 
-        for desc in split_docs:
-            start = document_content.find(desc, current_pos)
+        # ---- (2) Rolling summary -> keep ONLY the final doc-level summary ----
+        doc_summary: str = ""
+        if extract_summary and split_docs:
+            history = ""
+            for desc in split_docs:
+                try:
+                    raw = self.document_parser.summarize_paragraph(desc, summary_max_words, history)
+                    parsed = json.loads(correct_json_format(raw))
+                    s = parsed.get("summary", "")
+                    if not isinstance(s, str):
+                        s = str(s) if s is not None else ""
+                    history = s
+                except Exception:
+                    pass
+            doc_summary = history
+        else:
+            doc_summary = ""
+
+        # ---- (3) Document-level metadata from (Title + doc_summary) ----
+        flat_doc_metadata: Dict[str, Any] = {}
+        if extract_metadata:
+            try:
+                raw_md = self.document_parser.parse_metadata(
+                    doc_summary, title, subtitle, self.doc_type
+                )
+                parsed_md = json.loads(correct_json_format(raw_md))
+                md = parsed_md.get("metadata", {})
+                if isinstance(md, dict):
+                    flat_doc_metadata.update(md)
+                    # put summary at top-level
+                    flat_doc_metadata["summary"] = doc_summary
+            except Exception:
+                pass
+
+        # ---- (4) Build chunks ----
+        for i, desc in enumerate(split_docs):
+            start = current_pos
             end = start + len(desc)
+
+            chunk_meta = {
+                "chunk_index": i,
+                "chunk_type": "document",
+                "doc_title": subtitle or title,
+                **meta,                # copy from doc-level
+                **flat_doc_metadata,   # flatten metadata here
+            }
+
             document_chunks.append(
                 TextChunk(
-                    id=f"{document['id']}_chunk_{chunk_index}",
+                    id=f"{document['id']}_chunk_{i}",
                     content=desc,
                     document_id=document["id"],
                     start_pos=start,
                     end_pos=end,
-                    metadata={
-                        "chunk_index": chunk_index,
-                        "chunk_type": "document",
-                        "doc_title": subtitle or title,
-                        **meta,
-                    },
+                    metadata=chunk_meta,
                 )
             )
-            chunk_index += 1
             current_pos = end
 
-        for chunk in document_chunks:
-            chunk.metadata["total_doc_chunks"] = len(document_chunks)
+        # annotate total chunks
+        total = len(document_chunks)
+        for ch in document_chunks:
+            ch.metadata["total_doc_chunks"] = total
 
-        return {
-            "document_chunks": document_chunks
-        }
+        return {"document_chunks": document_chunks}
+
+    # Insights extraction (uses global concurrent executor)
+    # ------------------------------------------------------------------ #
+    def _parse_insights_response(self, raw: Any) -> List[str]:
+        """Parse LLM response into a list of insight strings."""
+        try:
+            data = raw if isinstance(raw, dict) else json.loads(correct_json_format(raw))
+        except Exception:
+            return []
+        ins = data.get("insights", [])
+        if ins is None:
+            return []
+        if isinstance(ins, list):
+            return [x for x in ins if isinstance(x, str)]
+        return [str(ins)]
+
+    def _stamp_insight_into_chunk(
+        self,
+        ch: TextChunk,
+        insights: List[str],
+        *,
+        status: str = "ok",     # "ok" | "timeout" | "exception" | "empty_failed"
+        reason: str = "",
+        attempt: int = 0,
+    ) -> TextChunk:
+        """Return a new chunk with insight fields written into metadata."""
+        new_meta = dict(ch.metadata or {})
+        new_meta["insights"] = insights or []
+        new_meta["insights_attempt"] = attempt
+        if status == "timeout":
+            new_meta["insights_timeout"] = True
+        if status != "ok":
+            new_meta["insights_failed"] = True
+            if reason:
+                new_meta["insights_failed_reason"] = reason[:200]
+        # Prefer pydantic-like copy API if available
+        if hasattr(ch, "model_copy"):
+            return ch.model_copy(update={"metadata": new_meta})
+        # Fallback for dataclass-like TextChunk
+        return ch.copy(update={"metadata": new_meta}, deep=True)
+
+    def extract_insights(
+        self,
+        chunks: List[TextChunk],
+        *,
+        per_task_timeout: float = 180.0,
+        max_retry_rounds: int = 2,
+        max_in_flight: Optional[int] = None,
+        treat_empty_as_failure: bool = False,
+    ) -> List[TextChunk]:
+        """
+        Extract insights for a list of TextChunks using the global concurrent executor.
+        Returns a list aligned with the input order. Failed/time-out entries are stamped
+        with failure flags but still returned (no item is dropped).
+
+        Failure semantics:
+          - If `treat_empty_as_failure=True`, empty insights are considered failures
+            (status='empty_failed').
+        """
+        if not chunks:
+            return []
+
+        if max_in_flight is None:
+            max_in_flight = int(self.max_workers)
+
+        def _task(ch: TextChunk) -> TextChunk:
+            # Single-call worker for one chunk
+            try:
+                raw = self.document_parser.extract_insights(ch.content or "")
+                insights = self._parse_insights_response(raw)
+                if treat_empty_as_failure and not insights:
+                    # mark as empty failure but still return the chunk with flags
+                    return self._stamp_insight_into_chunk(
+                        ch, [], status="empty_failed", reason="empty insights", attempt=0
+                    )
+                return self._stamp_insight_into_chunk(ch, insights, status="ok", attempt=0)
+            except Exception as e:
+                return self._stamp_insight_into_chunk(
+                    ch, [], status="exception", reason=str(e), attempt=0
+                )
+
+        # Use shared executor; we keep alignment after the run
+        results_map, failed_idxs = run_concurrent_with_retries(
+            items=chunks,
+            task_fn=_task,
+            per_task_timeout=per_task_timeout,
+            max_retry_rounds=max_retry_rounds,
+            max_in_flight=max_in_flight,
+            max_workers=max_in_flight,
+            thread_name_prefix="insights",
+            desc_prefix="Extracting insights",
+            treat_empty_as_failure=False,  # already handled inside _task via stamping
+        )
+
+        # Build aligned output; fill failures gracefully
+        out: List[TextChunk] = []
+        for i, ch in enumerate(chunks):
+            if i in results_map:
+                out.append(results_map[i])
+            else:
+                # If task ultimately failed or timed out across retries, stamp a failure
+                out.append(self._stamp_insight_into_chunk(
+                    ch, [], status="exception", reason="exhausted_retries", attempt=max_retry_rounds - 1
+                ))
+
+        if failed_idxs:
+            print(f"[WARN] {len(failed_idxs)} chunks failed after retries: {sorted(failed_idxs)}")
+
+        return out
+

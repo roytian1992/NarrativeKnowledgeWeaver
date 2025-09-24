@@ -77,7 +77,7 @@ class EntityExtractor:
                 background_info +=  f"在执行知识图谱构建的过程中，以下是一些可供参考的建议：\n{previous_suggestions}\n\n"
 
             if previous_results and previous_issues and score:
-                previous_iusses = "\n".join(previous_issues)
+                previous_issues = "\n".join(previous_issues)
                 background_info += f"这是你之前抽取的结果，部分内容有待改进： \n{previous_results}, 相关问题为: \n {previous_issues}，得分为: {score}"
 
             
@@ -99,7 +99,7 @@ class EntityExtractor:
                 repair_template=self.repair_template
             )
             if status == "success":
-                logger.info("实体提取完成，返回格式化后的JSON")
+                # logger.info("实体提取完成，返回格式化后的JSON")
                 return corrected_json
             else:
                 error_result = {

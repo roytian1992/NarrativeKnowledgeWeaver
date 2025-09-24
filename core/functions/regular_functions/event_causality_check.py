@@ -100,7 +100,7 @@ class EventCausalityChecker:
                 repair_template=self.repair_template
             )
             if status == "success":
-                logger.info("因果关系检查完成，返回格式化后的JSON")
+                # logger.info("因果关系检查完成，返回格式化后的JSON")
                 return corrected_json
             else:
                 error_result = {

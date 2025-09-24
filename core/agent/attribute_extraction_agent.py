@@ -1,6 +1,7 @@
 import json
 import re
 import asyncio
+import logging
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from core.utils.format import correct_json_format
@@ -9,55 +10,123 @@ from core.memory.vector_memory import VectorMemory
 from core.builder.manager.information_manager import InformationExtractor
 from core.model_providers.openai_rerank import OpenAIRerankModel
 from retriever.vectordb_retriever import ParentChildRetriever
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from core.builder.manager.document_manager import DocumentParser
+
+logger = logging.getLogger(__name__)
 
 
 def format_property_definitions(properties: Dict[str, str]) -> str:
-    return "\n".join([f"- **{key}**：{desc}" for key, desc in properties.items()])
+    """
+    Render a property definition block in bullet form for prompts.
+
+    Args:
+        properties: Mapping from property key to its textual description.
+
+    Returns:
+        A bullet-list string, one property per line, in the form:
+        - **key**: description
+    """
+    return "\n".join([f"- **{key}**: {desc}" for key, desc in properties.items()])
 
 
 class AttributeExtractionAgent:
     """
-    - 首次节点：get_related_context（只运行一次，合并初始上下文）
-    - 主循环：extract -> reflect -> (score 达标/达到最大重试即结束；否则回到 extract)
-    - 评分策略：优先用反思器返回的 score；若无，则按“非空比例”估算到 0-10
+    Attribute Extraction with reflection loop (LangGraph-based).
+
+    Flow:
+      1) get_related_context (runs once): Build a consolidated context by
+         (a) fetching source chunks and (b) optionally retrieving parent/child
+         augmentations for global entity types.
+      2) extract: Run attribute extraction with the consolidated context.
+      3) reflect: Run reflection to score/fix attributes; if score >= threshold
+         or max retries reached -> stop; else -> go back to extract.
+
+    Scoring rule:
+      - Prefer 'score' returned by the reflector (0-10).
+      - If absent, estimate score from attribute completeness (0-10).
     """
 
-    def __init__(self, config, llm, system_prompt, schema, enable_thinking=True, prompt_loader=None, global_entity_types=None):
+    def __init__(
+        self,
+        config,
+        llm,
+        system_prompt,
+        schema,
+        enable_thinking: bool = True,
+        prompt_loader=None,
+        global_entity_types=None,
+    ):
+        """
+        Args:
+            config: System configuration object.
+            llm: LLM provider/adapter used by internal extract/reflect routines.
+            system_prompt: System prompt text for extraction & reflection.
+            schema: Graph schema containing entity type definitions and properties.
+            enable_thinking: Reserved flag for LLM thinking modes (kept for compatibility).
+            prompt_loader: Optional prompt loader (injected if needed).
+            global_entity_types: Types that should trigger extra retrieval context.
+                                 Defaults to ["Character", "Concept", "Object", "Location"].
+        """
         self.config = config
         self.extractor = InformationExtractor(config, llm, prompt_loader=prompt_loader)
         self.history_memory = VectorMemory(config, "history_memory")
         self.load_schema(schema)
         self.system_prompt = system_prompt
-        if global_entity_types is None:
-            self.global_entity_types = ["Character", "Concept", "Object", "Location"]
-        else:
-            self.global_entity_types = global_entity_types
+        self.global_entity_types = (
+            ["Character", "Concept", "Object", "Location"]
+            if global_entity_types is None
+            else global_entity_types
+        )
 
-        # 检索资源
+        # Retrieval resources
         self.reranker = OpenAIRerankModel(config)
         self.document_vector_store = VectorStore(config, "documents")
         self.sentence_vector_store = VectorStore(config, "sentences")
         self.retriever = ParentChildRetriever(
             doc_vs=self.document_vector_store,
             sent_vs=self.sentence_vector_store,
-            reranker=self.reranker
+            reranker=self.reranker,
         )
         self.enable_thinking = enable_thinking
 
-        # 可从 config 注入，否则取默认
+        # Retry/score controls (readable defaults if not in config)
         self.max_retries = getattr(config, "attribute_max_retries", 3)
         self.min_score = getattr(config, "attribute_min_score", 7)
 
+        # Build the LangGraph
         self.graph = self._build_graph()
 
-    # ---------------- schema 解析 ----------------
-    def load_schema(self, schema):
+        # Base recursive splitter
+        self.base_splitter = RecursiveCharacterTextSplitter(
+            config.document_processing.chunk_size, config.document_processing.chunk_overlap
+        )
+        self.document_parser = DocumentParser(config, llm)
+
+    # ---------------- Schema parsing ----------------
+    def load_schema(self, schema: Dict[str, Any]):
+        """
+        Parse schema fields required by the agent.
+
+        Expected schema format:
+            {
+              "entities": [
+                {"type": "...", "description": "...", "properties": {...}},
+                ...
+              ],
+              ...
+            }
+        """
         self.entity_types = schema.get("entities")
         self.schema_type_order = [e["type"] for e in self.entity_types]
         self.type2description = {e["type"]: e["description"] for e in self.entity_types}
         self.type2property = {e["type"]: e["properties"] for e in self.entity_types}
 
     def _resolve_type(self, entity_type):
+        """
+        Resolve a possibly-list type into a single canonical type following
+        schema order priority; 'Event' dominates if present.
+        """
         if isinstance(entity_type, list):
             if "Event" in entity_type:
                 return "Event"
@@ -68,6 +137,9 @@ class AttributeExtractionAgent:
         return entity_type or "Concept"
 
     def _resolve_properties(self, entity_type):
+        """
+        Merge properties if a list of types is provided; 'Event' dominates.
+        """
         if isinstance(entity_type, list):
             if "Event" in entity_type:
                 return self.type2property.get("Event", {})
@@ -84,6 +156,9 @@ class AttributeExtractionAgent:
         return self.type2property.get(entity_type, {})
 
     def _resolve_description(self, entity_type):
+        """
+        Build a composite description if multiple types appear; 'Event' dominates.
+        """
         if isinstance(entity_type, list):
             if "Event" in entity_type:
                 return self.type2description.get("Event", "")
@@ -94,67 +169,81 @@ class AttributeExtractionAgent:
                     d = self.type2description.get(t, "")
                     if d:
                         descs.append(f"[{t}] {d}")
-            return "；".join(descs)
+            return " ; ".join(descs)
         if entity_type == "Event":
             return self.type2description.get("Event", "")
         return self.type2description.get(entity_type, "")
 
-    # ---------------- 工具函数 ----------------
+    # ---------------- Utilities ----------------
     @staticmethod
     def _parse_attribute_keys(attribute_definitions: str) -> List[str]:
-        # 解析 "- **key**：" 形式的属性名
+        """
+        Parse property keys from bullet lines of the form '- **key**: desc'.
+        """
         keys = re.findall(r"-\s*\*\*(.+?)\*\*", attribute_definitions or "")
         return [k.strip() for k in keys if k.strip()]
 
     @staticmethod
     def _ensure_dict(maybe_json_or_dict):
+        """
+        Ensure the input is a dict.
+        - If string, try to parse JSON; if not JSON, return empty dict.
+        """
         if isinstance(maybe_json_or_dict, dict):
             return maybe_json_or_dict
         if isinstance(maybe_json_or_dict, str) and maybe_json_or_dict.strip():
             try:
                 return json.loads(maybe_json_or_dict)
             except Exception:
-                # 若是纯文本，返回空 dict
                 return {}
         return {}
 
     @staticmethod
     def _json_dumps(obj) -> str:
+        """
+        Safe JSON dumps with non-ASCII preserved.
+        """
         try:
             return json.dumps(obj, ensure_ascii=False)
         except Exception:
             return "{}"
 
     def _estimate_score_from_completeness(self, attrs: Dict[str, Any], expected_keys: List[str]) -> float:
-        """基于非空比例估分到 0-10（无 score 时兜底）。"""
+        """
+        Estimate a 0-10 score from attribute completeness when reflector score is missing.
+        """
         if not expected_keys:
-            # 无 schema 时，用已有非空比例
+            # No schema: fall back to non-empty ratio over current keys
             all_keys = list(attrs.keys())
             expected_keys = all_keys
         if not expected_keys:
             return 0.0
+
         non_empty = 0
         for k in expected_keys:
             v = attrs.get(k, "")
             if isinstance(v, str):
                 non_empty += 1 if v.strip() else 0
             else:
-                # 非字符串也视为“有值”
                 non_empty += 1 if v is not None else 0
         ratio = non_empty / max(1, len(expected_keys))
         return round(ratio * 10.0, 2)
 
-    # ---------------- 节点：上下文（仅一次） ----------------
-    def get_related_context(self, state):
+    # ---------------- Node: build consolidated context (once) ----------------
+    def get_related_context(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
-        一次性构建完整上下文：
-        documents = search_by_ids(source_chunks)
-        +（若非事件/动作/情感/目标）ParentChildRetriever 检索的补充
+        Build a consolidated context exactly once:
+
+        - Load source chunks by IDs from the document vector store.
+        - If entity type is "global" (e.g., Character/Object/Location/Concept),
+          augment with ParentChildRetriever results.
+        - If the merged text is long, summarize it with rolling summaries.
         """
         entity_name = state["entity_name"]
         entity_type = state["entity_type"]
         source_chunks = state.get("source_chunks", []) or []
 
+        # Fetch original chunks
         doc_objs = self.document_vector_store.search_by_ids(source_chunks) or []
         doc_texts = []
         for d in doc_objs:
@@ -163,6 +252,7 @@ class AttributeExtractionAgent:
             elif isinstance(d, dict) and "content" in d:
                 doc_texts.append(d["content"])
 
+        # Optional augmented retrieval for global types
         extra_texts = []
         if entity_type in self.global_entity_types:
             try:
@@ -172,16 +262,29 @@ class AttributeExtractionAgent:
                         extra_texts.append(item.content)
                     elif isinstance(item, dict) and "content" in item:
                         extra_texts.append(item["content"])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("ParentChildRetriever failed or returned nothing: %s", e)
 
         merged_texts = doc_texts + extra_texts
         new_text = "\n".join(t for t in merged_texts if t) or state.get("content", "")
 
+        # If too long, perform rolling summarization
+        if len(new_text) >= 2000:
+            new_text_splitted = self.base_splitter.split_text(new_text)
+            summaries = []
+            for chunk in new_text_splitted:
+                chunk_result = self.document_parser.summarize_paragraph(chunk, 100, "")
+                parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
+                summaries.extend(parsed)
+            new_text = "\n".join(summaries) if summaries else new_text
+
         return {**state, "content": new_text}
 
-    # ---------------- 节点：抽取 ----------------
-    def extract(self, state):
+    # ---------------- Node: extract ----------------
+    def extract(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run attribute extraction on the consolidated context and store the raw result.
+        """
         entity_name = state["entity_name"]
         entity_type_raw = state["entity_type"]
         entity_type = self._resolve_type(entity_type_raw)
@@ -193,7 +296,7 @@ class AttributeExtractionAgent:
         attribute_definitions = format_property_definitions(properties)
 
         result = self.extractor.extract_entity_attributes(
-            text=state["content"],                       # 完整上下文
+            text=state["content"],                # consolidated context
             entity_name=entity_name,
             description=type_description,
             entity_type=entity_type,
@@ -201,13 +304,11 @@ class AttributeExtractionAgent:
             system_prompt=self.system_prompt,
             previous_results=state.get("previous_result", ""),
             feedbacks=feedbacks,
-            original_text=state.get("original_text", "")
+            original_text=state.get("original_text", ""),
         )
-        # extractor 返回 JSON 字符串；校正并解析
+        # Normalize and parse JSON output from extractor
         result = json.loads(correct_json_format(result))
-        # print("[CHECK] attribute extraction result:", result)
 
-        # 以 dict 保存 attributes，便于后续反思与评分
         attrs = self._ensure_dict(result.get("attributes", {}))
         new_desc = result.get("new_description", "")
 
@@ -218,15 +319,18 @@ class AttributeExtractionAgent:
             "previous_result": self._json_dumps(result),
         }
 
-    # ---------------- 节点：反思/评分/修复 ----------------
-    def reflect(self, state):
+    # ---------------- Node: reflect/score/fix ----------------
+    def reflect(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
-        与 AttributeReflector 对接：
-        - 兼容两种返回：
-          A) 质量审查：{feedbacks, score, attributes_to_retry}
-          B) 修复输出：{attributes, new_description}（无 score）
-        - 若无 score：按字段“非空比例”估分
-        - 若返回了 attributes/new_description：回填到 state 作为下一轮起点
+        Reflect and optionally fix attributes.
+
+        The reflector may return either:
+          A) Quality review:
+             { "feedbacks": [...], "score": float, "attributes_to_retry": [...] }
+          B) Patched attributes:
+             { "attributes": {...}, "new_description": "..." } (no score)
+
+        If 'score' is absent, estimate from completeness.
         """
         entity_type_raw = state["entity_type"]
         entity_type = self._resolve_type(entity_type_raw)
@@ -236,44 +340,41 @@ class AttributeExtractionAgent:
         attribute_definitions = format_property_definitions(properties)
         expected_keys = self._parse_attribute_keys(attribute_definitions)
 
-        # 传给反思器的 attributes 以字符串形式喂入提示
+        # Prepare attributes string for prompt
         attrs_for_prompt = state.get("attributes", {})
         attrs_json_for_prompt = self._json_dumps(self._ensure_dict(attrs_for_prompt))
 
-        # 允许在反思阶段提供原文，便于“正确性”核对
-        
         result = self.extractor.reflect_entity_attributes(
             entity_type=entity_type,
             description=description,
             attribute_definitions=attribute_definitions,
             attributes=attrs_json_for_prompt,
             system_prompt=self.system_prompt,
-            original_text=state.get("original_text", "")
+            original_text=state.get("original_text", ""),
         )
-        # print("[CHECK] attribute reflection result:", result)
         result = json.loads(correct_json_format(result))
 
-        # 累计轮次
+        # Attempts
         attempt = int(state.get("attempt", 0)) + 1
 
-        # 读取可用的反馈/列表
+        # Merge feedbacks
         feedbacks_old = state.get("feedbacks", []) or []
         feedbacks_new = result.get("feedbacks", []) or []
         merged_feedbacks = feedbacks_old + feedbacks_new
 
-        # 若反思器返回了直接修复后的 attributes/new_description，则回填
+        # If reflector returned patched attributes/description, apply them
         attrs_fixed = self._ensure_dict(result.get("attributes", {}))
         new_desc_fixed = result.get("new_description", None)
 
         current_attrs = attrs_fixed if attrs_fixed else self._ensure_dict(state.get("attributes", {}))
         current_desc = new_desc_fixed if isinstance(new_desc_fixed, str) else state.get("new_description", "")
 
-        # 评分：优先用反思器的 score；否则按完整度估分
+        # Score: prefer reflector score; otherwise estimate from completeness
         score = result.get("score", None)
         if score is None:
             score = self._estimate_score_from_completeness(current_attrs, expected_keys)
 
-        # 需要重试的字段：反思器给了就用；否则找出空/缺失字段
+        # Determine which fields to retry
         retry_fields = result.get("attributes_to_retry", None)
         if retry_fields is None:
             retry_fields = []
@@ -288,18 +389,21 @@ class AttributeExtractionAgent:
             "score": float(score),
             "feedbacks": merged_feedbacks,
             "attributes_to_retry": retry_fields,
-            # 回填后的最新视图
+            # Updated view
             "attributes": current_attrs,
             "new_description": current_desc,
-            # 也把“当前视图”写入 previous_result，便于下一轮作为“已有结果”
+            # Also store the current view as 'previous_result' for the next round
             "previous_result": self._json_dumps({
                 "new_description": current_desc,
                 "attributes": current_attrs
             })
         }
 
-    # ---------------- 分支逻辑 ----------------
-    def _check_reflection(self, state):
+    # ---------------- Branching logic ----------------
+    def _check_reflection(self, state: Dict[str, Any]) -> str:
+        """
+        Decide whether to stop or retry based on score and attempts.
+        """
         attempt = int(state.get("attempt", 0))
         score = float(state.get("score", 0.0))
         if score >= self.min_score:
@@ -308,8 +412,11 @@ class AttributeExtractionAgent:
             return "complete"
         return "retry"
 
-    # ---------------- 图结构 ----------------
+    # ---------------- Graph construction ----------------
     def _build_graph(self):
+        """
+        Build and compile the LangGraph state machine.
+        """
         builder = StateGraph(dict)
         builder.add_node("get_related_context", self.get_related_context)
         builder.add_node("extract", self.extract)
@@ -324,10 +431,20 @@ class AttributeExtractionAgent:
         })
         return builder.compile()
 
-    # ---------------- 外部接口（保持不变） ----------------
-    def run(self, text: str, entity_name: str, entity_type: str, source_chunks: list = [], original_text: str = None):
+    # ---------------- Public sync interface (unchanged) ----------------
+    def run(
+        self,
+        text: str,
+        entity_name: str,
+        entity_type: str,
+        source_chunks: list = [],
+        original_text: str = None,
+    ):
+        """
+        Synchronous entry. The internal flow may still run multiple reflection rounds.
+        """
         return self.graph.invoke({
-            "content": text,                      # 完整上下文（首次会被 get_related_context 覆盖/合并）
+            "content": text,                      # Consolidated context (may be replaced in get_related_context)
             "entity_name": entity_name,
             "entity_type": entity_type,
             "source_chunks": source_chunks or [],
@@ -338,6 +455,7 @@ class AttributeExtractionAgent:
             "score": 0.0
         })
 
+    # ---------------- Public async interface (unchanged) ----------------
     async def arun(
         self,
         text: str,
@@ -350,7 +468,8 @@ class AttributeExtractionAgent:
         backoff_seconds: int = 30,
     ):
         """
-        异步接口：保留超时与退避；抽取-反思的重试由图与 score 控制
+        Async entry with overall timeout & light retry.
+        The extract/reflect retries are governed by the graph flow and score.
         """
         payload = {
             "content": text,
@@ -369,7 +488,7 @@ class AttributeExtractionAgent:
             result = await asyncio.wait_for(coro, timeout=timeout)
             return result.get("best_result", result)
         except asyncio.TimeoutError:
-            # 仅针对“整体调用卡顿”做少量重试；流程内部重试不受影响
+            # Only retry the overall call a few times. The internal loop handles its own retries.
             for i in range(1, max_attempts):
                 try:
                     await asyncio.sleep(backoff_seconds * i)
@@ -377,6 +496,8 @@ class AttributeExtractionAgent:
                     return result.get("best_result", result)
                 except asyncio.TimeoutError:
                     continue
+            logger.error("AttributeExtractionAgent.arun timed out after %d attempts", max_attempts)
             return {"attributes": {}, "error": f"timeout after {max_attempts} attempts"}
         except Exception as e:
+            logger.exception("AttributeExtractionAgent.arun failed: %s", e)
             return {"attributes": {}, "error": str(e)}

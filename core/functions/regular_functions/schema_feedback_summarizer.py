@@ -77,7 +77,7 @@ class FeedbackSummarizer:
             )
             
             # print("[CHECK] 检查结果： ", corrected_json)
-            logger.info("提取摘要完成，返回格式化后的JSON")
+            # logger.info("提取摘要完成，返回格式化后的JSON")
             if status == "success":
                 return corrected_json
             else:

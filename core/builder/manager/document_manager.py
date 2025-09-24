@@ -1,18 +1,56 @@
-# kag/builder/extractor.py
+# -*- coding: utf-8 -*-
+"""
+Document Manager Module
+=======================
 
+This module provides **document-level preprocessing utilities** for narrative
+analysis. It wraps LLM-based functions such as metadata parsing, semantic
+splitting, summarization, and insight extraction, serving as the first stage
+before graph construction.
+
+Key functionalities:
+- Parse document metadata (title, subtitle, type).
+- Perform semantic-based text segmentation.
+- Summarize text at the paragraph level (rolling summarization supported).
+- Extract high-level insights from narrative text.
+- Merge duplicate or similar entity mentions.
+- Validate entity types and scope (global/local consistency).
+
+Class:
+    DocumentParser
+        Provides interfaces for all document-level operations.
+
+Usage:
+    - parser = DocumentParser(config, llm)
+    - meta = parser.parse_metadata(text, title="Episode 1", subtitle="Pilot")
+    - summary = parser.summarize_paragraph(paragraph_text)
+    - segments = parser.split_text(long_text)
 """
-信息抽取器模块
-对接 Agent，提供 Extractor 对外接口
-"""
+
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from core.utils.config import KAGConfig
-from core.functions.regular_functions import MetadataParser, SemanticSplitter, ParagraphSummarizer, EntityMerger, InsightExtractor, EntityTypeValidator, EntityScopeValidator
+from core.functions.regular_functions import (
+    MetadataParser, 
+    SemanticSplitter, 
+    ParagraphSummarizer, 
+    EntityMerger, 
+    InsightExtractor, 
+    EntityTypeValidator, 
+    EntityScopeValidator
+)
 from core.utils.prompt_loader import PromptLoader
 import os
 
+
 class DocumentParser:
-    """文本处理器"""
+    """
+    Document-level processing utility.
+
+    This class manages narrative preprocessing operations:
+    metadata parsing, semantic text splitting, summarization,
+    insight extraction, entity merging, and entity validation.
+    """
 
     def __init__(self, config: KAGConfig, llm):
         self.config = config
@@ -35,48 +73,42 @@ class DocumentParser:
         subtitle: str,
         doc_type: str = "screenplay"
     ) -> str:
-        """从文本中抽取实体"""
+        """Extract document-level metadata such as title, subtitle, and type."""
         params = {
-                "text": text,
-                "title": title,
-                "subtitle": subtitle,
-                "doc_type": doc_type
-            }
+            "text": text,
+            "title": title,
+            "subtitle": subtitle,
+            "doc_type": doc_type
+        }
         result = self.metadata_parser.call(
             params=json.dumps(params, ensure_ascii=False)
         )
-        # print("[CHECK] entity extraction result: ", result)
         return result
     
     def extract_insights(
         self,
         text: str
     ) -> str:
-        """从文本中抽取实体"""
-        params = {
-                "text": text
-            }
+        """Extract insights (important information, themes, or narrative clues) from the text."""
+        params = {"text": text}
         result = self.insight_extractor.call(
             params=json.dumps(params, ensure_ascii=False)
         )
-        # print("[CHECK] insight extraction result: ", result)
         return result
             
     def split_text(
         self,
         text: str,
-        max_segments: int=3,
+        max_segments: int = 3,
     ) -> str:
-        """从文本中抽取实体"""
+        """Split text into semantically coherent segments."""
         params = {
-                "text": text,
-                "max_segments": max_segments
-            }
-        
+            "text": text,
+            "max_segments": max_segments
+        }
         result = self.semantic_splitter.call(
             params=json.dumps(params, ensure_ascii=False)
         )
-        # print("[CHECK] entity extraction result: ", result)
         return result
 
     def summarize_paragraph(
@@ -85,17 +117,15 @@ class DocumentParser:
         max_length: int = 200, 
         previous_summary: str = ""
     ) -> str:
-        """从文本中抽取实体"""
+        """Summarize a paragraph, optionally using a previous rolling summary."""
         params = {
-                "text": text.strip(),
-                "max_length": max_length,
-                "previous_summary": previous_summary
-            }
+            "text": text.strip(),
+            "max_length": max_length,
+            "previous_summary": previous_summary
+        }
         result = self.paragraph_summarizer.call(
             params=json.dumps(params, ensure_ascii=False)
         )
-        
-        # print("[CHECK] params: ", params)
         return result
     
     def merge_entities(
@@ -104,24 +134,21 @@ class DocumentParser:
         system_prompt: str = "",
         related_context: str = ""
     ):
-        """判断两个事件是否存在因果关系"""
+        """Merge similar or duplicate entities based on descriptions and context."""
         params = {
             "entity_descriptions": entity_descriptions,
             "system_prompt": system_prompt,
             "related_context": related_context
         }
         result = self.entity_merger.call(params=json.dumps(params))
-        # print("[CHECK] check event causality result: ", result)
         return result
     
     def validate_entity_type(
         self,
         context: str
     ):
-        """判断实体类型是否合法"""
-        params = {
-            "context": context
-        }
+        """Validate whether an entity type is legal/consistent with the schema."""
+        params = {"context": context}
         result = self.entity_type_validator.call(
             params=json.dumps(params, ensure_ascii=False)
         )
@@ -131,12 +158,9 @@ class DocumentParser:
         self,
         context: str
     ):
-        """判断实体范围是否合法"""
-        params = {
-            "context": context
-        }
+        """Validate whether the entity scope (e.g., local/global) is correct."""
+        params = {"context": context}
         result = self.entity_scope_validator.call(
             params=json.dumps(params, ensure_ascii=False)
         )
         return result
-    

@@ -95,7 +95,7 @@ class AttributeReflector:
                 repair_template=self.repair_template
             )
             
-            logger.info("属性反思完成，返回格式化后的JSON")
+            # logger.info("属性反思完成，返回格式化后的JSON")
             if status != "error":
                 return corrected_json
             else:

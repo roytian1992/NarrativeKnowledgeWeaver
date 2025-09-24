@@ -4,7 +4,7 @@ from typing import List, Dict, Tuple, Optional, Any, Set, Callable
 from collections import defaultdict, Counter
 
 __all__ = [
-    # ===== 你已有的函数：保持兼容 =====
+    # Existing utilities (kept compatible)
     "remove_subset_paths",
     "overlapping_similarity",
     "remove_similar_paths",
@@ -12,21 +12,30 @@ __all__ = [
     "_all_covering_windows",
     "get_frequent_subchains_with_subset_removal",
     "get_frequent_subchains",
-    # ===== 新增：confidence阈值切断 =====
+    # New: confidence-based splitting utilities
     "split_chains_by_confidence",
     "preprocess_chains_by_confidence",
-    # ===== 新增：主干—分支切分 =====
+    # New: trunk–branch segmentation
     "segment_trunks_and_branches",
-    # ===== 可选：序列相似度 + 多样化 =====
+    # Optional: sequence similarity + diversification
     "_lcs_ratio",
     "mmr_select_sequences",
 ]
 
 # ----------------------------------------------------------------------
-# =============== 你原有的工具函数：原样保留（兼容） ===============
+# ========================== Core helper functions =====================
 # ----------------------------------------------------------------------
 
 def remove_subset_paths(chains: List[List[str]]) -> List[List[str]]:
+    """
+    Remove chains that are strict subsets (as sets) of any other chain.
+
+    Args:
+        chains: List of chains (each chain is a list of node IDs).
+
+    Returns:
+        Filtered list of chains with strict set-subsets removed.
+    """
     filtered = []
     for i, chain in enumerate(chains):
         set_chain = set(chain)
@@ -43,12 +52,33 @@ def remove_subset_paths(chains: List[List[str]]) -> List[List[str]]:
 
 
 def overlapping_similarity(set1: Set[str], set2: Set[str]) -> float:
+    """
+    Compute overlap similarity between two sets:
+        |set1 ∩ set2| / min(|set1|, |set2|)
+
+    Args:
+        set1: First set.
+        set2: Second set.
+
+    Returns:
+        Similarity score in [0, 1].
+    """
     if not set1 and not set2:
         return 1.0
     return len(set1 & set2) / min([len(set1), len(set2)])
 
 
 def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> List[List[str]]:
+    """
+    Greedy deduplication by set-overlap similarity against already-kept chains.
+
+    Args:
+        chains: List of chains.
+        threshold: Overlap similarity threshold for pruning.
+
+    Returns:
+        Filtered list of chains.
+    """
     filtered: List[List[str]] = []
     for chain in chains:
         set_chain = set(chain)
@@ -64,6 +94,17 @@ def remove_similar_paths(chains: List[List[str]], threshold: float = 0.8) -> Lis
 
 
 def _maximal_chain_indices_by_set(chains: List[List[str]], min_length: int = 2) -> List[int]:
+    """
+    Return indices of chains that are maximal by set inclusion among chains
+    with length >= min_length.
+
+    Args:
+        chains: List of chains.
+        min_length: Minimum chain length to consider.
+
+    Returns:
+        Indices into `chains` that correspond to maximal sets.
+    """
     idxs = [i for i, ch in enumerate(chains) if len(ch) >= min_length]
     sets = [set(chains[i]) for i in idxs]
     inv = defaultdict(set)
@@ -97,6 +138,18 @@ def _maximal_chain_indices_by_set(chains: List[List[str]], min_length: int = 2) 
 
 
 def _all_covering_windows(chain: List[str], universe: Set[str], min_length: int) -> List[List[str]]:
+    """
+    Enumerate all contiguous sub-sequences (windows) within `chain` that cover
+    every element in `universe` at least once, with window length >= min_length.
+
+    Args:
+        chain: Original sequence.
+        universe: Set of required elements to be covered.
+        min_length: Minimum length of windows.
+
+    Returns:
+        List of windows (each a list of node IDs).
+    """
     need = {x: 1 for x in universe}
     have = Counter()
     covered = 0
@@ -130,6 +183,16 @@ def get_frequent_subchains_with_subset_removal(
     chains: List[List[str]],
     min_length: int = 2,
 ) -> List[List[str]]:
+    """
+    Get all covering windows for chains that are maximal by set inclusion.
+
+    Args:
+        chains: Input chains.
+        min_length: Minimum subchain length.
+
+    Returns:
+        List of subchains (sorted by descending length, then lexicographically).
+    """
     maximal_idxs = _maximal_chain_indices_by_set(chains, min_length=min_length)
     out: List[List[str]] = []
     for i in maximal_idxs:
@@ -141,6 +204,17 @@ def get_frequent_subchains_with_subset_removal(
 
 
 def get_frequent_subchains(chains: List[List[str]], min_length: int = 2, min_count: int = 2):
+    """
+    Count all contiguous subchains and return those with frequency >= min_count.
+
+    Args:
+        chains: Input chains.
+        min_length: Minimum subchain length.
+        min_count: Frequency threshold.
+
+    Returns:
+        List of frequent subchains (each a list of node IDs).
+    """
     counter = Counter()
     for chain in chains:
         n = len(chain)
@@ -154,7 +228,7 @@ def get_frequent_subchains(chains: List[List[str]], min_length: int = 2, min_cou
 
 
 # ----------------------------------------------------------------------
-# =============== 新增：基于 confidence 的链切断/预处理 ===============
+# ==================== Confidence-based splitting & prep ===============
 # ----------------------------------------------------------------------
 
 def split_chains_by_confidence(
@@ -166,13 +240,25 @@ def split_chains_by_confidence(
     allow_indirect: bool = True,
 ) -> List[List[str]]:
     """
-    在“低置信边”处切断事件链，返回切分后的子链列表。
-    - min_confidence: 置信度阈值（默认0.5，可控）
-    - type_weights:   不同边类型的权重（乘在confidence上再与阈值比较）
-        默认: {'EVENT_CAUSES':1.0, 'EVENT_INDIRECT_CAUSES':0.6, 'EVENT_PART_OF':0.0}
-    - allow_indirect: 若为False，则一律在间接因果边处切断
+    Split chains at low-confidence edges and return the resulting subchains.
 
-    注意：该函数不触碰你的判定逻辑，仅做“候选链清洗/切分”。
+    Rules:
+        - `min_confidence` sets the threshold for effective confidence.
+        - `type_weights` reweights confidence per relation type (confidence * weight).
+          Default weights:
+              {'EVENT_CAUSES': 1.0, 'EVENT_INDIRECT_CAUSES': 0.6, 'EVENT_PART_OF': 0.0}
+        - If `allow_indirect` is False, split at 'EVENT_INDIRECT_CAUSES' edges.
+        - 'EVENT_PART_OF' is always treated as a split (not a path edge).
+
+    Args:
+        chains: Input chains.
+        edge_info_fn: Callable (u, v) -> { "type": str, "confidence": float } or None.
+        min_confidence: Threshold for effective confidence after weighting.
+        type_weights: Optional mapping from relation type to weight.
+        allow_indirect: Whether to allow indirect-causation edges.
+
+    Returns:
+        Deduplicated list of resulting subchains (length >= 2).
     """
     if type_weights is None:
         type_weights = {
@@ -194,29 +280,27 @@ def split_chains_by_confidence(
             etype = (info or {}).get("type", None)
             conf = float((info or {}).get("confidence", 0.0))
 
-            # 处理 PART_OF：不作为路径边使用，一律切断
+            # Always split on PART_OF (not treated as a path edge)
             if etype == "EVENT_PART_OF":
                 if len(cur) >= 2:
                     out.append(cur)
                 cur = [v]
                 continue
 
-            # 不允许间接因果：切断
+            # Optionally split on indirect causation
             if (etype == "EVENT_INDIRECT_CAUSES") and (not allow_indirect):
                 if len(cur) >= 2:
                     out.append(cur)
                 cur = [v]
                 continue
 
-            # 依据类型加权后的置信度比较阈值
+            # Compare weighted confidence to threshold
             w = type_weights.get(etype, type_weights.get("EVENT_INDIRECT_CAUSES", 0.6))
             eff_conf = conf * w
 
             if eff_conf >= min_confidence:
-                # 边通过阈值，继续延长当前子链
                 cur.append(v)
             else:
-                # 低置信边：切断
                 if len(cur) >= 2:
                     out.append(cur)
                 cur = [v]
@@ -224,7 +308,7 @@ def split_chains_by_confidence(
         if len(cur) >= 2:
             out.append(cur)
 
-    # 去重并保持稳定性
+    # Deduplicate while preserving order
     seen = set()
     uniq: List[List[str]] = []
     for seg in out:
@@ -245,9 +329,22 @@ def preprocess_chains_by_confidence(
     apply_split: bool = True,
 ) -> List[List[str]]:
     """
-    预处理入口：
-    - 如果 apply_split=True：调用 split_chains_by_confidence 切断低置信边
-    - 否则：仅过滤掉“含有任何有效边的长度<2”的链
+    Preprocess chains with optional confidence-based splitting.
+
+    Behavior:
+        - If `apply_split` is True, split chains via `split_chains_by_confidence`.
+        - Otherwise, only filter out chains of length < 2.
+
+    Args:
+        chains: Input chains.
+        edge_info_fn: Edge info provider (u, v) -> dict or None.
+        min_confidence: Threshold for effective confidence.
+        type_weights: Optional per-type weights for confidence.
+        allow_indirect: Whether to allow indirect edges.
+        apply_split: Whether to perform splitting.
+
+    Returns:
+        Preprocessed chains.
     """
     if apply_split:
         return split_chains_by_confidence(
@@ -257,29 +354,38 @@ def preprocess_chains_by_confidence(
             type_weights=type_weights,
             allow_indirect=allow_indirect,
         )
-    # 不切断，仅做基本过滤
+    # No splitting; basic filtering only
     filtered = [ch for ch in chains if len(ch) >= 2]
     return filtered
 
 
 # ----------------------------------------------------------------------
-# =============== 新增：主干—分支 切分（路径前缀树） ===============
+# =================== Trunk–branch segmentation (path trie) ============
 # ----------------------------------------------------------------------
 # ----------------------------- #
 #   Trunk–Branch segmentation   #
 # ----------------------------- #
 
 class _TrieNode:
-    """路径前缀树节点：用于把多条事件链合并成一棵树；在分叉或链末尾处分段。"""
+    """
+    Path-trie node used to merge multiple chains into a single tree and to
+    segment at branch points or chain endpoints.
+    """
     __slots__ = ("children", "count", "end_count", "token")
     def __init__(self, token: Optional[str] = None):
         self.children: Dict[str, _TrieNode] = {}
-        self.count: int = 0         # 经过该节点的链条数量
-        self.end_count: int = 0     # 在该节点结束的链条数量
+        self.count: int = 0         # Number of chains passing through this node
+        self.end_count: int = 0     # Number of chains ending at this node
         self.token: Optional[str] = token
 
 def _trie_insert(root: _TrieNode, chain: List[str]) -> None:
-    """把一条链插入到 trie 中。"""
+    """
+    Insert a chain into the trie.
+
+    Args:
+        root: Trie root node.
+        chain: Chain to be inserted.
+    """
     node = root
     node.count += 1
     for t in chain:
@@ -298,27 +404,35 @@ def _collect_segments_from_trie(
     keep_terminal_pairs: bool = False,
 ) -> List[List[str]]:
     """
-    从 trie 中收集分段。
-    规则：
-      - 遇到“分叉点”（children>=2）或“有链在此结束”（end_count>0）即切段：
-          * 输出从上一次切点后的路径到当前节点作为一个段；
-          * 对每个子节点，把“下一段”的起点设为：
-                include_cutpoint=False -> 从切点**之后**开始
-                include_cutpoint=True  -> **包含**切点开始
-      - 若段长 < min_len 且 keep_terminal_pairs=True 且当前位置为链终点，
-        则回填最后一条边形成二元段（保证叶子至少出现一次）。
+    Collect segments from a trie according to trunk–branch rules.
 
-    返回：
-      唯一（去重）的段列表，保持生成顺序的稳定性。
+    Rules:
+      - Segment at branch points (children >= 2) or where any chain ends (end_count > 0):
+          * Emit the path segment since the last cut (inclusive) through the current node.
+          * For each child, start the next segment either:
+                - from the node after the cut (include_cutpoint=False), or
+                - from the cut node itself (include_cutpoint=True).
+      - If a segment is shorter than `min_len` and `keep_terminal_pairs=True` and
+        the current node is a chain end, backfill with the last edge to ensure
+        leaf nodes appear at least once.
+
+    Args:
+        root: Trie root.
+        min_len: Minimum segment length.
+        include_cutpoint: Whether to include the cut node at the start of the next segment.
+        keep_terminal_pairs: Whether to ensure leaf nodes appear as at least a length-2 segment.
+
+    Returns:
+        Unique list of segments with stable generation order.
     """
     segments: List[List[str]] = []
-    # 栈元素: (node, path_so_far, last_cut_index)
+    # Stack items: (node, path_so_far, last_cut_index)
     stack: List[Tuple[_TrieNode, List[str], int]] = [(root, [], 0)]
 
     while stack:
         node, path, last_cut = stack.pop()
 
-        # 把当前 token 追加到路径上（根节点 token=None 不追加）
+        # Append current token to the path (root token is None and skipped)
         if node.token is not None:
             path = path + [node.token]
 
@@ -331,22 +445,22 @@ def _collect_segments_from_trie(
             if seg_len >= min_len:
                 segments.append(path[last_cut:])
             elif keep_terminal_pairs and is_chain_end and len(path) >= 2:
-                # 终端回填二元段（例如 [B,G] 或 [H,G]）
+                # Terminal backfill with the last edge (e.g., [B,G] or [H,G])
                 segments.append(path[-2:])
 
-            # 分叉续跑：下一段的“切点”位置
+            # Continue from branch: decide next segment start index
             for child in node.children.values():
-                # include_cutpoint=True 时，下一段从切点开始（包含当前节点）
+                # If include_cutpoint=True, start next segment from the cut node (include current)
                 new_cut = len(path) - (1 if include_cutpoint else 0)
                 if new_cut < 0:
                     new_cut = 0
                 stack.append((child, path, new_cut))
         else:
-            # 继续向下，无需切段
+            # Continue down without cutting
             for child in node.children.values():
                 stack.append((child, path, last_cut))
 
-    # 去重并保持稳定性
+    # Deduplicate with stable order
     seen: Set[Tuple[str, ...]] = set()
     uniq: List[List[str]] = []
     for seg in segments:
@@ -364,25 +478,26 @@ def segment_trunks_and_branches(
     keep_terminal_pairs: bool = False,
 ) -> List[List[str]]:
     """
-    把多条链按“主干—分支”结构切段。
+    Segment multiple chains into trunk–branch segments using a path trie.
 
-    参数：
-      - chains: 原始候选链（每条为事件 ID 序列）
-      - min_len: 最短段长（默认 2）
-      - drop_contained: 是否去掉被更长段完全包含的短段（基于有序子串判断）
-      - include_cutpoint: 分叉后是否**包含切点**作为新段起点（默认 False）
-      - keep_terminal_pairs: 对叶子回填最后一条边形成二元段（默认 False）
+    Args:
+        chains: Input chains (each a sequence of event IDs).
+        min_len: Minimum segment length.
+        drop_contained: If True, remove segments that are contiguous substrings of longer ones.
+        include_cutpoint: If True, start new segments from the cut node (include it).
+        keep_terminal_pairs: If True, ensure leaves appear at least once as length-2 segments.
 
-    返回：
-      按规则分段后的序列列表（已去重；如 drop_contained=True，则做“包含去重”）。
+    Returns:
+        List of segments after trunk–branch segmentation (deduplicated; and if
+        `drop_contained` is True, de-contained by contiguous substring check).
     """
-    # 构建 trie
+    # Build trie
     root = _TrieNode()
     for ch in chains:
         if ch:
             _trie_insert(root, ch)
 
-    # 收集分段
+    # Collect segments
     segs = _collect_segments_from_trie(
         root,
         min_len=min_len,
@@ -393,7 +508,7 @@ def segment_trunks_and_branches(
     if not drop_contained:
         return segs
 
-    # 去掉被更长段完全包含的短段（有序子串）
+    # Remove segments that are contiguous substrings of longer segments
     segs_sorted = sorted(segs, key=lambda s: (-len(s), s))
     kept: List[List[str]] = []
     for s in segs_sorted:
@@ -403,7 +518,16 @@ def segment_trunks_and_branches(
 
 
 def _is_substring(sub: List[str], full: List[str]) -> bool:
-    """判断 sub 是否为 full 的有序子串（连续）。"""
+    """
+    Check whether `sub` is a contiguous substring of `full`.
+
+    Args:
+        sub: Candidate subsequence.
+        full: Full sequence.
+
+    Returns:
+        True if `sub` is a contiguous substring of `full`, else False.
+    """
     n, m = len(sub), len(full)
     if n == 0 or n > m:
         return False
@@ -413,13 +537,20 @@ def _is_substring(sub: List[str], full: List[str]) -> bool:
     return False
 
 # ----------------------------------------------------------------------
-# =============== 可选：序列相似度（LCS）& MMR 多样化 ===============
+# ===================== Sequence similarity (LCS) & MMR ================
 # ----------------------------------------------------------------------
 
 def _lcs_ratio(a: List[str], b: List[str]) -> float:
     """
-    有序链相似度：LCS(a,b) / min(len(a), len(b))，范围 [0,1]。
-    反映“顺序一致”的重合程度。
+    Order-aware sequence similarity via LCS:
+        LCS(a, b) / min(len(a), len(b)) in [0, 1].
+
+    Args:
+        a: First sequence.
+        b: Second sequence.
+
+    Returns:
+        LCS ratio in [0, 1].
     """
     n, m = len(a), len(b)
     if n == 0 or m == 0:
@@ -442,9 +573,19 @@ def mmr_select_sequences(
     lambda_: float = 0.75,
 ) -> List[List[str]]:
     """
-    基于 MMR 的多样化选择（序列相似度用 LCS 比例）：
-        maximize λ*score(seq) − (1−λ)*max_sim_with_selected(seq)
-    只依赖标准库；如果不需要，可以不调用。
+    Diversify selection via Maximal Marginal Relevance (MMR) using LCS-based similarity.
+
+    Objective:
+        maximize λ * score(seq) − (1 − λ) * max_sim_with_selected(seq)
+
+    Args:
+        sequences: Candidate sequences.
+        scores: Relevance scores aligned with `sequences`.
+        top_k: Maximum number of sequences to select.
+        lambda_: Trade-off between relevance and diversity (higher = more relevance).
+
+    Returns:
+        Selected sequences in chosen order.
     """
     assert len(sequences) == len(scores)
     order = sorted(range(len(sequences)), key=lambda i: scores[i], reverse=True)
