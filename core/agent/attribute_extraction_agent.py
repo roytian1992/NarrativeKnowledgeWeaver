@@ -99,7 +99,7 @@ class AttributeExtractionAgent:
 
         # Base recursive splitter
         self.base_splitter = RecursiveCharacterTextSplitter(
-            config.document_processing.chunk_size, config.document_processing.chunk_overlap
+            chunk_size=config.document_processing.chunk_size, chunk_overlap=config.document_processing.chunk_overlap
         )
         self.document_parser = DocumentParser(config, llm)
 
