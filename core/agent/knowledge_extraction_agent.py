@@ -11,11 +11,11 @@ import os
 def generate_suggestions(related_insights, related_history):
     suggestions = ""
     if related_insights:
-        suggestions += "之前的阅读的过程中有以下这些发现：\n" + "\n".join(related_insights) + "\n"
+        suggestions += "During previous reading, the following insights were found:\n" + "\n".join(related_insights) + "\n"
 
     if related_history:
-        suggestions += "之前的一些抽取示例：\n" + "\n".join(related_history) + "\n"
-        suggestions += "\n其中7分以上为优秀示例，5分以下可以视作反面示例。"
+        suggestions += "Some previous extraction examples:\n" + "\n".join(related_history) + "\n"
+        suggestions += "\nExamples with a score above 7 are considered good, while those below 5 can be treated as negative examples."
     return suggestions
 
 class InformationExtractionAgent:
@@ -29,14 +29,14 @@ class InformationExtractionAgent:
         self.max_retries = self.config.agent.max_retries
         self.system_prompt = system_prompt
         self.mode = mode
-        if  self.mode== "probing":
+        if self.mode == "probing":
             self.max_retries = 0
         # print("[CHECK] score threshold: ", self.score_threshold)
         # print("[CHECK] max retries: ", self.max_retries)
     
     def set_mode(self, mode):
         self.mode = mode
-        if  self.mode== "probing":
+        if self.mode == "probing":
             self.max_retries = 0
         else:
             self.max_retries = self.config.agent.max_retries
@@ -62,11 +62,12 @@ class InformationExtractionAgent:
         suggestions = generate_suggestions(related_insights, related_history)
         # print("[DEBUG] suggestions: ", suggestions)
 
-        reflection_results = {"suggestions": suggestions, 
-                              "related_insights": related_insights,
-                              "related_history": related_history,
-                              "issues": []
-                              }
+        reflection_results = {
+            "suggestions": suggestions, 
+            "related_insights": related_insights,
+            "related_history": related_history,
+            "issues": []
+        }
 
         return {
             "reflection_results": reflection_results,
@@ -133,7 +134,7 @@ class InformationExtractionAgent:
     def reflect(self, state):
         reflection_results = state.get("reflection_results", {})
         logs = "\n".join(self.reflector.generate_logs(state))
-        # print("抽取日志: ", logs)
+        # print("Extraction logs: ", logs)
         if len(state["content"]) <= 100:
             version = "short"
         else:
@@ -157,7 +158,10 @@ class InformationExtractionAgent:
         reflection_results["score"] = score
         reflection_results.setdefault("related_insights", []).extend(result.get("insights", []))
 
-        reflection_results["suggestions"] = generate_suggestions(reflection_results.get("related_insights", []), reflection_results.get("related_history", []))
+        reflection_results["suggestions"] = generate_suggestions(
+            reflection_results.get("related_insights", []), 
+            reflection_results.get("related_history", [])
+        )
         reflection_results["issues"] = result.get("current_issues", [])
         
         current_result = {
@@ -168,7 +172,7 @@ class InformationExtractionAgent:
             "issues": result.get("current_issues", [])
         }
         
-        # 如果本轮更优则更新 best_result
+        # Update best_result if this round achieves a higher score
         if score > best_score:
             best_result = current_result
         else:
@@ -237,10 +241,10 @@ class InformationExtractionAgent:
                    max_attempts: int = 5,
                    backoff_seconds: int = 30):
         """
-        异步抽取（带超时 + 重试）
-        ・timeout        每次调用最多等待秒数
-        ・max_attempts   总尝试次数 = 1 次正常 + (max_attempts-1) 次重试
-        ・backoff_seconds 简单线性退避（30,60,…）
+        Asynchronous extraction with timeout and retry
+        ・timeout        Maximum wait time per attempt (in seconds)
+        ・max_attempts   Total attempts = 1 normal + (max_attempts-1) retries
+        ・backoff_seconds Linear backoff (30, 60, …)
         """
         attempt = 0
         while attempt < max_attempts:
@@ -252,20 +256,20 @@ class InformationExtractionAgent:
                     "best_result": {}
                 })
                 result = await asyncio.wait_for(coro, timeout=timeout)
-                return result.get("best_result", result)     # <<< 正常返回
+                return result.get("best_result", result)     # <<< Normal return
             except asyncio.TimeoutError:
                 attempt += 1
                 if attempt >= max_attempts:
-                    # 超时仍失败 —— 返回空抽取，供上层继续流程
+                    # Timeout failure — return empty extraction for upper-level handling
                     print("[CHECK] text: ", text)
                     print({"entities": [], "relations": [], "score": 0, "insights": [], "issues": [],
-                            "error": f"timeout after {max_attempts} attempts"})
+                           "error": f"timeout after {max_attempts} attempts"})
                     return {"entities": [], "relations": [], "score": 0, "insights": [], "issues": [],
                             "error": f"timeout after {max_attempts} attempts"}
-                # 退避后重试
+                # Backoff before retry
                 await asyncio.sleep(backoff_seconds * attempt)
             except Exception as e:
-                # 其它异常不重试（你可按需改成也重试）
+                # Other exceptions are not retried (you can change this to retry if needed)
                 print("[CHECK] text: ", text)
                 print({"entities": [], "relations": [], "error": str(e), "score": 0, "insights": [], "issues": [],})
                 return {"entities": [], "relations": [], "error": str(e), "score": 0, "insights": [], "issues": [],}

@@ -78,7 +78,6 @@ class SemanticSplitter:
                 repair_template=self.repair_template
             )
             
-            logger.info("语义分割完成，返回格式化后的JSON")
             if status == "success":
                 return corrected_json
             else:

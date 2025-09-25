@@ -1,20 +1,69 @@
-# kag/builder/extractor.py
+# -*- coding: utf-8 -*-
+"""
+Extractor Module
+================
 
+This module provides a unified **information extraction interface** that connects
+to multiple LLM-backed function tools. It serves as the central entry point for
+entity, relation, attribute, and CMP (Costume/Makeup/Props) extraction tasks,
+with optional reflection for iterative improvement.
+
+Supported tasks:
+----------------
+- Entity extraction
+- Relation extraction
+- Extraction reflection (quality audit)
+- Attribute extraction & reflection
+- Prop item extraction
+- Wardrobe (costume) extraction
+- Styling (makeup/hair) extraction
+- CMP reflection
+
+Class:
+------
+    InformationExtractor
+        High-level facade for invoking extraction tasks.
+
+Usage example:
+--------------
+    >>> from core.utils.config import KAGConfig
+    >>> from core.utils.prompt_loader import PromptLoader
+    >>> config = KAGConfig.load("config.yaml")
+    >>> extractor = InformationExtractor(config, llm)
+    >>> entities = extractor.extract_entities(
+    ...     text="John picked up the sword and left the castle.",
+    ...     entity_type_description_text="Character, Object, Location",
+    ...     system_prompt="Extract entities from text",
+    ...     reflection_results={}
+    ... )
 """
-信息抽取器模块
-对接 Agent，提供 Extractor 对外接口
-"""
+
 import json
 from typing import Dict, Any
 from core.utils.config import KAGConfig
-from core.functions.regular_functions import (EntityExtractor, RelationExtractor, 
-    ExtractionReflector, AttributeExtractor, AttributeReflector, PropItemExtractor, WardrobeExtractor, StylingExtractor, CMPReflector)
-# from kag.schema.kg_schema import ENTITY_TYPES, RELATION_TYPE_GROUPS
+from core.functions.regular_functions import (
+    EntityExtractor,
+    RelationExtractor,
+    ExtractionReflector,
+    AttributeExtractor,
+    AttributeReflector,
+    PropItemExtractor,
+    WardrobeExtractor,
+    StylingExtractor,
+    CMPReflector,
+)
 from core.utils.prompt_loader import PromptLoader
 import os
 
+
 class InformationExtractor:
-    """信息抽取器"""
+    """
+    High-level information extractor facade.
+
+    Wraps multiple tool interfaces (entity, relation, attribute, CMP) and
+    exposes them as easy-to-use methods. Supports optional reflection
+    for iterative quality improvements.
+    """
 
     def __init__(self, config: KAGConfig, llm, prompt_loader: PromptLoader = None):
         self.config = config
@@ -24,6 +73,8 @@ class InformationExtractor:
             self.prompt_loader = PromptLoader(prompt_dir)
         else:
             self.prompt_loader = prompt_loader
+
+        # Wrapped function tools
         self.entity_extraction = EntityExtractor(self.prompt_loader, self.llm)
         self.relation_extraction = RelationExtractor(self.prompt_loader, self.llm)
         self.extraction_reflection = ExtractionReflector(self.prompt_loader, self.llm)
@@ -34,28 +85,25 @@ class InformationExtractor:
         self.wardrobe_extraction = WardrobeExtractor(self.prompt_loader, self.llm)
         self.custume_reflection = CMPReflector(self.prompt_loader, self.llm)
 
+    # ---------------- Entity & Relation ----------------
+
     def extract_entities(
         self,
         text: str,
         entity_type_description_text: str,
         system_prompt: str,
         reflection_results: dict,
-        enable_thinking: bool = True
+        enable_thinking: bool = True,
     ) -> str:
-        """从文本中抽取实体"""
+        """Extract entities from text."""
         params = {
-                "text": text,
-                "entity_type_description_text": entity_type_description_text,
-                "system_prompt": system_prompt,
-                "reflection_results": reflection_results
-            }
-        result = self.entity_extraction.call(
-            params=json.dumps(params),
-            enable_thinking=enable_thinking
-        )
-        # print("[CHECK] entity extraction result: ", result)
+            "text": text,
+            "entity_type_description_text": entity_type_description_text,
+            "system_prompt": system_prompt,
+            "reflection_results": reflection_results,
+        }
+        result = self.entity_extraction.call(params=json.dumps(params), enable_thinking=enable_thinking)
         return result
-
 
     def extract_relations(
         self,
@@ -63,23 +111,18 @@ class InformationExtractor:
         entity_list: str,
         relation_type_description_text: str,
         system_prompt: str,
-        reflection_results: dict|str,
+        reflection_results: dict | str,
         enable_thinking: bool = True,
-       # entity_extraction_results: dict|str,
     ) -> str:
-        """从文本中抽取关系"""
+        """Extract relations from text."""
         params = {
-                "text": text,
-                "entity_list": entity_list,
-                "relation_type_description_text": relation_type_description_text,
-                "reflection_results": reflection_results,
-                "system_prompt": system_prompt,
-                # "entity_extraction_results": entity_extraction_results
-            }
-        result = self.relation_extraction.call(
-            params=json.dumps(params), enable_thinking=enable_thinking
-        )
-        # print("[CHECK] relation extraction result: ", result)
+            "text": text,
+            "entity_list": entity_list,
+            "relation_type_description_text": relation_type_description_text,
+            "reflection_results": reflection_results,
+            "system_prompt": system_prompt,
+        }
+        result = self.relation_extraction.call(params=json.dumps(params), enable_thinking=enable_thinking)
         return result
 
     def reflect_extractions(
@@ -89,31 +132,29 @@ class InformationExtractor:
         relation_type_description_text: str,
         system_prompt: str,
         original_text: str = None,
-        previous_reflection: dict|str = None,
+        previous_reflection: dict | str = None,
         enable_thinking: bool = True,
-        version: str = "default", 
+        version: str = "default",
     ) -> str:
-        """反思抽取结果的质量"""
+        """Reflect on extraction quality and produce feedback."""
         params = {
-                "logs": logs,
-                "entity_type_description_text": entity_type_description_text,
-                "relation_type_description_text": relation_type_description_text,
-                "original_text": original_text,
-                "system_prompt": system_prompt,
-                "previous_reflection": previous_reflection,
-                "version": version,
-            }
-        result = self.extraction_reflection.call(
-            params=json.dumps(params), enable_thinking=enable_thinking
-        )
-        # print("[CHECK] 传入日志: ", logs)
-        # print("[CHECK] reflection result: ", result)
+            "logs": logs,
+            "entity_type_description_text": entity_type_description_text,
+            "relation_type_description_text": relation_type_description_text,
+            "original_text": original_text,
+            "system_prompt": system_prompt,
+            "previous_reflection": previous_reflection,
+            "version": version,
+        }
+        result = self.extraction_reflection.call(params=json.dumps(params), enable_thinking=enable_thinking)
         return result
+
+    # ---------------- Attributes ----------------
 
     def extract_entity_attributes(
         self,
         text: str,
-        entity_name: str, 
+        entity_name: str,
         description: str,
         entity_type: str,
         attribute_definitions: str,
@@ -122,8 +163,7 @@ class InformationExtractor:
         feedbacks: str = None,
         original_text: str = None,
     ) -> str:
-        """从文本和实体描述中抽取结构化属性"""
-
+        """Extract structured attributes for a given entity."""
         params = {
             "text": text,
             "description": description,
@@ -133,13 +173,9 @@ class InformationExtractor:
             "system_prompt": system_prompt,
             "previous_results": previous_results,
             "feedbacks": feedbacks,
-            "original_text": original_text
+            "original_text": original_text,
         }
-
         result = self.attribute_extraction.call(params=json.dumps(params))
-        # print("[CHECK] entity name: ", entity_name)
-        # print("[CHECK] input text: ", text)
-        #print("[CHECK] entity attribute extraction result: ", result)
         return result
 
     def reflect_entity_attributes(
@@ -149,80 +185,38 @@ class InformationExtractor:
         attribute_definitions: str,
         attributes: str,
         original_text: str = "",
-        system_prompt: str = ""
+        system_prompt: str = "",
     ) -> str:
-        """
-        对属性抽取结果进行反思评估，判断是否完整、是否需要补充上下文等
-        """
+        """Reflect on attribute extraction quality (completeness, correctness, retry needs)."""
         params = {
             "entity_type": entity_type,
             "description": description,
             "attribute_definitions": attribute_definitions,
             "attributes": attributes,
             "original_text": original_text,
-            "system_prompt": system_prompt
+            "system_prompt": system_prompt,
         }
-
         result = self.attribute_reflection.call(params=json.dumps(params))
-        # print("[CHECK] attribute reflection result:", result)
-        return result
-    
-    def extract_propitem(
-        self,
-        content: str,
-        system_prompt: str,
-        reflection_results: dict
-    ) -> str:
-        """从文本中抽取道具"""
-        params = {
-                "content": content,
-                "system_prompt": system_prompt,
-                "reflection_results": reflection_results
-            }
-        result = self.propitem_extraction.call(
-            params=json.dumps(params)
-        )
-        # print("[CHECK] propitem extraction result: ", result)
-        # print(f"原文：\n{content}")
         return result
 
+    # ---------------- CMP (Costume / Makeup / Props) ----------------
 
-    def extract_wardrobe(
-        self,
-        content: str,
-        system_prompt: str,
-        reflection_results: dict
-    ) -> str:
-        """从文本中抽取服装"""
-        params = {
-                "content": content,
-                "system_prompt": system_prompt,
-                "reflection_results": reflection_results
-            }
-        result = self.wardrobe_extraction.call(
-            params=json.dumps(params)
-        )
-        # print("[CHECK] wardrobe extraction result: ", result)
-        # print(f"原文：\n{content}")
+    def extract_propitem(self, content: str, system_prompt: str, reflection_results: dict) -> str:
+        """Extract prop items from text."""
+        params = {"content": content, "system_prompt": system_prompt, "reflection_results": reflection_results}
+        result = self.propitem_extraction.call(params=json.dumps(params))
         return result
-    
-    def extract_styling(
-        self,
-        content: str,
-        system_prompt: str,
-        reflection_results: dict
-    ) -> str:
-        """从文本中抽取妆造"""
-        params = {
-                "content": content,
-                "system_prompt": system_prompt,
-                "reflection_results": reflection_results
-            }
-        result = self.styling_extraction.call(
-            params=json.dumps(params)
-        )
-        # print("[CHECK] styling extraction result: ", result)
-        # print(f"原文：\n{content}")
+
+    def extract_wardrobe(self, content: str, system_prompt: str, reflection_results: dict) -> str:
+        """Extract wardrobe (costume) items from text."""
+        params = {"content": content, "system_prompt": system_prompt, "reflection_results": reflection_results}
+        result = self.wardrobe_extraction.call(params=json.dumps(params))
+        return result
+
+    def extract_styling(self, content: str, system_prompt: str, reflection_results: dict) -> str:
+        """Extract styling (makeup/hair) details from text."""
+        params = {"content": content, "system_prompt": system_prompt, "reflection_results": reflection_results}
+        result = self.styling_extraction.call(params=json.dumps(params))
         return result
 
     def reflect_cmp_extractions(
@@ -230,18 +224,14 @@ class InformationExtractor:
         logs: str,
         content: str,
         system_prompt: str,
-        previous_reflection: dict|str = None,
+        previous_reflection: dict | str = None,
     ) -> str:
-        """反思抽取结果的质量"""
+        """Reflect on the overall quality of CMP (Costume/Makeup/Props) extractions."""
         params = {
-                "logs": logs,
-                "content": content,
-                "system_prompt": system_prompt,
-                "previous_reflection": previous_reflection,
-            }
-        result = self.custume_reflection.call(
-            params=json.dumps(params)
-        )
-        # print("[CHECK] reflection result: ", result)
-        # print(f"原文：\n{content}")
+            "logs": logs,
+            "content": content,
+            "system_prompt": system_prompt,
+            "previous_reflection": previous_reflection,
+        }
+        result = self.custume_reflection.call(params=json.dumps(params))
         return result

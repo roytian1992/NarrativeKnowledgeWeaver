@@ -8,7 +8,6 @@ import pickle
 import multiprocessing as mp
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError, wait, FIRST_COMPLETED
-import time
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
@@ -17,7 +16,9 @@ import pandas as pd
 import random
 import re
 import glob
+import logging
 from tqdm import tqdm
+
 from core.utils.prompt_loader import PromptLoader
 from core.utils.format import correct_json_format
 from core.models.data import Entity, KnowledgeGraph, Relation, TextChunk, Document
@@ -33,23 +34,26 @@ from .document_processor import DocumentProcessor
 from core.builder.graph_preprocessor import GraphPreprocessor
 from core.utils.format import DOC_TYPE_META
 from core.builder.reflection import DynamicReflector
-from collections import defaultdict
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_type(t):
     """
-    - 输入可为 str 或 list
-    - 若包含 'Event' → 把 'Event' 放到首位
-    - 去重但保持原相对顺序
-    - 若为空 → 返回 'Concept'
+    Normalize entity type.
+
+    - Input can be str or list.
+    - If contains 'Event', put 'Event' at the first position.
+    - De-duplicate while preserving original order.
+    - If empty -> return 'Concept'.
     """
     if not t:
         return "Concept"
     if isinstance(t, str):
         return t
 
-    # list 情况
+    # list case
     seen = set()
     ordered = []
     for x in t:
@@ -61,20 +65,19 @@ def _normalize_type(t):
         ordered = ["Event"] + [x for x in ordered if x != "Event"]
 
     return ordered if len(ordered) > 1 else (ordered[0] if ordered else "Concept")
-    
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 #                               Builder
 # ═════════════════════════════════════════════════════════════════════════════
 class KnowledgeGraphBuilder:
-    """知识图谱构建器（支持多文档格式）"""
+    """Knowledge graph builder (supports multiple document formats)."""
+
     def __init__(self, config: KAGConfig, doc_type: str = None):
-        if doc_type:
-            self.doc_type = doc_type
-        else:
-            self.doc_type = config.knowledge_graph_builder.doc_type
+        self.doc_type = doc_type if doc_type else config.knowledge_graph_builder.doc_type
         if self.doc_type not in DOC_TYPE_META:
             raise ValueError(f"Unsupported doc_type: {self.doc_type}")
-        
+
         self.config = config
         self.max_workers = config.knowledge_graph_builder.max_workers
         self.meta = DOC_TYPE_META[self.doc_type]
@@ -85,59 +88,51 @@ class KnowledgeGraphBuilder:
         self.llm = OpenAILLM(config)
         self.processor = DocumentProcessor(config, self.llm, self.doc_type)
 
-        # 存储 / 数据库
+        # Stores / Databases
         self.graph_store = GraphStore(config)
         self.neo4j_utils = Neo4jUtils(self.graph_store.driver, doc_type=self.doc_type)
         self.document_vector_store = VectorStore(config, "documents")
         self.sentence_vector_store = VectorStore(config, "sentences")
-        # self.document_store = DocumentStore(config)
-        # 初始化记忆模块
+
+        # Memory / Reflection
         self.reflector = DynamicReflector(config)
 
-        # 运行数据
+        # Runtime data
         self.kg = KnowledgeGraph()
         self.probing_mode = self.config.probing.probing_mode
         self.graph_probing_agent = GraphProbingAgent(self.config, self.llm, self.reflector)
-        
-    def clear_directory(self, path):
+
+    def clear_directory(self, path: str):
+        """Delete all .json files under a directory."""
         for file in glob.glob(os.path.join(path, "*.json")):
             try:
                 os.remove(file)
             except Exception as e:
-                print(f"删除失败: {file} -> {e}")
+                logger.warning(f"Failed to delete: {file} -> {e}")
 
     def construct_system_prompt(self, background, abbreviations):
-        
         background_info = self.get_background_info(background, abbreviations)
-        
-        if self.doc_type == "screenplay":
-            system_prompt_id = "agent_prompt_screenplay"
-        else:
-            system_prompt_id = "agent_prompt_novel"
-            
+        system_prompt_id = "agent_prompt_screenplay" if self.doc_type == "screenplay" else "agent_prompt_novel"
         system_prompt_text = self.prompt_loader.render_prompt(system_prompt_id, {"background_info": background_info})
         return system_prompt_text
-    
-    def get_background_info(self, background, abbreviations):
-        bg_block = f"**背景设定**：{background}\n" 
 
-        # ---------- 2) 缩写表（键名宽容） ----------
+    def get_background_info(self, background, abbreviations):
+        bg_block = f"**Background**: {background}\n" if background else ""
+
         def fmt(item: dict) -> str:
             """
-            将一个缩写项转为 Markdown 列表条目。任何字段都可选，标题字段优先级为：
-            abbr > full > 其他字段 > N/A
+            Turn an abbreviation item into a Markdown bullet.
+            Any field is optional. Title preference: abbr > full > any non-empty field > N/A.
             """
             if not isinstance(item, dict):
                 return ""
 
-            # 标题字段优先级
-            abbr = (
+            title = (
                 item.get("abbr")
                 or item.get("full")
                 or next((v for k, v in item.items() if isinstance(v, str) and v.strip()), "N/A")
             )
 
-            # 剩下字段去除标题字段
             parts = []
             for k, v in item.items():
                 if k in ("abbr", "full"):
@@ -145,310 +140,282 @@ class KnowledgeGraphBuilder:
                 if isinstance(v, str) and v.strip():
                     parts.append(v.strip())
 
-            return f"- **{abbr}**: " + " - ".join(parts) if parts else f"- **{abbr}**"
+            return f"- **{title}**: " + " - ".join(parts) if parts else f"- **{title}**"
 
-        abbr_block = "\n".join(fmt(item) for item in abbreviations if isinstance(item, dict))
+        abbr_block = "\n".join(fmt(item) for item in abbreviations if isinstance(item, dict)) if abbreviations else ""
 
-        if background and abbr_block:
+        if bg_block and abbr_block:
             background_info = f"{bg_block}\n{abbr_block}"
         else:
             background_info = bg_block or abbr_block
-            
+
         return background_info
-        
+
     def prepare_chunks(
         self,
         json_file_path: str,
         verbose: bool = True,
         retries: int = 2,
         per_task_timeout: float = 600.0,
-        retry_backoff: float = 1.0,
+        retry_backoff: float = 1.0,  # kept for signature compatibility; not used by the unified runner
+        *,
+        use_semantic_split: bool = True,
+        extract_summary: bool = True,
+        extract_metadata: bool = True,
+        summary_max_words: int = 200,
     ):
         """
-        并发拆分文档为 TextChunk，按【完成顺序】收集；
-        - 单文档软超时 = per_task_timeout（默认120s），超时则跳过其块并在下一轮重试；
-        - 可配置重试轮数 retries（默认2轮）。每轮仅对未成功的文档进行并发处理；
-        - 成功：立即收集其 document_chunks；
-        - 失败/超时：计入队列，若仍有剩余轮次则进入下一轮重试。
+        Build TextChunks from a JSON corpus using a single-pass pipeline:
+
+        1) base_splitter.split_text(document) -> (optional) sliding_semantic_split(...)
+        2) (optional) sliding-window summaries on the split chunks
+        3) (optional) one-shot document-level metadata from (Title + Aggregated Summary),
+           copied to each chunk as `doc_metadata`
+
+        Concurrency, soft timeouts and retries are handled by
+        `core.utils.function_manager.run_concurrent_with_retries`.
 
         Args:
-            json_file_path: 输入 JSON 路径
-            verbose: 是否打印日志
-            retries: 最大重试轮数（含首轮），默认2
-            per_task_timeout: 单文档软超时（秒），默认120
-            retry_backoff: 每轮之间的退避（秒），默认1.0
+            json_file_path: input JSON path
+            verbose: whether to log progress info
+            retries: total rounds (round 1 + (retries-1) retries)
+            per_task_timeout: soft timeout per *document* (seconds), measured after task start
+            retry_backoff: kept for compatibility (not used)
+            use_semantic_split / extract_summary / extract_metadata / summary_max_words:
+                control the single-pass behavior (see DocumentProcessor.prepare_chunk)
         """
-        # —— 初始化/清理 —— #
+        # Init / cleanup
         self.reflector.clear()
         base = self.config.storage.knowledge_graph_path
         self.clear_directory(base)
 
         if verbose:
-            print(f"🚀 开始构建知识图谱: {json_file_path}")
-            print("📖 加载文档...")
+            logger.info(f"Starting knowledge graph build from: {json_file_path}")
+            logger.info("Loading documents...")
 
-        documents = self.processor.load_from_json(json_file_path, extract_metadata=True)
+        # Load items; each item becomes ONE document
+        documents = self.processor.load_from_json(json_file_path)
         n_docs = len(documents)
 
         if verbose:
-            print(f"✅ 成功加载 {n_docs} 个文档")
+            logger.info(f"Loaded {n_docs} documents")
 
-        # 单文档拆分任务
-        def _run(doc):
-            # 期望返回 {"document_chunks": List[TextChunk]}
-            return self.processor.prepare_chunk(doc)
+        # Per-document task
+        def _task(doc: Dict) -> Dict[str, List[TextChunk]]:
+            # Expect a dict: {"document_chunks": List[TextChunk]}
+            return self.processor.prepare_chunk(
+                doc,
+                use_semantic_split=use_semantic_split,
+                extract_summary=extract_summary,
+                extract_metadata=extract_metadata,
+                summary_max_words=summary_max_words,
+            )
 
-        # —— 并发 & 重试 —— #
-        all_chunks = []
-        # 这些索引最终用于汇报：每轮动态更新
-        final_failures = set()   # 全部轮次里仍失败（异常）的文档 idx
-        final_timeouts = set()   # 全部轮次里仍超时的文档 idx
+        # Run concurrent with retries
+        from core.utils.function_manager import run_concurrent_with_retries
 
-        # 待处理文档索引集合（第一轮是全部）
-        remaining = list(range(n_docs))
+        max_workers = getattr(self.processor, "max_workers", getattr(self, "max_workers", 4))
+        results_map, failed_indices = run_concurrent_with_retries(
+            items=documents,
+            task_fn=_task,
+            per_task_timeout=per_task_timeout,
+            max_retry_rounds=max(1, retries),
+            max_in_flight=max_workers,
+            max_workers=max_workers,
+            thread_name_prefix="chunk",
+            desc_prefix="Chunking documents",
+            treat_empty_as_failure=True,
+            is_empty_fn=lambda r: (not r) or (not isinstance(r, dict)) or (not r.get("document_chunks")),
+        )
 
-        # 并发大小
-        max_workers = getattr(self, "max_workers", getattr(self, "max_worker", 4))
+        # Flatten results (keep only successful chunks)
+        all_chunks: List[TextChunk] = []
+        for i in range(n_docs):
+            res = results_map.get(i)
+            if not res:
+                continue
+            chunks = res.get("document_chunks", [])
+            if isinstance(chunks, list):
+                all_chunks.extend(chunks)
 
-        for round_id in range(1, max(1, retries) + 1):
-            if not remaining:
-                if verbose:
-                    print(f"🎉 所有文档在第 {round_id-1} 轮前已完成，无需继续。")
-                break
-
-            if verbose:
-                print(f"\n🔁 第 {round_id}/{max(1, retries)} 轮并发拆分：待处理 {len(remaining)} 个文档")
-
-            # 当轮的失败/超时暂存（仅本轮计算，用于下一轮重试）
-            round_failures = []
-            round_timeouts = []
-
-            # —— 提交任务 —— #
-            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=f"chunk-r{round_id}") as executor:
-                fut_info = {}  # future -> {"start": float, "idx": int}
-                for idx in remaining:
-                    f = executor.submit(_run, documents[idx])
-                    fut_info[f] = {"start": time.time(), "idx": idx}
-
-                pbar = tqdm(total=len(fut_info), desc=f"并发拆分中/第{round_id}轮", ncols=100)
-                pending = set(fut_info.keys())
-
-                while pending:
-                    # 1) 先收集已完成的
-                    done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
-                    for f in done:
-                        info = fut_info.pop(f, None)
-                        try:
-                            grp = f.result()  # 已完成，不阻塞
-                            chunks = (grp or {}).get("document_chunks", [])
-                            if isinstance(chunks, list):
-                                all_chunks.extend(chunks)
-                            else:
-                                round_failures.append(info["idx"])
-                        except Exception:
-                            round_failures.append(info["idx"])
-                        pbar.update(1)
-
-                    # 2) 检查未完成是否超过软超时；超时则不再等待
-                    now = time.time()
-                    to_forget = []
-                    for f in pending:
-                        start = fut_info[f]["start"]
-                        if now - start >= per_task_timeout:
-                            info = fut_info[f]
-                            try:
-                                f.cancel()  # 若已在运行则返回 False；无论如何不再等待
-                            except Exception:
-                                pass
-                            round_timeouts.append(info["idx"])
-                            pbar.update(1)
-                            to_forget.append(f)
-                    if to_forget:
-                        for f in to_forget:
-                            pending.remove(f)
-                            fut_info.pop(f, None)
-
-                pbar.close()
-
-                # executor 在 with 结束时会等待正在运行的任务完成；
-                # 但我们上面已对超时的 future 做了 pbar 更新并移除 pending，不会卡住。
-
-            # —— 计算下一轮 remaining —— #
-            # 当轮未成功 = (当轮失败 ∪ 当轮超时)
-            # 注意：成功的 idx 已经通过 all_chunks 收集，不需要记录。
-            remaining = list(set(round_failures) | set(round_timeouts))
-
-            # 汇总到“最终统计集合”（用于全部轮次结束后的汇报）
-            final_failures.update(round_failures)
-            final_timeouts.update(round_timeouts)
-
-            if verbose:
-                print(f"📦 第 {round_id} 轮结束：成功 {n_docs - len(remaining) - (len(all_chunks) == 0)}（累计块 {len(all_chunks)}）")
-                if round_timeouts:
-                    print(f"⏱️ 本轮超时 {len(round_timeouts)} 个：{sorted(round_timeouts)}")
-                if round_failures:
-                    print(f"❗本轮失败 {len(round_failures)} 个：{sorted(round_failures)}")
-
-            # 若还有未完成且仍有下一轮，稍作退避
-            if remaining and round_id < max(1, retries) and retry_backoff > 0:
-                time.sleep(retry_backoff)
-
-        # —— 落盘（只写成功块）—— #
+        # Persist successful chunks
         os.makedirs(base, exist_ok=True)
         out_path = os.path.join(base, "all_document_chunks.json")
         with open(out_path, "w", encoding="utf-8") as fw:
             json.dump([c.dict() for c in all_chunks], fw, ensure_ascii=False, indent=2)
 
-        # —— 最终报告 —— #
+        # Final report
         if verbose:
-            print(f"\n✅ 最终生成 {len(all_chunks)} 个文本块，已写入：{out_path}")
-
-            # “最终失败/超时集合”里，去掉那些后来成功完成的索引
-            # 做法：推断成功文档索引 = 全部索引 - 最终 remaining 集合
-            # 但由于我们没有逐文档的 chunk 计数，这里采用保守汇报：
-            #   报告在“最后一轮仍未完成”的索引
-            if remaining:
-                print(f"⚠️ 以下 {len(remaining)} 个文档在 {retries} 轮后仍未完成：{sorted(remaining)}")
-
-            # 辅助：给出所有回合中出现过的异常/超时索引（便于排查）
-            if final_timeouts:
-                print(f"⏱️ 所有轮次累计出现过超时的文档索引：{sorted(final_timeouts)}")
-            if final_failures:
-                print(f"❗所有轮次累计出现过失败的文档索引：{sorted(final_failures)}")
-
+            logger.info(f"Generated {len(all_chunks)} chunks, written to: {out_path}")
+            if failed_indices:
+                logger.warning(f"{len(failed_indices)} documents failed after {retries} round(s): {sorted(failed_indices)}")
 
     # ═════════════════════════════════════════════════════════════════════
-    #  2) 存储 Chunk（RDB + VDB）
+    #  2) Store chunks (RDB + VDB)
     # ═════════════════════════════════════════════════════════════════════
     def store_chunks(self, verbose: bool = True):
         base = self.config.storage.knowledge_graph_path
 
-        # 描述块
+        # Description chunks
         doc_chunks = [TextChunk(**o) for o in
-                       json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
+                      json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
 
-        # 写入 KG（Document + Chunk）
+        # Write into KG (Document + Chunk)
         for ch in doc_chunks:
             self.kg.add_document(self.processor.prepare_document(ch))
             self.kg.add_chunk(ch)
 
-        # 写入向量数据库
+        # Vector DB
         if verbose:
-            print("💾 存储到向量数据库...")
-            
+            logger.info("Storing to vector databases...")
         self._store_vectordb(verbose)
-        
-        
+
     def run_graph_probing(self, verbose: bool = True, sample_ratio: float = None):
+        """Run (or skip) schema probing and persist schema/settings."""
         self.reflector.clear()
-        
+
         base = self.config.storage.graph_schema_path
         os.makedirs(base, exist_ok=True)
         self.clear_directory(base)
-        
-        if self.probing_mode == "fixed" or self.probing_mode == "adjust" :
+
+        if self.probing_mode in ("fixed", "adjust"):
             schema = json.load(open(self.config.probing.default_graph_schema_path, "r", encoding="utf-8"))
             if os.path.exists(self.config.probing.default_background_path):
-                settings = json.load(open(os.path.join(self.config.probing.default_background_path), "r", encoding="utf-8"))        
+                settings = json.load(open(self.config.probing.default_background_path, "r", encoding="utf-8"))
             else:
                 settings = {"background": "", "abbreviations": []}
         else:
             schema = {}
             settings = {"background": "", "abbreviations": []}
-        
+
         if self.probing_mode != "fixed":
-            schema , settings = self.update_schema(schema, background=settings["background"], abbreviations=settings["abbreviations"],
-                                                   verbose=verbose, sample_ratio=sample_ratio)
+            schema, settings = self.update_schema(
+                schema,
+                background=settings["background"],
+                abbreviations=settings["abbreviations"],
+                verbose=verbose,
+                sample_ratio=sample_ratio,
+            )
         else:
             if verbose:
-                print("📌 跳过probing步骤")
-            
+                logger.info("Skipping probing step (fixed schema mode).")
+
         with open(os.path.join(base, "graph_schema.json"), "w", encoding="utf-8") as f:
             json.dump(schema, f, ensure_ascii=False, indent=2)
-            
+
         with open(os.path.join(base, "settings.json"), "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
-            
-            
+
     def initialize_agents(self):
-        
+        """Initialize extraction agents and graph preprocessor using persisted schema/settings."""
         base = self.config.storage.graph_schema_path
         schema_path = os.path.join(base, "graph_schema.json")
         settings_path = os.path.join(base, "settings.json")
+
         if os.path.exists(schema_path):
             schema = json.load(open(schema_path, "r", encoding="utf-8"))
         elif os.path.exists(self.config.probing.default_graph_schema_path):
             schema = json.load(open(self.config.probing.default_graph_schema_path, "r", encoding="utf-8"))
         else:
-            raise FileNotFoundError("没有graph schema，请提供正确路径或者先运行probing")
-        
+            raise FileNotFoundError("Graph schema not found. Provide a valid path or run probing first.")
+
         if os.path.exists(settings_path):
             settings = json.load(open(settings_path, "r", encoding="utf-8"))
         elif os.path.exists(self.config.probing.default_background_path):
             settings = json.load(open(self.config.probing.default_background_path, "r", encoding="utf-8"))
         else:
             settings = {"background": "", "abbreviations": []}
- 
+
         self.system_prompt_text = self.construct_system_prompt(
             background=settings.get("background", ""),
-            abbreviations=settings.get("abbreviations", "")
+            abbreviations=settings.get("abbreviations", ""),
         )
 
-        # 抽取 agent
-        self.information_extraction_agent = InformationExtractionAgent(self.config, self.llm, self.system_prompt_text, schema, self.reflector)
-        self.attribute_extraction_agent = AttributeExtractionAgent(self.config, self.llm, self.system_prompt_text, schema)
+        # Agents
+        self.information_extraction_agent = InformationExtractionAgent(
+            self.config, self.llm, self.system_prompt_text, schema, self.reflector
+        )
+        self.attribute_extraction_agent = AttributeExtractionAgent(
+            self.config, self.llm, self.system_prompt_text, schema
+        )
         self.graph_preprocessor = GraphPreprocessor(self.config, self.llm, system_prompt=self.system_prompt_text)
-        
-    def update_schema(self, schema: Dict = {}, background: str = "", abbreviations: List = [], verbose: bool = True, sample_ratio: float = None, documents: List[Document] = None):
+
+    def update_schema(
+        self,
+        schema: Dict = {},
+        background: str = "",
+        abbreviations: List = [],
+        verbose: bool = True,
+        sample_ratio: float = None,
+        documents: List[Document] = None,
+    ):
+        """
+        Update schema by probing on sampled chunks and saving insights into reflection memory.
+        Returns (schema, settings).
+        """
         if documents:
             doc_chunks = documents
         else:
             base = self.config.storage.knowledge_graph_path
             doc_chunks = [TextChunk(**o) for o in
-                        json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
-            
+                          json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
+
+        # Collect one unique summary per document_id, sorted by numeric suffix if present
+        summaries = [
+            (ch.document_id, ch.metadata.get("summary", ""))
+            for ch in doc_chunks if ch.metadata.get("summary", "")
+        ]
+        unique_summaries = {}
+        for doc_id, summary in summaries:
+            if doc_id not in unique_summaries:
+                unique_summaries[doc_id] = summary
+
+        summaries_sorted = sorted(
+            unique_summaries.items(),
+            key=lambda x: int(str(x[0]).split("_")[-1]) if str(x[0]).split("_")[-1].isdigit() else float("inf")
+        )
+        summaries = [s for _, s in summaries_sorted]
+
         if not sample_ratio:
             sample_ratio = 0.35
         k = int(len(doc_chunks) * sample_ratio)
         sampled_chunks = random.sample(doc_chunks, k=k)
-        # 保存一些洞察，用于之后的探索。
+
+        # Save insights into memory for later retrieval
         sampled_chunks = self.processor.extract_insights(sampled_chunks)
-        
-        for chunk in tqdm(sampled_chunks, desc="保存洞见中", total=len(sampled_chunks)):
-            insights = chunk.metadata.get("insights", []) 
+        for chunk in tqdm(sampled_chunks, desc="Saving insights", total=len(sampled_chunks)):
+            insights = chunk.metadata.get("insights", [])
             for item in insights:
-                # print("[CHECK] insight", item)
                 self.reflector.insight_memory.add(text=item, metadata={})
         if verbose:
-            print("💾 保存洞见完成")
-            
+            logger.info("Insight saving completed.")
+
         params = dict()
-        params["documents"] = sampled_chunks   
-        params["schema"] = schema  
+        params["documents"] = sampled_chunks
+        params["schema"] = schema
         params["background"] = background
         params["abbreviations"] = abbreviations
-        
+        params["summaries"] = summaries
+
         result = self.graph_probing_agent.run(params)
-        # result = json.loads(correct_json_format(result))
-        
         return result["schema"], result["settings"]
-        
+
     # ═════════════════════════════════════════════════════════════════════
-    #  3) 实体 / 关系 抽取
+    #  3) Entity / Relation extraction
     # ═════════════════════════════════════════════════════════════════════
     def extract_entity_and_relation(self, verbose: bool = True):
         return asyncio.run(self.extract_entity_and_relation_async(verbose=verbose))
-            
+
     async def extract_entity_and_relation_async(self, verbose: bool = True):
         """
-        并发抽取 → 记录失败的 chunk → 统一重试一轮 → 写盘
+        Concurrent extraction with a unified retry round; results persisted to disk.
         """
         base = self.config.storage.knowledge_graph_path
         desc_chunks = [TextChunk(**o) for o in
-                    json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
+                       json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
 
         if verbose:
-            print("🧠 实体与关系信息异步抽取中...")
+            logger.info("Asynchronously extracting entities and relations...")
 
         sem = asyncio.Semaphore(self.max_workers)
 
@@ -462,82 +429,87 @@ class KnowledgeGraphBuilder:
                             ch.content,
                             timeout=self.config.agent.async_timeout,
                             max_attempts=self.config.agent.async_max_attempts,
-                            backoff_seconds=self.config.agent.async_backoff_seconds
+                            backoff_seconds=self.config.agent.async_backoff_seconds,
                         )
                     result.update(chunk_id=ch.id, chunk_metadata=ch.metadata)
                     return result
                 except Exception as e:
                     if verbose:
-                        print(f"[ERROR] 抽取失败 chunk_id={ch.id} | {e.__class__.__name__}: {e}")
+                        logger.error(f"Extraction failed: chunk_id={ch.id} | {e.__class__.__name__}: {e}")
                     return {
                         "chunk_id": ch.id,
                         "chunk_metadata": ch.metadata,
                         "entities": [],
                         "relations": [],
-                        "error": f"{e.__class__.__name__}: {e}"
+                        "error": f"{e.__class__.__name__}: {e}",
                     }
 
         async def _arun_with_ch(ch: TextChunk):
-            """返回 (chunk, result) 方便直接记录失败的 chunk。"""
+            """Return (chunk, result) to record failures precisely."""
             res = await _arun_once(ch)
             return ch, res
 
-        # ====== 首轮并发 ======
+        # First round
         tasks = [_arun_with_ch(ch) for ch in desc_chunks]
-        first_round_pairs = []   # [(ch, res), ...]
-        failed_chs = []          # [ch, ...]
+        first_round_pairs = []
+        failed_chs = []
 
-        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="异步抽取中"):
+        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Async extraction"):
             ch, res = await coro
             first_round_pairs.append((ch, res))
             if res.get("error"):
                 failed_chs.append(ch)
 
-        # ====== 统一重试（只一轮）======
+        # Unified single retry
         retry_pairs = []
         if failed_chs:
             if verbose:
-                print(f"🔄 开始重试失败的 {len(failed_chs)} 个文本块...")
+                logger.info(f"Retrying {len(failed_chs)} failed chunks...")
             retry_tasks = [_arun_with_ch(ch) for ch in failed_chs]
-            for coro in tqdm(asyncio.as_completed(retry_tasks), total=len(retry_tasks), desc="重试抽取中"):
+            for coro in tqdm(asyncio.as_completed(retry_tasks), total=len(retry_tasks), desc="Retry extraction"):
                 ch, res = await coro
                 retry_pairs.append((ch, res))
 
-        # ====== 合并结果（用失败的 ch 过滤首轮对应结果，再追加重试结果）======
+        # Merge results (replace failed with retries)
         failed_ids = {ch.id for ch in failed_chs}
         final_results = [res for ch, res in first_round_pairs if ch.id not in failed_ids]
         final_results += [res for _, res in retry_pairs]
 
-        # ====== 落盘 ======
+        # Persist
         output_path = os.path.join(base, "extraction_results.json")
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(final_results, f, ensure_ascii=False, indent=2)
 
         if verbose:
             still_failed = sum(1 for r in final_results if r.get("error"))
-            print(f"✅ 实体与关系信息抽取完成，共处理 {len(final_results)} 个文本块")
+            logger.info(f"Entity & relation extraction finished. Total chunks: {len(final_results)}")
             if still_failed:
-                print(f"⚠️ 仍有 {still_failed} 个文本块在重试后失败（保留 error 字段以便排查）")
-            print(f"💾 已保存至：{output_path}")
-
+                logger.warning(f"{still_failed} chunks still failed after retry (kept 'error' for debugging).")
+            logger.info(f"Saved to: {output_path}")
 
     # ═════════════════════════════════════════════════════════════════════
-    #  4) 属性抽取
+    #  4) Attribute extraction & refinement
     # ═════════════════════════════════════════════════════════════════════
     def run_extraction_refinement(self, verbose=False):
         """
-        实体消歧
+        Refinement pipeline:
+          - Remove noisy entities/relations by keyword
+          - Refine entity types
+          - Refine entity scope
+          - Entity disambiguation
         """
+        # Chinese keywords commonly appearing as non-entities in screenplays
         KW = ("闪回", "一组蒙太奇")
+
         base = self.config.storage.knowledge_graph_path
         extraction_results = json.load(open(os.path.join(base, "extraction_results.json"), "r", encoding="utf-8"))
         for doc in extraction_results:
-            # 1) 先删实体：名字含关键词的一律删除
+            # 1) Remove entities with keyword in name
             ents = doc.get("entities", [])
             removed_names = {e.get("name", "") for e in ents if any(k in e.get("name", "") for k in KW)}
             doc["entities"] = [e for e in ents if e.get("name", "") not in removed_names]
 
-            # 2) 再删关系：subject/object 含关键词，或指向已删除实体名
+            # 2) Remove relations whose subject/object include keywords or point to removed entities
             rels = doc.get("relations", [])
             doc["relations"] = [
                 r for r in rels
@@ -545,42 +517,41 @@ class KnowledgeGraphBuilder:
                 and r.get("subject", "") not in removed_names
                 and r.get("object", "") not in removed_names
             ]
-    
+
         if verbose:
-            print("📌 优化实体类型")
-        extraction_results =self.graph_preprocessor.refine_entity_types(extraction_results)
+            logger.info("Refining entity types...")
+        extraction_results = self.graph_preprocessor.refine_entity_types(extraction_results)
+
         if verbose:
-            print("📌 优化实体scope")
+            logger.info("Refining entity scope...")
         extraction_results = self.graph_preprocessor.refine_entity_scope(extraction_results)
+
         if verbose:
-            print("📌 实体消歧")
+            logger.info("Running entity disambiguation...")
         extraction_results = self.graph_preprocessor.run_entity_disambiguation(extraction_results)
-        
-        base = self.config.storage.knowledge_graph_path
-        with open(os.path.join(base, "extraction_results_refined.json"), "w") as f:
+
+        with open(os.path.join(base, "extraction_results_refined.json"), "w", encoding="utf-8") as f:
             json.dump(extraction_results, f, ensure_ascii=False, indent=2)
-        return
-        
 
     def extract_entity_attributes(self, verbose: bool = True) -> Dict[str, Entity]:
         return asyncio.run(self.extract_entity_attributes_async(verbose=verbose))
-    
+
     async def extract_entity_attributes_async(self, verbose: bool = True) -> Dict[str, Entity]:
         """
-        ⚡ 异步批量属性抽取  
-        · 按 extract_entity_and_relation_async 生成的 entity_map 去并发  
-        · 每个实体调用 attribute_extraction_agent.arun()  
-        · 内部 arun 已带超时＋重试保护，不会卡死
+        Asynchronous attribute extraction for merged entities.
+
+        - Merge entities from extraction results
+        - For each entity, call AttributeExtractionAgent.arun()
+        - arun() has built-in timeout and retry; won't hang indefinitely
         """
         base = self.config.storage.knowledge_graph_path
         results = json.load(open(os.path.join(base, "extraction_results_refined.json"), "r", encoding="utf-8"))
-        
-        #print(results[0])
-        # 将实体合并 / 去重
-        entity_map = self.merge_entities_info(results)            # {name: Entity}
+
+        # Merge / deduplicate entities
+        entity_map = self.merge_entities_info(results)  # {name: Entity}
 
         if verbose:
-            print(f"🔎 开始属性抽取（异步），实体数：{len(entity_map)}")
+            logger.info(f"Starting async attribute extraction, #entities: {len(entity_map)}")
 
         sem = asyncio.Semaphore(self.max_workers)
         updated_entities: Dict[str, Entity] = {}
@@ -592,7 +563,7 @@ class KnowledgeGraphBuilder:
                     if not txt.strip():
                         return name, None
 
-                    # AttributeExtractionAgent.arun 已自带 timeout+重试
+                    # AttributeExtractionAgent.arun has timeout+retry internally
                     res = await self.attribute_extraction_agent.arun(
                         text=txt,
                         entity_name=name,
@@ -601,10 +572,10 @@ class KnowledgeGraphBuilder:
                         original_text="",
                         timeout=self.config.agent.async_timeout,
                         max_attempts=self.config.agent.async_max_attempts,
-                        backoff_seconds=self.config.agent.async_backoff_seconds
+                        backoff_seconds=self.config.agent.async_backoff_seconds,
                     )
 
-                    if res.get("error"):          # 超时或异常
+                    if res.get("error"):
                         return name, None
 
                     attrs = res.get("attributes", {}) or {}
@@ -624,142 +595,127 @@ class KnowledgeGraphBuilder:
                     return name, new_ent
                 except Exception as e:
                     if verbose:
-                        print(f"[ERROR] 属性抽取失败（异步）：{name}: {e}")
+                        logger.error(f"Attribute extraction failed (async): {name}: {e}")
                     return name, None
 
-        # 并发执行
+        # Concurrent execution
         tasks = [_arun_attr(n, e) for n, e in entity_map.items()]
-        for coro in tqdm(asyncio.as_completed(tasks),
-                               total=len(tasks),
-                               desc="属性抽取中（async）"):
+        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Attribute extraction (async)"):
             n, e2 = await coro
             if e2:
                 updated_entities[n] = e2
 
-        # 写文件
+        # Persist
         output_path = os.path.join(base, "entity_info.json")
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump({k: v.dict() for k, v in updated_entities.items()},
-                      f, ensure_ascii=False, indent=2)
+            json.dump({k: v.dict() for k, v in updated_entities.items()}, f, ensure_ascii=False, indent=2)
 
         if verbose:
-            print(f"✅ 属性抽取完成，共处理实体 {len(updated_entities)} 个")
-            print(f"💾 已保存至：{output_path}")
+            logger.info(f"Attribute extraction finished. Processed entities: {len(updated_entities)}")
+            logger.info(f"Saved to: {output_path}")
 
         return {
             "status": "success",
             "processed_entities": len(updated_entities),
-            "output_path": output_path
+            "output_path": output_path,
         }
 
-
     # ═════════════════════════════════════════════════════════════════════
-    #  5) 构建并存储图谱
+    #  5) Build and store the graph
     # ═════════════════════════════════════════════════════════════════════
     def build_graph_from_results(self, verbose: bool = True) -> KnowledgeGraph:
         if verbose:
-            print("📂 加载已有抽取结果和实体信息...")
+            logger.info("Loading refined extraction results and entity info...")
 
         base = self.config.storage.knowledge_graph_path
         results = json.load(open(os.path.join(base, "extraction_results_refined.json"), "r", encoding="utf-8"))
         ent_raw = json.load(open(os.path.join(base, "entity_info.json"), "r", encoding="utf-8"))
-        
+
         with open(os.path.join(base, "section_entities_collection.pkl"), "rb") as f:
             self.section_entities_collection = pickle.load(f)
 
-        # id → Entity
+        # id -> Entity
         entity_map = {d["id"]: Entity(**d) for d in ent_raw.values()}
         name2id: Dict[str, str] = {e.name: e.id for e in entity_map.values()}
-        
+
         for e in entity_map.values():
             for al in e.aliases:
                 name2id.setdefault(al, e.id)
             self.kg.add_entity(e)
 
         if verbose:
-            print("🔗 构建知识图谱...")
+            logger.info("Building knowledge graph...")
 
         self.section_names = []
         for res in results:
             md = res.get("chunk_metadata", {})
-            # Section 实体
+
+            # Section entities
             secs = self._create_section_entities(md, res["chunk_id"])
             for se in secs:
-                # if se.id not in self.kg.entities:
                 if se.name not in self.section_names and se.id not in self.kg.entities:
                     self.kg.add_entity(se)
                     self.section_names.append(se.name)
                 else:
                     exist = self.kg.entities.get(se.id)
                     if exist:
-                        # 去重并保持稳定顺序
                         merged = list(dict.fromkeys(list(exist.source_chunks) + list(se.source_chunks)))
                         exist.source_chunks = merged
-                
 
             inner = self.section_entities_collection[se.name]
-            # print("[CHECK] inner entities: ", [e.name for e in inner])
             for se in secs:
                 self._link_section_to_entities(se, inner, res["chunk_id"])
 
-            # 普通关系
+            # Ordinary relations
             for rdata in res.get("relations", []):
                 rel = self._create_relation_from_data(rdata, res["chunk_id"], entity_map, name2id)
                 if rel:
                     self.kg.add_relation(rel)
 
-        # 写入数据库
+        # Persist into DBs
         if verbose:
-            print("💾 存储到数据库...")
+            logger.info("Persisting graph to databases...")
         self._store_knowledge_graph(verbose)
         if verbose:
-            print("💾 优化事件节点属性、计算图指标...")
+            logger.info("Enriching event nodes and computing graph metrics...")
         self.neo4j_utils.enrich_event_nodes_with_context()
         self.neo4j_utils.compute_centrality(exclude_rel_types=[self.meta['contains_pred']])
 
         if verbose:
             st = self.kg.stats()
-            print(f"🎉 知识图谱构建完成!")
-            # print(f"   - 实体数量: {st['entities']}")
-            # print(f"   - 关系数量: {st['relations']}")
             graph_stats = self.graph_store.get_stats()
-            print(f"   - 实体数量: {graph_stats['entities']}")
-            print(f"   - 关系数量: {graph_stats['relations']}")
-            print(f"   - 文档数量: {st['documents']}")
-            print(f"   - 文本块数量: {st['chunks']}")
+            logger.info("Knowledge graph construction completed.")
+            logger.info(f"  - Entities: {graph_stats['entities']}")
+            logger.info(f"  - Relations: {graph_stats['relations']}")
+            logger.info(f"  - Documents: {st['documents']}")
+            logger.info(f"  - Chunks: {st['chunks']}")
 
         return self.kg
 
     # ═════════════════════════════════════════════════════════════════════
-    #  内部工具
+    #  Internal utilities
     # ═════════════════════════════════════════════════════════════════════
-    # -------- 合并实体（根据 doc_type 适配） --------
     def merge_entities_info(self, extraction_results):
         """
-        遍历信息抽取结果，合并 / 去重实体。
-        - “局部作用域”实体（scope == local）若命名冲突，会在前面加上
-          “场景N …” 或 “章节N …” 作为前缀，避免重名。
-        - section 的编号优先使用 chunk_metadata.order；若无，则退化为 title。
+        Merge/deduplicate entities across chunks.
+
+        - Entities with local scope that collide in name may be renamed with a suffix
+          when they appear in different sections.
+        - Section numbering prefers chunk_metadata.order; otherwise falls back to title.
         """
         entity_map: Dict[str, Entity] = {}
         self.chunk2section_map = {result["chunk_id"]: result["chunk_metadata"]["doc_title"] for result in extraction_results}
         self.section_entities_collection = dict()
-        
+
         base = self.config.storage.knowledge_graph_path
-        output_path = os.path.join(base, "chunk2section.json")
-        # with open(output_path, "w") as f:
-        #     json.dump(self.chunk2section_map, f)
-    
-        # 中文前缀词：Scene → 场景；Chapter → 章节
+
         for i, result in enumerate(extraction_results):
             md = result.get("chunk_metadata", {}) or {}
-            label = md.get('doc_title', md.get('subtitle', md.get('title', "")))
-            chunk_id = result.get("chunk_id", md.get("order", 0))
-            
+            label = md.get("doc_title", md.get("subtitle", md.get("title", "")))
             if label not in self.section_entities_collection:
                 self.section_entities_collection[label] = []
-                
-            # —— 处理当前 chunk 抽取出的实体 ——
+
+            # Entities from current chunk
             for ent_data in result.get("entities", []):
                 t = ent_data.get("type", "")
                 is_event = (t == "Event") or (isinstance(t, list) and "Event" in t)
@@ -769,22 +725,22 @@ class KnowledgeGraphBuilder:
                 )
                 if is_event:
                     is_action_like = False
-                            
-                # 冲突处理：局部实体重名前加前缀
+
+                # Rename local/action-like entities if they collide across different sections
                 if (ent_data.get("scope", "").lower() == "local" or is_action_like) and ent_data["name"] in entity_map:
                     existing_entity = entity_map[ent_data["name"]]
                     existing_chunk_id = existing_entity.source_chunks[0]
                     existing_section_name = self.chunk2section_map[existing_chunk_id]
                     current_section_name = md["doc_title"]
                     suffix = 1
-                    if current_section_name != existing_section_name: # 如果不属于同章节的local，需要重命名。
+                    if current_section_name != existing_section_name:
                         new_name = f"{ent_data['name']}_in_{suffix}"
-                        while new_name in entity_map:        # 仍冲突则追加 _n
+                        while new_name in entity_map:
                             suffix += 1
                             new_name = f"{ent_data['name']}_{suffix}"
                         ent_data["name"] = new_name
 
-                # 创建 / 合并
+                # Create / merge
                 ent_obj = self._create_entity_from_data(ent_data, result["chunk_id"])
                 existing = self._find_existing_entity(ent_obj, entity_map)
                 if existing:
@@ -793,17 +749,14 @@ class KnowledgeGraphBuilder:
                     entity_map[ent_obj.name] = ent_obj
                 self.section_entities_collection[label].append(ent_obj)
 
-        
         output_path = os.path.join(base, "section_entities_collection.pkl")
-        # print("[CHECK] self.section_entities_collection: ", self.section_entities_collection)
         with open(output_path, "wb") as f:
             pickle.dump(self.section_entities_collection, f)
-        
+
         return entity_map
 
-    
     def _find_existing_entity(self, entity: Entity, entity_map: Dict[str, Entity]) -> Optional[Entity]:
-        """查找已存在的实体"""
+        """Find an existing entity that should be merged with the incoming one (non-Event only)."""
         if (entity.type == "Event") or (isinstance(entity.type, list) and "Event" in entity.type):
             return None
         if entity.name in entity_map:
@@ -814,10 +767,10 @@ class KnowledgeGraphBuilder:
             if any(alias in existing_entity.aliases for alias in entity.aliases):
                 return existing_entity
         return None
-    
+
     def _merge_types(self, a, b):
         """
-        把 a 和 b 的类型并集后做规范化（Event 优先 + 去重保序）
+        Union of types from a and b, normalized (Event first + de-dup, preserve order).
         """
         a_list = a if isinstance(a, list) else ([a] if a else [])
         b_list = b if isinstance(b, list) else ([b] if b else [])
@@ -831,9 +784,8 @@ class KnowledgeGraphBuilder:
             merged = ["Event"] + [x for x in merged if x != "Event"]
         return merged if len(merged) > 1 else (merged[0] if merged else "Concept")
 
-
     def _merge_entities(self, existing: Entity, new: Entity) -> None:
-        """合并实体信息"""
+        """Merge incoming entity into an existing one."""
         for alias in new.aliases:
             if alias not in existing.aliases:
                 existing.aliases.append(alias)
@@ -846,18 +798,19 @@ class KnowledgeGraphBuilder:
                 existing.description = new.description
             elif new.description not in existing.description:
                 existing.description = existing.description + "\n" + new.description
-                
+
         existing.type = self._merge_types(existing.type, new.type)
-        
+
     def _ensure_entity_exists(self, entity_id: str, entity_map: Dict[str, Entity]) -> Optional[Entity]:
         return entity_map.get(entity_id, None)
 
     # -------- Section / Contains --------
     def _create_section_entities(self, md: Dict[str, Any], chunk_id: str) -> List[Entity]:
         """
-        创建章节/场景实体。
-        - title/subtitle 总是从 "title"/"subtitle" 字段读取
-        - Entity.properties 写入映射字段（如 scene_name） + 其他有用 metadata 字段
+        Create section/scene entities.
+
+        - 'title'/'subtitle' are read directly.
+        - Entity.properties will contain mapped fields (e.g., scene_name) + other metadata fields.
         """
         raw_title = md.get("title", "").strip()
         raw_subtitle = md.get("subtitle", "").strip()
@@ -873,13 +826,12 @@ class KnowledgeGraphBuilder:
         title_field = self.meta["title"]
         subtitle_field = self.meta["subtitle"]
 
-        # 构建 properties：写入 title/subtitle 映射字段 + 其他有效字段
         excluded = {"chunk_index", "chunk_type", "doc_title", "title", "subtitle", "total_description_chunks", "total_doc_chunks"}
         properties = {
             title_field: raw_title,
             subtitle_field: raw_subtitle,
         }
-        
+
         if order is not None:
             properties["order"] = order
 
@@ -895,18 +847,16 @@ class KnowledgeGraphBuilder:
                 id=eid,
                 name=full_name,
                 type=label,
-                scope="local",  
-                description=md.get("summary", ""),  # 可选：用 summary 作为简要描述
+                scope="local",
+                description=md.get("summary", ""),
                 properties=properties,
-                source_chunks=agg_chunks 
+                source_chunks=agg_chunks,
             )
         ]
-
 
     def _link_section_to_entities(self, section: Entity, inners: List[Entity], chunk_id: str):
         pred = self.meta["contains_pred"]
         for tgt in inners:
-            # print(f"[CHECK] linking {section.name} to {tgt.name}")
             rid = f"rel_{hash(f'{section.id}_{pred}_{tgt.id}') % 1_000_000}"
             self.kg.add_relation(
                 Relation(id=rid, subject_id=section.id, predicate=pred,
@@ -914,21 +864,22 @@ class KnowledgeGraphBuilder:
             )
 
     # -------- Entity / Relation creation --------
-    
     @staticmethod
     def _create_entity_from_data(data: Dict, chunk_id: str) -> Entity:
-        return Entity(id=f"ent_{hash(data['name']) % 1_000_000}",
-                      name=data["name"],
-                      type=_normalize_type(data.get("type", "Concept")),
-                      scope=data.get("scope", "local"),
-                      description=data.get("description", ""),
-                      aliases=data.get("aliases", []),
-                      source_chunks=[chunk_id])
+        return Entity(
+            id=f"ent_{hash(data['name']) % 1_000_000}",
+            name=data["name"],
+            type=_normalize_type(data.get("type", "Concept")),
+            scope=data.get("scope", "local"),
+            description=data.get("description", ""),
+            aliases=data.get("aliases", []),
+            source_chunks=[chunk_id],
+        )
 
     @staticmethod
-    def _create_relation_from_data(d: Dict, chunk_id: str,
-                                   entity_map: Dict[str, Entity],
-                                   name2id: Dict[str, str]) -> Optional[Relation]:
+    def _create_relation_from_data(
+        d: Dict, chunk_id: str, entity_map: Dict[str, Entity], name2id: Dict[str, str]
+    ) -> Optional[Relation]:
         subj = d.get("subject") or d.get("source") or d.get("head") or d.get("relation_subject")
         obj = d.get("object") or d.get("target") or d.get("tail") or d.get("relation_object")
         pred = d.get("predicate") or d.get("relation") or d.get("relation_type")
@@ -938,7 +889,7 @@ class KnowledgeGraphBuilder:
         if not sid or not oid:
             return None
         rid = f"rel_{hash(f'{sid}_{pred}_{oid}') % 1_000_000}"
-        
+
         return Relation(
             id=rid,
             subject_id=sid,
@@ -946,25 +897,24 @@ class KnowledgeGraphBuilder:
             object_id=oid,
             properties={
                 "description": d.get("description", ""),
-                "relation_name": d.get("relation_name", "")
+                "relation_name": d.get("relation_name", ""),
             },
-            source_chunks=[chunk_id]
+            source_chunks=[chunk_id],
         )
-
 
     def _store_vectordb(self, verbose: bool):
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=200,
             chunk_overlap=50,
             separators=[
-                "\n\n", "### ", "## ", "# ",     # 标题/小节优先
-                "\n",                             # 段落
-                "。", "！", "？", "；", "：", "、", "，",  # 中文标点
-                ". ", "? ", "! ",                 # 英文句末（粗粒度）
-                " ",                              # 空格
-                ""                                # 最后兜底按字符
+                "\n\n", "### ", "## ", "# ",
+                "\n",
+                "。", "！", "？", "；", "：", "、", "，",
+                ". ", "? ", "! ",
+                " ",
+                ""
             ],
-            keep_separator=True
+            keep_separator=True,
         )
 
         try:
@@ -972,13 +922,12 @@ class KnowledgeGraphBuilder:
             self.document_vector_store.delete_collection()
             self.document_vector_store._initialize()
             self.document_vector_store.store_documents(all_documents)
-            
+
             self.sentence_vector_store.delete_collection()
             self.sentence_vector_store._initialize()
 
             all_sentences = []
-
-            for doc in tqdm(all_documents, desc="保存数据中", total=len(all_documents)):
+            for doc in tqdm(all_documents, desc="Persisting split sentences", total=len(all_documents)):
                 content = doc.content
                 if len(content) > 200:
                     sentences = splitter.split_text(content)
@@ -986,14 +935,15 @@ class KnowledgeGraphBuilder:
                     sentences = [content]
                 for i, sentence in enumerate(sentences):
                     sentence = sentence.replace("\\n", "").strip()
-                    all_sentences.append(Document(id=f"{doc.id}-{i+1}", content=sentence, metadata=doc.metadata))
-            
+                    all_sentences.append(
+                        Document(id=f"{doc.id}-{i+1}", content=sentence, metadata=doc.metadata)
+                    )
+
             self.sentence_vector_store.store_documents(all_sentences)
-            
-            
+
         except Exception as e:
             if verbose:
-                print(f"⚠️ 存储失败: {e}")
+                logger.error(f"Vector store persistence failed: {e}")
 
     def _store_knowledge_graph(self, verbose: bool):
         try:
@@ -1001,23 +951,21 @@ class KnowledgeGraphBuilder:
             self.graph_store.store_knowledge_graph(self.kg)
         except Exception as e:
             if verbose:
-                print(f"⚠️ 存储失败: {e}")
-    
+                logger.error(f"Graph store persistence failed: {e}")
+
     # ═════════════════════════════════════════════════════════════════════
     #  Embedding & Stats
     # ═════════════════════════════════════════════════════════════════════
     def prepare_graph_embeddings(self):
+        """Compute and persist graph embeddings as configured."""
         self.neo4j_utils.load_embedding_model(self.config.graph_embedding)
         self.neo4j_utils.create_vector_index()
-        self.neo4j_utils.process_all_embeddings(
-            # exclude_entity_types=[self.meta["section_label"]]
-            # exclude_relation_types=[self.meta["contains_pred"]],
-        )
+        self.neo4j_utils.process_all_embeddings()
         self.neo4j_utils.ensure_entity_superlabel()
-        print("✅ 图向量构建完成")
+        logger.info("Graph embeddings prepared successfully.")
 
-    #
     def get_stats(self) -> Dict[str, Any]:
+        """Return a consolidated stats dictionary for current components."""
         return {
             "knowledge_graph": self.kg.stats(),
             "graph_store": self.graph_store.get_stats(),

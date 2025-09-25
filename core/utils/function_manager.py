@@ -1,245 +1,563 @@
-"""
-增强的JSON处理工具
-基于现有的format.py，添加智能重试和问题诊断功能
-"""
 import json
 import logging
-from typing import Dict, Any, List, Optional, Callable, Tuple
+from typing import Dict, Any, List, Optional, Callable, Tuple, Set
 from enum import Enum
 from core.utils.format import correct_json_format, is_valid_json
 
 logger = logging.getLogger(__name__)
 
+import time
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, TimeoutError as FuturesTimeoutError
+
+def run_with_soft_timeout_and_retries(
+    items: List[Any],
+    *,
+    work_fn,                      # (item) -> result
+    key_fn,                       # (item) -> hashable key
+    desc_label: str,
+    per_task_timeout: float = 600.0,
+    retries: int = 2,
+    retry_backoff: float = 1.0,
+    allow_placeholder_first_round: bool = False,
+    placeholder_fn=None,          # (item, exc=None) -> placeholder_result
+    should_retry=None,             # (result) -> bool
+    max_workers: Optional[int] = 16,
+) -> Tuple[Dict[Any, Any], Set[Any]]:
+    import threading
+    total = len(items)
+    if total == 0:
+        return {}, set()
+
+    results: Dict[Any, Any] = {}
+    remaining_items = items[:]
+    still_failed_keys: Set[Any] = set()
+    max_rounds = max(1, retries)
+
+    for round_id in range(1, max_rounds + 1):
+        if not remaining_items:
+            break
+
+        round_failures: Set[Any] = set()
+        round_timeouts: Set[Any] = set()
+
+        executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=f"concur-r{round_id}")
+        try:
+            fut_info: Dict[Any, Dict[str, Any]] = {}
+            for it in remaining_items:
+                f = executor.submit(work_fn, it)
+                fut_info[f] = {"start": time.monotonic(), "item": it, "key": key_fn(it)}
+
+            pbar = tqdm(total=len(fut_info), desc=f"{desc_label}（第{round_id}/{max_rounds}轮）", ncols=100)
+            pending = set(fut_info.keys())
+
+            while pending:
+                done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+
+                for f in done:
+                    meta = fut_info.pop(f, None)
+                    key = meta["key"]
+                    item = meta["item"]
+                    try:
+                        res = f.result()
+                        results[key] = res
+                        if callable(should_retry) and should_retry(res):
+                            round_failures.add(key)
+                    except Exception as e:
+                        if allow_placeholder_first_round and round_id == 1 and callable(placeholder_fn):
+                            try:
+                                results[key] = placeholder_fn(item, exc=e)
+                            except Exception:
+                                pass
+                        round_failures.add(key)
+                    pbar.update(1)
+
+                now = time.monotonic()
+                to_forget = []
+                for f in list(pending):
+                    meta = fut_info[f]
+                    if now - meta["start"] >= per_task_timeout:
+                        key = meta["key"]
+                        item = meta["item"]
+                        try:
+                            f.cancel()
+                        except Exception:
+                            pass
+                        if allow_placeholder_first_round and round_id == 1 and callable(placeholder_fn):
+                            try:
+                                results[key] = placeholder_fn(item, exc=FuturesTimeoutError(f"soft-timeout {per_task_timeout}s"))
+                            except Exception:
+                                pass
+                        round_timeouts.add(key)
+                        pbar.update(1)
+                        to_forget.append(f)
+
+                for f in to_forget:
+                    pending.remove(f)
+                    fut_info.pop(f, None)
+
+            pbar.close()
+        finally:
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
+
+        keys_to_retry = round_failures | round_timeouts
+        still_failed_keys |= keys_to_retry
+        key_set = set(keys_to_retry)
+        remaining_items = [it for it in items if key_fn(it) in key_set]
+
+        if remaining_items and round_id < max_rounds and retry_backoff > 0:
+            try:
+                time.sleep(retry_backoff)
+            except Exception:
+                pass
+
+    return results, still_failed_keys
+
+
+def run_concurrent_with_retries(
+    items: List[Any],
+    task_fn: Callable[[Any], Any],
+    *,
+    per_task_timeout: float = 120.0,
+    max_retry_rounds: int = 1,
+    max_in_flight: Optional[int] = None,
+    max_workers: Optional[int] = None,
+    thread_name_prefix: str = "pool",
+    desc_prefix: str = "Concurrent jobs",
+    treat_empty_as_failure: bool = False,
+    is_empty_fn: Optional[Callable[[Any], bool]] = None,
+) -> Tuple[Dict[int, Any], List[int]]:
+    """
+    Windowed concurrency with soft timeouts (measured from when the task actually starts)
+    and multi-round retries. Good default for all batch LLM / IO tasks.
+
+    Returns: (results_by_index, still_failed_indices)
+    - results_by_index: dict {idx -> result} for tasks that succeeded in any round
+    - still_failed_indices: indices that failed/time-out in the last round
+
+    Behavior:
+    - Keeps at most `max_in_flight` tasks running at any time (default=max_workers).
+    - Soft timeout: a future is considered timed out when (now - start_time) >= per_task_timeout.
+      We try to cancel the future; regardless of cancel outcome, we mark it timeout and continue.
+    - Retries: up to `max_retry_rounds` rounds total (round 1 + (max_retry_rounds-1) retries).
+      Each later round only re-runs the failed/time-out indices.
+
+    Failure policy:
+    - If `treat_empty_as_failure=True`, a task returning None/[]/{} (or custom `is_empty_fn`) is treated as failure.
+    """
+    assert max_retry_rounds >= 1, "max_retry_rounds must be >= 1"
+    if max_workers is None and max_in_flight is None:
+        # reasonable default
+        max_in_flight = 4
+    if max_in_flight is None:
+        max_in_flight = max_workers or 4
+
+    def _run_one_round(round_indices: List[int], attempt_idx: int) -> Tuple[Dict[int, Any], List[int]]:
+        results_round: Dict[int, Any] = {}
+        failures_round: List[int] = []
+
+        todo = deque(round_indices)
+        fut_info: Dict[Any, Dict[str, Any]] = {}
+        pending = set()
+
+        executor = ThreadPoolExecutor(
+            max_workers=max_workers or max_in_flight,
+            thread_name_prefix=f"{thread_name_prefix}_a{attempt_idx}"
+        )
+
+        def _submit_one(idx: int):
+            item = items[idx]
+            # store the actual start time in a small box (set inside the worker)
+            start_box = {"t": None}
+
+            def _wrapper(_item, _box):
+                _box["t"] = time.monotonic()
+                return task_fn(_item)
+
+            f = executor.submit(_wrapper, item, start_box)
+            fut_info[f] = {"idx": idx, "start_box": start_box}
+            pending.add(f)
+
+        # Prime the window
+        while todo and len(pending) < max_in_flight:
+            _submit_one(todo.popleft())
+
+        pbar = tqdm(total=len(round_indices), desc=f"{desc_prefix} / round {attempt_idx+1}", ncols=100)
+        try:
+            while pending:
+                done, _ = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+
+                # 1) collect finished
+                for f in done:
+                    info = fut_info.pop(f)
+                    idx = info["idx"]
+                    try:
+                        res = f.result()
+                        if treat_empty_as_failure:
+                            empty = False
+                            if is_empty_fn is not None:
+                                empty = bool(is_empty_fn(res))
+                            else:
+                                empty = (res is None) or (res == []) or (res == {})
+                            if empty:
+                                failures_round.append(idx)
+                            else:
+                                results_round[idx] = res
+                        else:
+                            results_round[idx] = res
+                    except Exception:
+                        failures_round.append(idx)
+                    pending.remove(f)
+                    pbar.update(1)
+
+                    # keep the window full
+                    if todo and len(pending) < max_in_flight:
+                        _submit_one(todo.popleft())
+
+                # 2) soft timeout inspection
+                now = time.monotonic()
+                to_timeout = []
+                for f in list(pending):
+                    sb = fut_info[f]["start_box"]
+                    t0 = sb.get("t")
+                    # only time out after the task actually started
+                    if t0 is not None and (now - t0) >= per_task_timeout:
+                        to_timeout.append(f)
+
+                for f in to_timeout:
+                    info = fut_info.pop(f)
+                    idx = info["idx"]
+                    try:
+                        f.cancel()
+                    finally:
+                        failures_round.append(idx)
+                        pending.remove(f)
+                        pbar.update(1)
+                        if todo and len(pending) < max_in_flight:
+                            _submit_one(todo.popleft())
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+            pbar.close()
+
+        return results_round, failures_round
+
+    # Round 1
+    indices = list(range(len(items)))
+    all_results: Dict[int, Any] = {}
+    round_results, failures = _run_one_round(indices, attempt_idx=0)
+    all_results.update(round_results)
+
+    # Retries
+    attempt = 1
+    while failures and attempt < max_retry_rounds:
+        round_results, failures = _run_one_round(failures, attempt_idx=attempt)
+        all_results.update(round_results)
+        attempt += 1
+
+    return all_results, failures
+
+
+def apply_concurrent_with_retries(
+    items: List[Any],
+    task_fn: Callable[[Any], Any],
+    *,
+    per_task_timeout: float = 120.0,
+    max_retry_rounds: int = 1,
+    max_in_flight: Optional[int] = None,
+    max_workers: Optional[int] = None,
+    thread_name_prefix: str = "pool",
+    desc_prefix: str = "Concurrent jobs",
+    treat_empty_as_failure: bool = False,
+    is_empty_fn: Optional[Callable[[Any], bool]] = None,
+    default_on_fail: Any = None,
+) -> List[Any]:
+    """
+    Same engine as `run_concurrent_with_retries`, but returns a list in the original order.
+    Failed/time-out indices are filled with `default_on_fail`.
+
+    Useful when the caller just needs aligned outputs: output[i] corresponds to items[i].
+    """
+    results_map, still_failed = run_concurrent_with_retries(
+        items,
+        task_fn,
+        per_task_timeout=per_task_timeout,
+        max_retry_rounds=max_retry_rounds,
+        max_in_flight=max_in_flight,
+        max_workers=max_workers,
+        thread_name_prefix=thread_name_prefix,
+        desc_prefix=desc_prefix,
+        treat_empty_as_failure=treat_empty_as_failure,
+        is_empty_fn=is_empty_fn,
+    )
+
+    out: List[Any] = []
+    for i in range(len(items)):
+        if i in results_map:
+            out.append(results_map[i])
+        else:
+            out.append(default_on_fail)
+    return out
+
+
 class JSONIssueType(Enum):
     """JSON问题类型"""
     VALID = "valid"
-    INVALID_AFTER_CORRECTION = "invalid_after_correction"  # 经过correct_json_format后仍无效
-    MISSING_REQUIRED_FIELDS = "missing_required_fields"    # 缺少必需字段
-    INVALID_FIELD_VALUES = "invalid_field_values"          # 字段值无效
-    EMPTY_RESPONSE = "empty_response"                      # 空响应
+    INVALID_AFTER_CORRECTION = "invalid_after_correction"  
+    MISSING_REQUIRED_FIELDS = "missing_required_fields"    
+    INVALID_FIELD_VALUES = "invalid_field_values"          
+    EMPTY_RESPONSE = "empty_response"                      
+
 
 class EnhancedJSONUtils:
-    """增强的JSON处理工具类"""
-    
+    """Enhanced JSON handling utilities."""
+
     @staticmethod
-    def analyze_json_response(content: str, 
-                            required_fields: Optional[List[str]] = None,
-                            field_validators: Optional[Dict[str, Callable]] = None) -> Tuple[JSONIssueType, str, Optional[Dict]]:
+    def analyze_json_response(
+        content: str,
+        required_fields: Optional[List[str]] = None,
+        field_validators: Optional[Dict[str, Callable]] = None,
+    ) -> Tuple[JSONIssueType, str, Optional[Dict]]:
         """
-        分析JSON响应，判断问题类型
-        
+        Analyze a JSON response and determine the issue type (if any).
+
         Args:
-            content: 响应内容
-            required_fields: 必需字段列表
-            field_validators: 字段验证器字典
-            
+            content: Raw response content.
+            required_fields: List of required top-level fields.
+            field_validators: Mapping of field -> validator callable(value) -> bool.
+
         Returns:
-            Tuple: (问题类型, 错误信息, 解析结果或None)
+            Tuple[JSONIssueType, message, parsed_or_none]
         """
         if not content or content.strip() == "":
-            return JSONIssueType.EMPTY_RESPONSE, "响应为空", None
-        
-        # 使用现有的correct_json_format处理
+            return JSONIssueType.EMPTY_RESPONSE, "Empty response", None
+
+        # Try to normalize/repair formatting first
         corrected_content = correct_json_format(content)
-        
-        # 使用现有的is_valid_json检查
+
+        # Basic validity check
         if not is_valid_json(corrected_content):
-            return JSONIssueType.INVALID_AFTER_CORRECTION, "经过格式修正后仍无法解析为有效JSON", None
-        
-        # 解析JSON
+            return JSONIssueType.INVALID_AFTER_CORRECTION, "Still not valid JSON after format correction", None
+
+        # Parse JSON
         try:
             parsed = json.loads(corrected_content)
         except json.JSONDecodeError as e:
-            return JSONIssueType.INVALID_AFTER_CORRECTION, f"JSON解析失败: {e}", None
-        
-        # 检查必需字段
+            return JSONIssueType.INVALID_AFTER_CORRECTION, f"JSON parse error: {e}", None
+
+        # Required fields check
         if required_fields:
-            missing_fields = [field for field in required_fields if field not in parsed]
+            missing_fields = [f for f in required_fields if f not in parsed]
             if missing_fields:
-                return JSONIssueType.MISSING_REQUIRED_FIELDS, f"缺少必需字段: {missing_fields}", parsed
-        
-        # 检查字段值有效性
+                return JSONIssueType.MISSING_REQUIRED_FIELDS, f"Missing required fields: {missing_fields}", parsed
+
+        # Field value validation
         if field_validators:
             for field, validator in field_validators.items():
                 if field in parsed:
                     try:
                         if not validator(parsed[field]):
-                            return JSONIssueType.INVALID_FIELD_VALUES, f"字段 {field} 验证失败", parsed
+                            return JSONIssueType.INVALID_FIELD_VALUES, f"Field '{field}' validation failed", parsed
                     except Exception as e:
-                        return JSONIssueType.INVALID_FIELD_VALUES, f"字段 {field} 验证异常: {e}", parsed
-        
-        return JSONIssueType.VALID, "JSON有效", parsed
-    
+                        return JSONIssueType.INVALID_FIELD_VALUES, f"Field '{field}' validation exception: {e}", parsed
+
+        return JSONIssueType.VALID, "JSON is valid", parsed
+
     @staticmethod
-    def enhanced_json_validation(content: str, 
-                               required_fields: Optional[List[str]] = None,
-                               field_validators: Optional[Dict[str, Callable]] = None) -> Tuple[bool, str, Optional[Dict], str]:
+    def enhanced_json_validation(
+        content: str,
+        required_fields: Optional[List[str]] = None,
+        field_validators: Optional[Dict[str, Callable]] = None,
+    ) -> Tuple[bool, str, Optional[Dict], str]:
         """
-        增强的JSON验证，返回处理后的内容
-        
+        Enhanced JSON validation that also returns the corrected JSON string.
+
         Args:
-            content: JSON内容
-            required_fields: 必需字段列表
-            field_validators: 字段验证器字典
-            
+            content: Raw JSON string (possibly malformed).
+            required_fields: List of required fields.
+            field_validators: Mapping of field -> validator callable(value) -> bool.
+
         Returns:
-            Tuple: (是否有效, 错误信息, 解析结果或None, 处理后的JSON字符串)
+            (is_valid, message, parsed_or_none, corrected_json_string)
         """
-        # 先用现有函数处理格式
         corrected_content = correct_json_format(content)
-        
-        # 分析问题
+
         issue_type, error_msg, parsed = EnhancedJSONUtils.analyze_json_response(
             content, required_fields, field_validators
         )
-        # print("[CHECK]: ", issue_type, error_msg, parsed)
-        is_valid = (issue_type == JSONIssueType.VALID)
+        is_valid = issue_type == JSONIssueType.VALID
         return is_valid, error_msg, parsed, corrected_content
-    
+
     @staticmethod
-    def process_llm_response_with_retry(llm_client,
-                                      initial_messages: List[Dict],
-                                      required_fields: Optional[List[str]] = None,
-                                      field_validators: Optional[Dict[str, Callable]] = None,
-                                      max_retries: int = 3,
-                                      enable_thinking: bool = True,
-                                      repair_prompt_template: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
+    def process_llm_response_with_retry(
+        llm_client,
+        initial_messages: List[Dict],
+        required_fields: Optional[List[str]] = None,
+        field_validators: Optional[Dict[str, Callable]] = None,
+        max_retries: int = 3,
+        enable_thinking: bool = True,
+        repair_prompt_template: Optional[str] = None,
+    ) -> Tuple[Dict[str, Any], str]:
         """
-        处理LLM响应，包含重试和修复机制，确保返回correct_json_format处理后的结果
-        
+        Process an LLM response with retry and repair. Always returns a JSON string
+        that has been passed through `correct_json_format` (even on failure).
+
         Args:
-            llm_client: LLM客户端
-            initial_messages: 初始消息
-            required_fields: 必需字段
-            field_validators: 字段验证器
-            max_retries: 最大重试次数
-            enable_thinking: 是否启用思考
-            repair_prompt_template: 修复提示词模板
-            
+            llm_client: Your LLM client instance exposing `.run(messages, enable_thinking=...)`.
+            initial_messages: The initial chat messages to send to the LLM.
+            required_fields: Required JSON fields.
+            field_validators: Field validators mapping.
+            max_retries: Maximum number of repair attempts.
+            enable_thinking: Whether to enable thinking mode for the initial call.
+            repair_prompt_template: Optional template used for repair; must include
+                                    `{original_response}` and `{error_message}` placeholders.
+
         Returns:
-            Tuple: (处理结果字典, 最终的JSON字符串)
+            (result_dict, final_json_string)
+            - On success: result_dict is the parsed JSON.
+            - On failure: result_dict contains an error summary; final_json_string is the corrected last response.
         """
-        logger.info("开始处理LLM响应")
-        
-        # 第一次调用
+        # First attempt
         result = llm_client.run(initial_messages, enable_thinking=enable_thinking)
-        content = result[0]['content'] if isinstance(result, list) else result.get('content', '')
-        
-        # 验证响应
+        content = result[0]["content"] if isinstance(result, list) else result.get("content", "")
+
+        # Validate
         is_valid, error_msg, parsed, corrected_content = EnhancedJSONUtils.enhanced_json_validation(
             content, required_fields, field_validators
         )
-        
         if is_valid:
-            logger.info("响应有效，直接返回")
+            # No info logging in normal path per requirement
             return parsed, corrected_content
-        
-        # 尝试重试和修复
+
+        # Retry & repair loop (abnormal path -> allow logging)
         current_content = content
         for attempt in range(max_retries):
-            print(f"尝试修复响应，第 {attempt + 1} 次")
-            print("[CHECK] current_content: ", current_content)
-            
+            logger.warning("Attempting to repair JSON response (try %d/%d).", attempt + 1, max_retries)
+
             try:
-                # 如果有修复提示词模板，使用LLM修复
                 if repair_prompt_template:
-                    repair_messages = initial_messages.copy()
+                    repair_messages = list(initial_messages)
                     repair_prompt = repair_prompt_template.format(
-                        original_response=current_content,
-                        error_message=error_msg
+                        original_response=current_content, error_message=error_msg
                     )
                     repair_messages.append({"role": "user", "content": repair_prompt})
-                    
-                    # 调用LLM修复
+
                     repair_result = llm_client.run(repair_messages, enable_thinking=False)
-                    repair_content = repair_result[0]['content'] if isinstance(repair_result, list) else repair_result.get('content', '')
-                    
-                    # 验证修复结果
+                    repair_content = (
+                        repair_result[0]["content"] if isinstance(repair_result, list) else repair_result.get("content", "")
+                    )
+
                     is_valid, new_error_msg, parsed, corrected_content = EnhancedJSONUtils.enhanced_json_validation(
                         repair_content, required_fields, field_validators
                     )
-                    
+
                     if is_valid:
-                        logger.info(f"LLM修复成功，第 {attempt + 1} 次尝试")
+                        logger.warning("Repair succeeded on attempt %d.", attempt + 1)
                         return parsed, corrected_content
-                    
-                    # 更新内容用于下次尝试
+
                     current_content = repair_content
                     error_msg = new_error_msg
                 else:
-                    # 没有修复模板，使用通用修复提示
-                    repair_messages = initial_messages.copy()
-                    repair_messages.append({
-                        "role": "user",
-                        "content": f"请修复以下JSON响应中的问题：\n问题：{error_msg}\n原始响应：{current_content}\n请返回修复后的完整JSON。"
-                    })
-                    
+                    # Generic repair prompt (English)
+                    repair_messages = list(initial_messages)
+                    repair_messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Please fix the JSON in the following response.\n"
+                                f"Issue: {error_msg}\n"
+                                f"Original response: {current_content}\n"
+                                "Return the complete, corrected JSON only."
+                            ),
+                        }
+                    )
+
                     repair_result = llm_client.run(repair_messages, enable_thinking=enable_thinking)
-                    repair_content = repair_result[0]['content'] if isinstance(repair_result, list) else repair_result.get('content', '')
-                    
-                    # 验证修复结果
+                    repair_content = (
+                        repair_result[0]["content"] if isinstance(repair_result, list) else repair_result.get("content", "")
+                    )
+
                     is_valid, new_error_msg, parsed, corrected_content = EnhancedJSONUtils.enhanced_json_validation(
                         repair_content, required_fields, field_validators
                     )
-                    
+
                     if is_valid:
-                        logger.info(f"通用修复成功，第 {attempt + 1} 次尝试")
+                        logger.warning("Generic repair succeeded on attempt %d.", attempt + 1)
                         return parsed, corrected_content
-                    
+
                     current_content = repair_content
                     error_msg = new_error_msg
-                
+
             except Exception as e:
-                logger.warning(f"修复尝试 {attempt + 1} 失败: {e}")
+                logger.exception("Repair attempt %d failed with exception: %s", attempt + 1, e)
                 continue
-        
-        # 所有尝试都失败，返回错误结果，但仍使用correct_json_format处理
-        logger.error("所有修复尝试都失败，最后一次整任务尝试")
-        result = llm_client.run(initial_messages, enable_thinking=enable_thinking)
-        content = result[0]['content'] if isinstance(result, list) else result.get('content', '')
+
+        # Final fallback: return corrected last response with error summary
+        logger.error("All repair attempts failed; making one final call and returning corrected content.")
+        try:
+            result = llm_client.run(initial_messages, enable_thinking=enable_thinking)
+            content = result[0]["content"] if isinstance(result, list) else result.get("content", "")
+        except Exception as e:
+            logger.exception("Final call after failed repairs also failed: %s", e)
+            content = ""
+
         final_corrected = correct_json_format(content)
-        
-        print("[CHECK] 最终结果: ", final_corrected)
+
         error_result = {
-            "error": "响应处理失败",
+            "error": "Response processing failed",
             "original_content": content,
             "error_details": error_msg,
-            "attempts": max_retries + 1
+            "attempts": max_retries + 1,
         }
-        
         return error_result, final_corrected
 
-# 便捷函数，保持与现有代码的兼容性
-def is_valid_json_enhanced(content: str, 
-                          required_fields: Optional[List[str]] = None,
-                          field_validators: Optional[Dict[str, Callable]] = None) -> bool:
-    """增强版的is_valid_json函数，基于现有的format.py"""
+
+# Convenience wrappers (I/O compatible with your existing code)
+def is_valid_json_enhanced(
+    content: str,
+    required_fields: Optional[List[str]] = None,
+    field_validators: Optional[Dict[str, Callable]] = None,
+) -> bool:
+    """Enhanced boolean JSON validity check based on format utilities."""
     is_valid, _, _, _ = EnhancedJSONUtils.enhanced_json_validation(content, required_fields, field_validators)
     return is_valid
 
+
 def get_corrected_json(content: str) -> str:
-    """获取经过correct_json_format处理后的JSON字符串"""
+    """Get the JSON string after `correct_json_format` normalization."""
     return correct_json_format(content)
 
-def analyze_json_issues(content: str, 
-                       required_fields: Optional[List[str]] = None,
-                       field_validators: Optional[Dict[str, Callable]] = None) -> str:
-    """分析JSON问题的便捷函数"""
+
+def analyze_json_issues(
+    content: str,
+    required_fields: Optional[List[str]] = None,
+    field_validators: Optional[Dict[str, Callable]] = None,
+) -> str:
+    """Return a short string describing JSON issues."""
     issue_type, error_msg, _ = EnhancedJSONUtils.analyze_json_response(content, required_fields, field_validators)
     return f"{issue_type.value}: {error_msg}"
 
-def process_with_format_guarantee(llm_client,
-                                messages: List[Dict],
-                                required_fields: Optional[List[str]] = None,
-                                field_validators: Optional[Dict[str, Callable]] = None,
-                                max_retries: int = 3,
-                                enable_thinking: bool = True,
-                                repair_template: Optional[str] = None) -> str:
+
+def process_with_format_guarantee(
+    llm_client,
+    messages: List[Dict],
+    required_fields: Optional[List[str]] = None,
+    field_validators: Optional[Dict[str, Callable]] = None,
+    max_retries: int = 3,
+    enable_thinking: bool = True,
+    repair_template: Optional[str] = None,
+) -> Tuple[str, str]:
     """
-    处理LLM响应并保证返回correct_json_format处理后的结果
-    
+    Process an LLM response and guarantee that the returned JSON string has passed
+    through `correct_json_format`.
+
     Returns:
-        str: 经过correct_json_format处理的JSON字符串
+        (corrected_json_string, status) where status is "success" or "error".
     """
     result_dict, corrected_json = EnhancedJSONUtils.process_llm_response_with_retry(
         llm_client=llm_client,
@@ -248,13 +566,7 @@ def process_with_format_guarantee(llm_client,
         field_validators=field_validators,
         max_retries=max_retries,
         enable_thinking=enable_thinking,
-        repair_prompt_template=repair_template
+        repair_prompt_template=repair_template,
     )
-    status = result_dict.get("error", "")
-    if status:
-        status = "error"
-    else:
-        status = "success"
-        
+    status = "error" if result_dict.get("error") else "success"
     return corrected_json, status
-

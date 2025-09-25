@@ -61,7 +61,7 @@ class ParagraphSummarizer:
                 'max_length': max_length,
             }
             messages = []
-            if previous_summary:
+            if previous_summary: 
                 messages.append({"role": "user", "content": f"这是前文摘要：{previous_summary}"})
             
             # print("[CHECK]读入参数： ", variables)
@@ -81,8 +81,6 @@ class ParagraphSummarizer:
                 repair_template=self.repair_template
             )
             
-            # print("[CHECK] 检查结果： ", corrected_json)
-            logger.info("提取摘要完成，返回格式化后的JSON")
             if status == "success":
                 return corrected_json
             else:

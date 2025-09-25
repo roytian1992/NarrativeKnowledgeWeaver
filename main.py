@@ -1,116 +1,277 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
-KAG-Builder 主程序
-命令行工具, 用于从JSON文件构建知识图谱
+KAG-Builder main entrypoint
+
+Builds:
+1) Knowledge graph (entities/relations, attributes, embeddings)
+2) Relational DB (CMP info, scene info)
+3) Event/plot graphs (causality, SABER, plot relations, embeddings)
+
+Includes:
+- Best-effort resource cleanup for common components
+- Diagnostics for non-daemon alive threads (stack dump + short join + hard exit)
 """
 
 import argparse
 import sys
 from pathlib import Path
-from core.builder.narrative_graph_builder import EventCausalityBuilder
+import os
+import threading
+import traceback
+import time
+import inspect
+import json
 
-# 添加项目根目录到Python路径
+# Add project root to PYTHONPATH
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from core import KAGConfig
 from core.builder.graph_builder import KnowledgeGraphBuilder
 from core.builder.database_builder import RelationalDatabaseBuilder
-import os
+from core.builder.narrative_graph_builder import EventCausalityBuilder
+
 import logging
 
+# ------- Base logging config (may be overridden by --verbose) -------
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.getLogger("openai").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("neo4j").setLevel(logging.ERROR)
 logging.getLogger("neo4j.io").setLevel(logging.ERROR)
 logging.getLogger("neo4j.bolt").setLevel(logging.ERROR)
+logging.getLogger("core.memory.vector_memory").setLevel(logging.INFO)
+logging.getLogger("core.storage.vector_store").setLevel(logging.INFO)
+logging.getLogger("core.storage.vector_store").setLevel(logging.INFO)
+logging.getLogger("asyncio").setLevel(logging.INFO)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("chromadb").setLevel(logging.WARNING)
 
-# os.environ["HTTP_PROXY"] = "http://localhost:7890"
-# os.environ["HTTPS_PROXY"] = "http://localhost:7890"
+logger = logging.getLogger(__name__)
+
+# ================== Resource closing (component level) ==================
+
+def _try_call(fn, **kwargs):
+    """Call a function with only the kwargs it accepts (safe best-effort)."""
+    if not callable(fn):
+        return
+    sig = inspect.signature(fn)
+    accepted = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    return fn(**accepted) if accepted else fn()
+
+def _best_effort_close(obj):
+    """
+    Best-effort close for common resources; never raises.
+    Handles:
+      - concurrent.futures executors (with cancel_futures if available)
+      - generic .close/.shutdown/.dispose/.stop/.terminate
+    """
+    if obj is None:
+        return
+    try:
+        import concurrent.futures as _cf
+        if isinstance(obj, (_cf.ThreadPoolExecutor, _cf.ProcessPoolExecutor)):
+            try:
+                obj.shutdown(wait=True, cancel_futures=True)
+            except TypeError:
+                obj.shutdown(wait=True)
+            return
+    except Exception:
+        pass
+
+    for name in ("close", "shutdown", "dispose", "stop", "terminate"):
+        m = getattr(obj, name, None)
+        if callable(m):
+            try:
+                _try_call(m, wait=True, cancel_futures=True)
+                return
+            except Exception:
+                try:
+                    m()
+                    return
+                except Exception:
+                    pass
+
+def _close_component(obj):
+    """
+    Close an object and its common resource attributes if present.
+    """
+    if obj is None:
+        return
+    _best_effort_close(obj)
+    for attr in (
+        "neo4j_utils", "driver", "session", "tx", "engine",
+        "executor", "thread_pool", "pool",
+        "vector_store", "graph_store",
+        "client", "db", "conn",
+        "http", "transport", "producer", "consumer",
+    ):
+        _best_effort_close(getattr(obj, attr, None))
+
+# ================== Alive thread handling (diagnostics + fallback) ==================
+
+def _alive_non_daemon_threads():
+    """Return all alive, non-daemon threads except the main thread."""
+    return [
+        t for t in threading.enumerate()
+        if t is not threading.main_thread() and not t.daemon
+    ]
+
+def _dump_alive_threads(prefix="[diag] "):
+    """Log alive non-daemon threads and their stacks."""
+    alive = _alive_non_daemon_threads()
+    if not alive:
+        return alive
+    logger.warning(prefix + "Non-daemon threads still alive: %d", len(alive))
+    frames = sys._current_frames()
+    for t in alive:
+        logger.warning(
+            prefix + "Thread: name=%s, ident=%s, cls=%s, alive=%s",
+            t.name, t.ident, t.__class__.__name__, t.is_alive()
+        )
+        frame = frames.get(t.ident)
+        if frame:
+            stack_str = "".join(traceback.format_stack(frame))
+            logger.warning(prefix + "Stack trace:\n%s", stack_str)
+    return alive
+
+def _join_alive_threads(timeout=0.5, prefix="[diag] "):
+    """Attempt to join alive non-daemon threads briefly."""
+    alive = _alive_non_daemon_threads()
+    for t in alive:
+        try:
+            t.join(timeout=timeout)
+        except Exception:
+            pass
+    alive2 = _alive_non_daemon_threads()
+    if alive2:
+        logger.warning(prefix + "Still alive after short join: %s", ", ".join([t.name for t in alive2]))
+    return alive2
+
+def _handle_alive_threads(grace_seconds=0.3):
+    """
+    Handle alive threads only:
+      - Wait briefly
+      - Dump thread info & stacks
+      - Short join
+      - If still alive, hard exit
+    """
+    time.sleep(grace_seconds)
+    _dump_alive_threads(prefix="[diag] ")
+    still = _join_alive_threads(timeout=0.5, prefix="[diag] ")
+    if still:
+        logger.error("[diag] Non-daemon threads remain alive; performing hard exit (os._exit(0)).")
+        os._exit(0)
+
+# ================== Main pipeline ==================
+
+def _write_stats_if_requested(path: str, payload: dict) -> None:
+    """Write a JSON stats payload to file if a path is provided."""
+    if not path:
+        return
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        logger.info("Wrote stats to %s", path)
+    except Exception as e:
+        logger.warning("Failed to write stats to %s: %s", path, e)
 
 def main():
-    parser = argparse.ArgumentParser(description="KAG-Builder: 知识图谱构建器")
-    parser.add_argument(
-        "--input", "-i",
-        required=True,
-        help="输入JSON文件路径"
-    )
-    parser.add_argument(
-        "--config", "-c",
-        default="configs/default.yaml",
-        help="配置文件路径"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="显示详细输出"
-    )
-    parser.add_argument(
-        "--output-stats", "-s",
-        help="输出统计信息到文件"
-    )
-    
+    parser = argparse.ArgumentParser(description="KAG-Builder: Knowledge Graph Constructor")
+    parser.add_argument("--input", "-i", required=True, help="Path to the input JSON file")
+    parser.add_argument("--config", "-c", default="configs/default.yaml", help="Path to the config YAML")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose (DEBUG) logging")
+    parser.add_argument("--output-stats", "-s", help="Write summary stats to the given JSON file")
     args = parser.parse_args()
-    
-    # try:
-    # 加载配置
-    config = KAGConfig.from_yaml(args.config)
-    # print(f"🔧 使用配置文件: {config}")
+
+    # Adjust logging level for verbosity
     if args.verbose:
-        print(f"✅ 从 {args.config} 加载配置")
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Verbose mode enabled (DEBUG). Config: %s", args.config)
 
-    
-    # # 创建构建器
-    # builder = KnowledgeGraphBuilder(config)
-    
-    # # # # 构建知识图谱
-    # builder.prepare_chunks(args.input, verbose=args.verbose) # 文本准备阶段：长文本拆分和元数据标注
-    # builder.store_chunks(verbose=args.verbose) # 保存近向量数据库和本地json
-    # builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35) # from_scratch 的时候建议 0.35
-    # builder.initialize_agents()
-    # builder.extract_entity_and_relation(verbose=args.verbose) # 实体和关系抽取
-    # builder.retry_failed_extractions(verbose=args.verbose) # 实体和关系抽取查漏补缺修复工具
-    # builder.run_extraction_refinement(verbose=args.verbose) # 实体消歧
-    # builder.extract_entity_attributes(verbose=args.verbose) # 属性抽取
-    # kg = builder.build_graph_from_results(verbose=args.verbose)
-    # builder.prepare_graph_embeddings()
+    # Load config
+    config = KAGConfig.from_yaml(args.config)
+    if args.verbose:
 
+        logger.debug("Loaded config from %s", args.config)
+
+    # ---------- Knowledge graph phase ----------
+    builder = KnowledgeGraphBuilder(config)
+    kg_stats = {}
+    try:
+        # builder.prepare_chunks(args.input, verbose=args.verbose)
+        builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35)
+        builder.initialize_agents()
+        builder.extract_entity_and_relation(verbose=args.verbose)
+        builder.retry_failed_extractions(verbose=args.verbose)
+        builder.run_extraction_refinement(verbose=args.verbose)
+        builder.extract_entity_attributes(verbose=args.verbose)
+        _ = builder.build_graph_from_results(verbose=args.verbose)
+        builder.prepare_graph_embeddings()
+
+        kg_stats["knowledge_graph"] = {"status": "ok"}
+    except Exception as e:
+        logger.exception("Knowledge graph phase failed: %s", e)
+        kg_stats["knowledge_graph"] = {"status": "error", "error": str(e)}
+        # Continue to cleanup and subsequent phases as needed
+    finally:
+        _close_component(builder)
+        builder = None
+
+    # ---------- Relational DB phase ----------
     sql_builder = RelationalDatabaseBuilder(config)
-    # sql_builder.extract_cmp_information()
-    sql_builder.build_relational_database()
-    
-    # event_graph_builder = EventCausalityBuilder(config)
-    # event_graph_builder.initialize() # 初始化事件情节图
-    # event_graph_builder.build_event_causality_graph() # 开始构建事件因果图
-    # event_graph_builder.run_SABER() # 运行断环、去冗余算法
-    # event_graph_builder.build_event_plot_graph() # 构建情节-事件图
-    # event_graph_builder.generate_plot_relations() # 抽取情节间关系
-    # event_graph_builder.prepare_graph_embeddings()
-    
-    # 输出统计信息
-    # stats = builder.get_stats()
-    # print("\n📊 最终统计信息:")
-    # print(f"   - 实体数量: {stats['knowledge_graph']['entities']}")
-    # print(f"   - 关系数量: {stats['knowledge_graph']['relations']}")
-    # print(f"   - 文档数量: {stats['knowledge_graph']['documents']}")
-    # print(f"   - 文本块数量: {stats['knowledge_graph']['chunks']}")
-    
-    # # 保存统计信息
-    # if args.output_stats:
-    #     import json
-    #     with open(args.output_stats, 'w', encoding='utf-8') as f:
-    #         json.dump(stats, f, ensure_ascii=False, indent=2)
-    #     print(f"📄 统计信息已保存到: {args.output_stats}")
-    
-    print("\n🎉 知识图谱和情节事件图构建完成!")
-        
-    # except Exception as e:
-    #     print(f"❌ 构建失败: {str(e)}")
-    #     sys.exit(1)
+    rdb_stats = {}
+    try:
+        sql_builder.extract_cmp_information()
+        sql_builder.build_relational_database()
+        sql_builder.build_scene_info()
+
+        rdb_stats["relational_db"] = {"status": "ok"}
+    except Exception as e:
+        logger.exception("Relational DB phase failed: %s", e)
+        rdb_stats["relational_db"] = {"status": "error", "error": str(e)}
+    finally:
+        _close_component(sql_builder)
+        sql_builder = None
+
+    # ---------- Event/plot graph phase ----------
+    event_graph_builder = EventCausalityBuilder(config)
+    ev_stats = {}
+    try:
+        event_graph_builder.initialize(keep_event_cards=True)
+        event_graph_builder.build_event_causality_graph()
+        event_graph_builder.run_SABER()
+        event_graph_builder.build_event_plot_graph()
+        event_graph_builder.generate_plot_relations()
+        event_graph_builder.prepare_graph_embeddings()
+
+        ev_stats["event_plot_graph"] = {"status": "ok"}
+    except Exception as e:
+        logger.exception("Event/plot graph phase failed: %s", e)
+        ev_stats["event_plot_graph"] = {"status": "error", "error": str(e)}
+    finally:
+        _close_component(event_graph_builder)
+        event_graph_builder = None
+
+    logger.info("✅ Knowledge graph and event/plot graph pipeline completed.")
+
+    # Optional: write summary stats
+    summary = {}
+    summary.update(kg_stats)
+    summary.update(rdb_stats)
+    summary.update(ev_stats)
+    if args.output_stats:
+        _write_stats_if_requested(args.output_stats, summary)
+
+    # Handle alive non-daemon threads (last-resort cleanup)
+    _handle_alive_threads(grace_seconds=0.3)
+
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    import multiprocessing
-    multiprocessing.set_start_method("spawn", force=True)  # ✅ 解决CUDA多进程问题
     main()
-
-

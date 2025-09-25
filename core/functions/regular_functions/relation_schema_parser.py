@@ -91,7 +91,7 @@ class RelationSchemaParser:
                 repair_template=self.repair_template
             )
             if status == "success":
-                logger.info("relation schema提取完成，返回格式化后的JSON")
+                # logger.info("relation schema提取完成，返回格式化后的JSON")
                 return corrected_json
             else:
                 error_result = {

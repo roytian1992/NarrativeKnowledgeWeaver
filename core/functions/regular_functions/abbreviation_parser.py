@@ -77,7 +77,7 @@ class AbbreviationParser:
                 repair_template=self.repair_template
             )
             if status == "success":
-                logger.info("术语信息提取完成，返回格式化后的JSON")
+                # logger.info("术语信息提取完成，返回格式化后的JSON")
                 return corrected_json
             else:
                 error_result = {
