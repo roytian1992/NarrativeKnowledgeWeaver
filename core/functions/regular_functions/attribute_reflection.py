@@ -29,7 +29,7 @@ class AttributeReflector:
         # 修复提示词模板
         self.repair_template = attribute_reflection_repair_template
     
-    def call(self, params: str, **kwargs) -> str:
+    def call(self, params: str, enable_thinking=True, **kwargs) -> str:
         """
         调用属性反思，保证返回correct_json_format处理后的结果
         
@@ -92,7 +92,8 @@ class AttributeReflector:
                 required_fields=self.required_fields,
                 field_validators=self.field_validators,
                 max_retries=3,
-                repair_template=self.repair_template
+                repair_template=self.repair_template,
+                enable_thinking=enable_thinking
             )
             
             # logger.info("属性反思完成，返回格式化后的JSON")

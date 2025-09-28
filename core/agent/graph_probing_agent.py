@@ -1,10 +1,13 @@
 import json
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from pathlib import Path
 import os
 import re
 import asyncio
+import inspect
+import threading
+import traceback
 from collections import Counter
 
 from tqdm import tqdm
@@ -29,8 +32,14 @@ class GraphProbingAgent:
 
     Inputs/Outputs and external behaviors are kept identical to the original code.
     All user-facing messages are English; prints replaced with logging.
+
+    Key robustness upgrades:
+      - Hard per-item timeout for extraction tasks with double-cancel.
+      - Post-extraction best-effort cleanup of async resources and stray tasks.
+      - Optional short join & stack dump for non-daemon alive threads.
     """
 
+    # ------------------------------ Init ---------------------------------- #
     def __init__(self, config: KAGConfig, llm, reflector):
         self.config = config
         self.llm = llm
@@ -52,14 +61,20 @@ class GraphProbingAgent:
         self.probing_mode = self.config.probing.probing_mode
         self.refine_background = self.config.probing.refine_background
 
+        # 配置项（可选）：外层任务超时（秒）与诊断
+        # 若你的 config 里没有这些字段，也不会报错，使用默认值。
+        self.item_timeout: float = getattr(self.config.probing, "item_timeout", 600.0)
+        self.backoff_seconds: float = getattr(self.config.probing, "backoff_seconds", 60.0)
+        self.max_attempts: int = getattr(self.config.probing, "max_attempts", 3)
+        self.post_diag_join_seconds: float = getattr(self.config.probing, "post_diag_join_seconds", 0.5)
+        self.enable_thread_diag: bool = getattr(self.config.probing, "enable_thread_diag", False)
+
         if self.config.probing.task_goal:
             self.task_goals = "\n".join(self.load_goals(self.config.probing.task_goal))
         else:
             self.task_goals = ""
 
-    # --------------------------------------------------------------------- #
-    # Prompt construction helpers
-    # --------------------------------------------------------------------- #
+    # ----------------------- Prompt construction -------------------------- #
     def construct_system_prompt(self, background, abbreviations):
         """
         Render the system prompt by combining background and abbreviations.
@@ -153,28 +168,21 @@ class GraphProbingAgent:
         """
         Flatten schema into readable text blocks for entities and relations.
         """
-        entity_types = schema.get("entities")
-        relation_type_groups = schema.get("relations")
+        entity_types = schema.get("entities", [])
+        relation_type_groups = schema.get("relations", {})
 
         entity_type_description_text = "\n".join(
-            f"- {e['type']}: {e['description']}" for e in entity_types
+            f"- {e['type']}: {e.get('description','')}" for e in entity_types
         )
         relation_type_description_text = "\n".join(
-            f"- {r['type']}: {r['description']}"
+            f"- {r['type']}: {r.get('description','')}"
             for group in relation_type_groups.values()
             for r in group
         )
         return entity_type_description_text, relation_type_description_text
 
-    # --------------------------------------------------------------------- #
-    # Experience search (insight memory + reranking)
-    # --------------------------------------------------------------------- #
+    # ------------------- Experience search (rerank) ----------------------- #
     def search_related_experience(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Retrieve previously stored insights to guide background, abbreviations,
-        and schema refinement. Queries use bilingual keywords (English/Chinese)
-        to maximize recall for existing Chinese insights.
-        """
         k = 2 * self.experience_limit
 
         # Background / plot / events
@@ -193,7 +201,6 @@ class GraphProbingAgent:
             for item in reranked_bg
             if item.get("relevance_score", 0) >= 0.3
         ]
-        # Keep the original functional note about Plot to preserve behavior.
         related_insights_for_background += [
             "Entity type 'Plot' does not need to be extracted; it will be constructed later based on extracted 'Event' entities. （情节/Plot这种实体类型不需要抽取，会在后续的任务中基于抽取的事件/Event进行构建。）"
         ]
@@ -257,18 +264,11 @@ class GraphProbingAgent:
             "relation_schema_insights": "\n".join(related_insights_for_relation_schema),
         }
 
-    # --------------------------------------------------------------------- #
-    # Schema generation / updates
-    # --------------------------------------------------------------------- #
+    # ---------------- Schema generation / updates ------------------------- #
     def generate_schema(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Update background + abbreviations (optional), then update entity/relation schemas
-        using insights and accumulated feedbacks.
-        """
         # 1) Background & abbreviations
         if self.refine_background:
             current_background_info = state.get("background", "")
-            # Prepend summaries to background to keep behavior consistent
             current_background_info = "\n".join(state.get("summaries", [])) + "\n" + current_background_info
 
             background_insights = state.get("background_insights", "")
@@ -295,7 +295,6 @@ class GraphProbingAgent:
             for item in abbreviations_:
                 if item.get("name") not in current_abbr_list:
                     new_abbreviations.append(item)
-
         else:
             new_background = state.get("background", "")
             new_abbreviations = state.get("abbreviations", [])
@@ -339,20 +338,20 @@ class GraphProbingAgent:
             "abbreviations": new_abbreviations,
         }
 
-    # --------------------------------------------------------------------- #
-    # Test extractions to measure schema quality
-    # --------------------------------------------------------------------- #
+    # ---------------- Test extractions (with cleanup) --------------------- #
     def test_extractions(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run test extractions over sampled documents using the current schema,
         gather type distributions, and compute drop lists based on thresholds.
+        Includes robust timeout, cancellation, and post-cleanup.
         """
         all_documents = state["documents"]
         system_prompt = self.construct_system_prompt(state["background"], state["abbreviations"])
         schema = state["schema"]
 
+        # Run with a fresh loop and guaranteed cleanup inside.
         extraction_results = asyncio.run(
-            self.test_extractions_(all_documents, system_prompt, schema)
+            self._test_extractions_and_cleanup(all_documents, system_prompt, schema)
         )
 
         entity_types: List[str] = []
@@ -367,9 +366,8 @@ class GraphProbingAgent:
                     entity_types.append(entity.get("type"))
                 relations = result.get("relations", [])
                 for relation in relations:
-                    # Note: keep original key 'relation_type' to match data shape
                     relation_types.append(relation.get("relation_type"))
-            except Exception as _:
+            except Exception:
                 logger.warning("Unexpected extraction result format; skipping one result.")
 
         entity_type_counter = Counter(entity_types)
@@ -378,7 +376,6 @@ class GraphProbingAgent:
         entity_total = len(entity_types)
         relation_total = len(relation_types)
 
-        # Types to drop (by proportion)
         if entity_total > 0:
             entity_types_to_drop = [
                 key for key, cnt in entity_type_counter.items()
@@ -413,6 +410,10 @@ class GraphProbingAgent:
         logger.info("Entity types suggested to drop: %s", entity_types_to_drop)
         logger.info("Relation types suggested to drop: %s", relation_types_to_drop)
 
+        # 额外的后置诊断（安全，不硬退）
+        if self.enable_thread_diag:
+            self._short_join_non_daemon_threads(self.post_diag_join_seconds)
+
         return {
             **state,
             "entity_type_distribution": entity_type_distribution,
@@ -421,44 +422,99 @@ class GraphProbingAgent:
             "relation_types_to_drop": relation_types_to_drop,
         }
 
-    async def test_extractions_(self, all_documents, system_prompt, schema):
+    async def _test_extractions_and_cleanup(self, all_documents, system_prompt, schema):
         """
-        Async worker that runs extraction with 'probing' mode and returns raw results.
+        Async wrapper that:
+          1) Runs extraction with per-item hard timeouts and safe cancellation.
+          2) Best-effort closes agent resources.
+          3) Cancels stray tasks and drains the loop before returning.
         """
         information_extraction_agent = InformationExtractionAgent(
             self.config, self.llm, system_prompt,
             schema=schema, reflector=self.reflector, mode="probing"
         )
+
+        # Semaphore for concurrency bound
         sem = asyncio.Semaphore(self.max_workers)
 
-        async def _arun(ch):
+        async def _arun_once(ch):
+            # 内部异常 → 标准空结果
+            try:
+                if not ch.content or not ch.content.strip():
+                    return {"entities": [], "relations": [], "score": 0, "issues": [], "insights": []}
+                return await information_extraction_agent.arun(
+                    ch.content,
+                    timeout=self.item_timeout,            # 给内部一个提示性的超时
+                    max_attempts=self.max_attempts,
+                    backoff_seconds=self.backoff_seconds
+                )
+            except Exception as e:
+                return {"error": str(e), "entities": [], "relations": [], "score": 0, "issues": [], "insights": []}
+
+        async def _arun_with_timeout(ch):
+            """
+            外层真正的强制超时；double cancel，防止悬挂。
+            """
             async with sem:
+                task = asyncio.create_task(_arun_once(ch))
                 try:
-                    if not ch.content.strip():
-                        result = {"entities": [], "relations": [], "score": 0, "issues": [], "insights": []}
-                    else:
-                        result = await information_extraction_agent.arun(
-                            ch.content, timeout=300, max_attempts=3, backoff_seconds=60
-                        )
-                    return result
+                    return await asyncio.wait_for(task, timeout=self.item_timeout)
+                except asyncio.TimeoutError:
+                    # 强制取消，并等待其结束（避免资源泄漏）
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await asyncio.shield(task)
+                        except Exception:
+                            pass
+                    return {"error": "timeout", "entities": [], "relations": [], "score": 0, "issues": [], "insights": []}
+                except asyncio.CancelledError:
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await asyncio.shield(task)
+                        except Exception:
+                            pass
+                    raise
                 except Exception as e:
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await asyncio.shield(task)
+                        except Exception:
+                            pass
                     return {"error": str(e), "entities": [], "relations": [], "score": 0, "issues": [], "insights": []}
 
-        tasks = [_arun(ch) for ch in all_documents]
+        tasks = [_arun_with_timeout(ch) for ch in all_documents]
         results = []
-        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Async extraction (probing)"):
-            res = await coro
-            results.append(res)
+        try:
+            for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Async extraction (probing)"):
+                res = await coro
+                results.append(res)
+        finally:
+            # ---- Best-effort close agent resources ----
+            await self._a_best_effort_close(information_extraction_agent)
+
+            # ---- Drain & cancel stray tasks in this loop ----
+            await self._cancel_all_stray_tasks()
+
         return results
 
-    # --------------------------------------------------------------------- #
-    # Pruning and reflection
-    # --------------------------------------------------------------------- #
+    # ---------------- Pruning and reflection ----------------------------- #
     def prune_graph_schema(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Ask the prober to prune low-signal types based on observed distributions.
-        Also accumulate feedbacks returned by the prober.
-        """
+        
+        BATCH_SIZE = 200
+
+        summaries: List[str] = []
+        for i in tqdm(range(0, len(self.feedbacks), BATCH_SIZE), desc="Summarizing feedbacks for reflection", total=(len(self.feedbacks) + BATCH_SIZE - 1) // BATCH_SIZE):
+            batch = self.feedbacks[i:i + BATCH_SIZE]
+            all_feedbacks = "\n".join(batch)
+            result = self.prober.summarize_feedbacks(context=all_feedbacks, max_items=10)
+            parsed = json.loads(correct_json_format(result)).get("feedbacks", [])
+            summaries.extend(parsed)
+
+        self.feedbacks = summaries
+        logger.info("Number of feedbacks for reflection: %s", len(self.feedbacks))
         entity_type_distribution = state["entity_type_distribution"]
         relation_type_distribution = state["relation_type_distribution"]
         entity_type_description_text, relation_type_description_text = self.load_schema(state["schema"])
@@ -470,29 +526,13 @@ class GraphProbingAgent:
             relation_type_description_text=relation_type_description_text
         )
         result = json.loads(correct_json_format(result))
+        logger.info("Pruning suggestions: %s", result.get("feedbacks", "N/A"))
         self.feedbacks.extend(result.get("feedbacks", []))  # accumulate memory
         return state
 
     def reflect_graph_schema(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Summarize feedbacks in batches and reflect to produce a score & reason.
-        Apply pruning by removing types previously marked as drop.
-        Keep the best-so-far schema by score.
-        """
         current_schema = state["schema"]
-        BATCH_SIZE = 300
-
-        # Batch summaries of feedbacks
-        summaries: List[str] = []
-        for i in range(0, len(self.feedbacks), BATCH_SIZE):
-            batch = self.feedbacks[i:i + BATCH_SIZE]
-            all_feedbacks = "\n".join(batch)
-            result = self.prober.summarize_feedbacks(context=all_feedbacks, max_items=20)
-            parsed = json.loads(correct_json_format(result)).get("feedbacks", [])
-            summaries.extend(parsed)
-
-        self.feedbacks = summaries
-
+        
         result = self.prober.reflect_schema(
             schema=json.dumps(current_schema, indent=2, ensure_ascii=False),
             feedbacks=self.feedbacks
@@ -524,8 +564,12 @@ class GraphProbingAgent:
             best_output = state.get("best_output", {})
 
         # Keep overall distributions as feedback for next round
-        self.feedbacks.append(state.get("entity_type_distribution", ""))
-        self.feedbacks.append(state.get("relation_type_distribution", ""))
+        if state.get("entity_type_distribution", ""):
+            feedback = "Entity type distribution in previous round:\n" + state["entity_type_distribution"] + "\nPlease consider those key factors: relevance to the story, frequency of occurrence, diversity of types, and balance between entities."
+            self.feedbacks.append(feedback)
+        if state.get("relation_type_distribution", ""):
+            feedback = "Relation type distribution in previous round:\n" + state["relation_type_distribution"] + "\nPlease consider those key factors: relevance to the story, frequency of occurrence, diversity of types, and balance between relations."
+            self.feedbacks.append(feedback)
 
         return {
             **state,
@@ -536,13 +580,8 @@ class GraphProbingAgent:
             "best_output": best_output
         }
 
-    # --------------------------------------------------------------------- #
-    # Control flow graph (LangGraph)
-    # --------------------------------------------------------------------- #
+    # ---------------- Control flow graph (LangGraph) ---------------------- #
     def _score_check(self, state: Dict[str, Any]) -> str:
-        """
-        Decide whether the current schema is good, should retry, or give up.
-        """
         if state["score"] >= self.score_threshold:
             result = "good"
         elif state["retry_count"] >= self.max_retries:
@@ -552,9 +591,6 @@ class GraphProbingAgent:
         return result
 
     def _build_graph(self):
-        """
-        Build the LangGraph state machine for probing.
-        """
         builder = StateGraph(dict)
         builder.add_node("search_related_experience", self.search_related_experience)
         builder.add_node("generate_schema", self.generate_schema)
@@ -578,9 +614,7 @@ class GraphProbingAgent:
 
         return builder.compile()
 
-    # --------------------------------------------------------------------- #
-    # Public entry
-    # --------------------------------------------------------------------- #
+    # ---------------- Public entry ------------------------------ #
     def run(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the probing loop with the given params. Returns the best output
@@ -597,3 +631,96 @@ class GraphProbingAgent:
             "best_output": {}
         })
         return result.get("best_output", result)
+
+    # ===================== Cleanup helpers ================================ #
+    @staticmethod
+    async def _a_best_effort_close(obj: Optional[object]):
+        """
+        Try async closers first, then sync fallbacks. Never raises.
+        """
+        if obj is None:
+            return
+
+        # Async closers
+        for name in ("aclose", "async_close", "close_async", "shutdown"):
+            m = getattr(obj, name, None)
+            if callable(m):
+                try:
+                    res = m()
+                    if asyncio.iscoroutine(res):
+                        await res
+                    return
+                except Exception:
+                    pass
+
+        # Sync fallbacks
+        for name in ("close", "dispose", "terminate", "stop", "shutdown"):
+            m = getattr(obj, name, None)
+            if callable(m):
+                try:
+                    m()
+                    return
+                except Exception:
+                    pass
+
+        # Try common nested attributes (best-effort)
+        for attr in ("client", "http", "transport", "session", "pool", "executor", "vector_store"):
+            try:
+                sub = getattr(obj, attr, None)
+                if sub is not None:
+                    # recursive best-effort
+                    await GraphProbingAgent._a_best_effort_close(sub)
+            except Exception:
+                pass
+
+    @staticmethod
+    async def _cancel_all_stray_tasks():
+        """
+        Cancel every pending task in the current loop except the caller.
+        Drain exceptions with gather(return_exceptions=True).
+        """
+        loop = asyncio.get_running_loop()
+        current = asyncio.current_task(loop=loop)
+        tasks = [t for t in asyncio.all_tasks(loop) if t is not current]
+        if not tasks:
+            return
+        for t in tasks:
+            t.cancel()
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _short_join_non_daemon_threads(timeout: float = 0.5):
+        """
+        Best-effort: join non-daemon alive threads for a short time and log stacks.
+        Avoids hard-exit in library code.
+        """
+        def _alive_non_daemon():
+            return [
+                t for t in threading.enumerate()
+                if t is not threading.main_thread() and not t.daemon
+            ]
+
+        alive = _alive_non_daemon()
+        if not alive:
+            return
+
+        frames = {}
+        try:
+            frames = sys._current_frames()  # type: ignore
+        except Exception:
+            pass
+
+        for t in alive:
+            try:
+                if frames:
+                    frame = frames.get(t.ident)
+                    if frame:
+                        stack_str = "".join(traceback.format_stack(frame))
+                        logger.warning("[diag] Non-daemon thread alive: name=%s, ident=%s\nStack:\n%s",
+                                       t.name, t.ident, stack_str)
+                t.join(timeout=timeout)
+            except Exception:
+                pass

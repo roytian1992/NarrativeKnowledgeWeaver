@@ -839,8 +839,12 @@ class GraphPreprocessor:
                 if "description_embedding" in ent:
                     del ent["description_embedding"]
             for rel in result.get("relations", []):
-                rel["subject"] = rename_map.get(rel["subject"], rel["subject"])
-                rel["object"] = rename_map.get(rel["object"], rel["object"])
+                try:
+                    rel["subject"] = rename_map.get(rel["subject"], rel["subject"])
+                    rel["object"] = rename_map.get(rel["object"], rel["object"])
+                except Exception:
+                    print(rel)
+                    continue
 
         # Re-attach multi-label types post-rename
         extraction_results = self._attach_multilabel(extraction_results)

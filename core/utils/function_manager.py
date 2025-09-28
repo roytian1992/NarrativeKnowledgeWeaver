@@ -12,6 +12,60 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, TimeoutError as FuturesTimeoutError
+import asyncio
+from typing import Any, Awaitable, Callable, Dict, Hashable, Iterable, List, Tuple
+
+
+async def run_async_with_retries(
+    items: Iterable[Any],
+    *,
+    work_fn: Callable[[Any], Awaitable[Any]],
+    key_fn: Callable[[Any], Hashable],
+    is_success_fn: Callable[[Any], bool],
+    max_rounds: int = 3,
+    concurrency: int = 16,
+    desc_label: str = "Async tasks",
+    retry_backoff_seconds: float = 0.0,
+) -> Tuple[Dict[Hashable, Any], set]:
+    assert max_rounds >= 1, "max_rounds must be >= 1"
+
+    items = list(items)
+    keys = [key_fn(it) for it in items]
+    key2item: Dict[Hashable, Any] = {k: it for k, it in zip(keys, items)}
+
+    sem = asyncio.Semaphore(concurrency)
+    final_result_map: Dict[Hashable, Any] = {}
+
+    async def _wrapped(it):
+        async with sem:
+            return await work_fn(it)
+
+    # 第一轮
+    pending_keys = set(keys)
+    for round_id in range(1, max_rounds + 1):
+        round_items = [key2item[k] for k in pending_keys]
+        if not round_items:
+            break
+
+        bar_desc = f"{desc_label} (round {round_id}/{max_rounds})"
+        coros = [_wrapped(it) for it in round_items]
+        new_failed_keys = set()
+
+        for it, coro in tqdm(zip(round_items, asyncio.as_completed(coros)), total=len(round_items), desc=bar_desc):
+            res = await coro
+            k = key_fn(it)
+            final_result_map[k] = res  # 始终记录最新结果
+            if not is_success_fn(res):
+                new_failed_keys.add(k)
+
+        pending_keys = new_failed_keys
+
+        if pending_keys and round_id < max_rounds and retry_backoff_seconds > 0:
+            await asyncio.sleep(retry_backoff_seconds)
+
+    still_failed = pending_keys
+    return final_result_map, still_failed
+
 
 def run_with_soft_timeout_and_retries(
     items: List[Any],
@@ -20,11 +74,11 @@ def run_with_soft_timeout_and_retries(
     key_fn,                       # (item) -> hashable key
     desc_label: str,
     per_task_timeout: float = 600.0,
-    retries: int = 2,
+    retries: int = 2,             # 注意：这里的 retries 表示“总轮数”，而非“重试次数”
     retry_backoff: float = 1.0,
     allow_placeholder_first_round: bool = False,
     placeholder_fn=None,          # (item, exc=None) -> placeholder_result
-    should_retry=None,             # (result) -> bool
+    should_retry=None,            # (result) -> bool
     max_workers: Optional[int] = 16,
 ) -> Tuple[Dict[Any, Any], Set[Any]]:
     import threading
@@ -34,7 +88,6 @@ def run_with_soft_timeout_and_retries(
 
     results: Dict[Any, Any] = {}
     remaining_items = items[:]
-    still_failed_keys: Set[Any] = set()
     max_rounds = max(1, retries)
 
     for round_id in range(1, max_rounds + 1):
@@ -106,9 +159,11 @@ def run_with_soft_timeout_and_retries(
             except Exception:
                 pass
 
+        # 本轮需要重试的 keys
         keys_to_retry = round_failures | round_timeouts
-        still_failed_keys |= keys_to_retry
         key_set = set(keys_to_retry)
+
+        # 只保留“还需要重试”的 items 进入下一轮
         remaining_items = [it for it in items if key_fn(it) in key_set]
 
         if remaining_items and round_id < max_rounds and retry_backoff > 0:
@@ -117,6 +172,8 @@ def run_with_soft_timeout_and_retries(
             except Exception:
                 pass
 
+    # 这里才最终计算 still_failed_keys：最后一轮仍未成功的 keys
+    still_failed_keys: Set[Any] = {key_fn(it) for it in remaining_items}
     return results, still_failed_keys
 
 

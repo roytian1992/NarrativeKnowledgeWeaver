@@ -47,6 +47,7 @@ class ParagraphSummarizer:
             text = params_dict.get("text", "")
             max_length = params_dict.get("max_length", 200)
             previous_summary = params_dict.get("previous_summary", "")
+            goal = params_dict.get("goal", "")
 
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
@@ -68,6 +69,8 @@ class ParagraphSummarizer:
             # 渲染提示词
             prompt_text = self.prompt_loader.render_prompt('summarize_paragraph_prompt', variables)
             # print("[CHECK] prompt_text: ", prompt_text)
+            if goal:
+                prompt_text += f"\n\n请注意，当前任务的目标是：{goal}\n请根据目标进行摘要。"
             # 构建消息
             messages.append({"role": "user", "content": prompt_text})
             # print("[CHECK] prompt_text: ", prompt_text)

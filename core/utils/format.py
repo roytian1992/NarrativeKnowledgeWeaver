@@ -27,6 +27,64 @@ DOC_TYPE_DESCRIPTION: Dict[str, Dict[str, str]] = {
         "relation": "- CHAPTER_CONTAINS: 章节中包含关系（Chapter → Any）",
     },
 }
+# def format_event_card(card: Dict[str, Any]) -> str:
+#     """
+#     将 event_card 字典整理为可读字符串。
+#     - 跳过空串、None、空列表、"unknown"/"N/A"/"NA"（大小写不敏感）
+#     - 列表用 "、" 连接；participants 支持字符串或包含 name 字段的字典
+#     """
+
+#     label_map = {
+#         "name": "名称",
+#         "summary": "摘要",
+#         "time_hint": "时间",
+#         "locations": "地点",
+#         "participants": "参与者",
+#         "action": "动作",
+#         "outcomes": "结果",
+#         "evidence": "证据",
+#     }
+    
+#     order = ["name", "summary", "time_hint", "locations", "participants", "action", "outcomes", "evidence"]
+
+#     sentinel_blanks = {"", "unknown", "n/a", "na", "-"}
+
+#     def is_blank_scalar(x: Any) -> bool:
+#         if x is None:
+#             return True
+#         if isinstance(x, str):
+#             return x.strip().lower() in sentinel_blanks or x.strip() == ""
+#         return False
+
+#     def normalize_list(lst: List[Any]) -> List[str]:
+#         out: List[str] = []
+#         for item in lst:
+#             if isinstance(item, dict):
+#                 val = item.get("name") or item.get("id") or item.get("label")
+#                 if val and not is_blank_scalar(val):
+#                     out.append(str(val).strip())
+#             else:
+#                 if not is_blank_scalar(item):
+#                     out.append(str(item).strip())
+#         return out
+
+#     lines: List[str] = []
+#     for key in order:
+#         if key not in card:
+#             continue
+#         val = card[key]
+
+#         # 统一清洗
+#         if isinstance(val, list):
+#             items = normalize_list(val)
+#             if items:
+#                 lines.append(f"{label_map[key]}：{'、'.join(items)}")
+#         else:
+#             if not is_blank_scalar(val):
+#                 lines.append(f"{label_map[key]}：{str(val).strip()}")
+
+#     return "\n".join(lines)
+
 def format_event_card(card: Dict[str, Any]) -> str:
     """
     将 event_card 字典整理为可读字符串。
@@ -34,18 +92,7 @@ def format_event_card(card: Dict[str, Any]) -> str:
     - 列表用 "、" 连接；participants 支持字符串或包含 name 字段的字典
     """
 
-    label_map = {
-        "name": "名称",
-        "summary": "摘要",
-        "time_hint": "时间",
-        "locations": "地点",
-        "participants": "参与者",
-        "action": "动作",
-        "outcomes": "结果",
-        "evidence": "证据",
-    }
     order = ["name", "summary", "time_hint", "locations", "participants", "action", "outcomes", "evidence"]
-
     sentinel_blanks = {"", "unknown", "n/a", "na", "-"}
 
     def is_blank_scalar(x: Any) -> bool:
@@ -73,14 +120,14 @@ def format_event_card(card: Dict[str, Any]) -> str:
             continue
         val = card[key]
 
-        # 统一清洗
+        # 清洗并格式化
         if isinstance(val, list):
             items = normalize_list(val)
             if items:
-                lines.append(f"{label_map[key]}：{'、'.join(items)}")
+                lines.append(f"{key}: {'、'.join(items)}")
         else:
             if not is_blank_scalar(val):
-                lines.append(f"{label_map[key]}：{str(val).strip()}")
+                lines.append(f"{key}: {str(val).strip()}")
 
     return "\n".join(lines)
 

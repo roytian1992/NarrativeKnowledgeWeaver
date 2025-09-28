@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from tqdm import tqdm
-
+from core.builder.manager.document_manager import DocumentParser
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from core.model_providers.openai_llm import OpenAILLM
 from core.utils.neo4j_utils import Neo4jUtils
 from core.models.data import Entity
@@ -95,7 +96,10 @@ class EventCausalityBuilder:
 
         # Edge confidence threshold for plot extraction (default 0.5)
         self.min_edge_confidence = config.event_plot_graph_builder.min_confidence
-
+        self.base_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=config.document_processing.chunk_size, chunk_overlap=config.document_processing.chunk_overlap
+        )
+        self.document_parser = DocumentParser(config, self.llm)
         # Similarity threshold for chain deduplication (default 0.75)
         self.chain_similarity_threshold = 0.75
 
@@ -189,7 +193,7 @@ class EventCausalityBuilder:
     def precompute_event_cards(
         self,
         events: List[Entity],
-        per_task_timeout: float = 300,
+        per_task_timeout: float = 600,
         max_retries: int = 3,
         retry_timeout: float = 60.0,
     ) -> Dict[str, Dict[str, Any]]:
@@ -232,11 +236,7 @@ class EventCausalityBuilder:
             """
             Wrapper for generate_event_context that tolerates an optional timeout parameter.
             """
-            try:
-                return self.graph_analyzer.generate_event_context(info, related_ctx, timeout=timeout)
-            except TypeError:
-                # Backward compatibility when underlying function has no 'timeout'
-                return self.graph_analyzer.generate_event_context(info, related_ctx)
+            return self.graph_analyzer.generate_event_context(info, related_ctx)
 
         def _collect_related_context_by_section(ev: Entity) -> str:
             """
@@ -269,7 +269,33 @@ class EventCausalityBuilder:
                                 ctx_set.add(d.content)
                 except Exception:
                     pass
-            return "\n".join(ctx_set)
+                
+            full_ctx = "\n".join(ctx_set)
+            goal = f"Please focus on information relevant to '{ev.name}'." 
+            if len(full_ctx) >= 2000:
+                full_ctx_splitted = self.base_splitter.split_text(full_ctx)
+                # prev = ""
+                summaries = []
+                for chunk in full_ctx_splitted:
+                    chunk_result = self.document_parser.summarize_paragraph(chunk, 100, "", goal)
+                    parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
+                    summaries.extend(parsed)
+                    # prev = parsed
+                full_ctx = "\n".join(summaries) if summaries else full_ctx
+                # new_text = parsed
+                
+            if len(full_ctx) >= 2000:
+                full_ctx_splitted = self.base_splitter.split_text(full_ctx)
+                prev = ""
+                for chunk in full_ctx_splitted:
+                    chunk_result = self.document_parser.summarize_paragraph(chunk, 1000, prev, goal)
+                    parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
+                    prev = parsed
+                # new_text = "\n".join(summaries) if summaries else new_text
+                full_ctx = parsed
+            
+            
+            return full_ctx
 
         def _build_one(ev: Entity) -> str:
             """
@@ -286,18 +312,10 @@ class EventCausalityBuilder:
         def _placeholder(ev: Entity, exc=None) -> str:
             """
             Placeholder event card JSON string used when a task times out or fails.
+            Instead of skeleton, output the collected related context.
             """
-            skeleton = {
-                "name": ev.properties.get("name") or ev.name or f"event_{ev.id}",
-                "summary": "",
-                "time_hint": "unknown",
-                "locations": [],
-                "participants": [],
-                "action": "",
-                "outcomes": [],
-                "evidence": ""
-            }
-            return json.dumps(skeleton, ensure_ascii=False)
+            related_ctx = _collect_related_context_by_section(ev)
+            return related_ctx
 
         res_map, still_failed = run_with_soft_timeout_and_retries(
             pending_events,
@@ -305,7 +323,7 @@ class EventCausalityBuilder:
             key_fn=lambda e: e.id,
             desc_label="Precompute event cards",
             per_task_timeout=per_task_timeout,
-            retries=max_retries,
+            retries=5,
             retry_backoff=30,
             allow_placeholder_first_round=True,
             placeholder_fn=_placeholder,

@@ -20,10 +20,21 @@ class EntityExtractor:
         
         # 定义验证规则
         self.required_fields = ["entities"]
-        self.field_validators = {
-            "entities": lambda x: isinstance(x, list) 
-        }
         
+        def _entities_validator(x: Any) -> bool:
+            if not isinstance(x, list):
+                return False
+            required_keys = {"name", "type", "scope", "description"}
+            for i, ent in enumerate(x):
+                if not isinstance(ent, dict):
+                    return False
+                if not required_keys.issubset(ent.keys()):
+                    return False
+            return True
+
+        self.field_validators = {
+            "entities": _entities_validator
+        }
         # 修复提示词模板
         self.repair_template = entity_repair_template
     

@@ -19,8 +19,20 @@ class RelationExtractor:
         
         # 定义验证规则
         self.required_fields = ["relations"]
+
+        def _relations_validator(relations: Any) -> bool:
+            if not isinstance(relations, list):
+                return False
+            required_subfields = {"subject", "object", "relation_type"}
+            for r in relations:
+                if not isinstance(r, dict):
+                    return False
+                if not required_subfields.issubset(r.keys()):
+                    return False
+            return True
+
         self.field_validators = {
-            "relations": lambda x: isinstance(x, list)
+            "relations": _relations_validator
         }
         
         # 修复提示词模板

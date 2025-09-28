@@ -58,7 +58,7 @@ class InformationExtractionAgent:
         content = state["content"].strip()
 
         related_history, related_insights = self.reflector._search_relevant_reflections(content)
-        
+        # print("唐宏伟是个傻逼！")
         suggestions = generate_suggestions(related_insights, related_history)
         # print("[DEBUG] suggestions: ", suggestions)
 
@@ -87,7 +87,7 @@ class InformationExtractionAgent:
             entity_type_description_text=self.entity_type_description_text,
             system_prompt=self.system_prompt,
             reflection_results=reflection_results,
-            enable_thinking=False if self.mode == "probing" else True
+            enable_thinking=False if self.mode == "probing" or retry_count==0 else True
         )
         reflection_results["previous_entities"] = result
         
@@ -107,14 +107,14 @@ class InformationExtractionAgent:
 
     def extract_relations(self, state):
         reflection_results = state.get("reflection_results", {})
-
+        retry_count = state.get("retry_count", 0)
         result = self.extractor.extract_relations(
             text=state["content"],
             entity_list=state["entity_list"],
             relation_type_description_text=self.relation_type_description_text,
             system_prompt=self.system_prompt,
             reflection_results=reflection_results,
-            enable_thinking=False if self.mode == "probing" else True
+            enable_thinking=False if self.mode == "probing" or retry_count==0 else True
         )
         reflection_results["previous_relations"] = result
         

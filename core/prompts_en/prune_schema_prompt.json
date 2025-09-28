@@ -1,25 +1,25 @@
 {
   "id": "prune_schema_prompt",
   "category": "decision",
-  "name": "Schema Pruning: Removing Unnecessary Types",
-  "description": "Based on the usage distribution and definition description of entities/relations, provide a list of entity or relation types that \"should be deleted\". Only output necessary deletions, do not propose merging/renaming/adding solutions.",
-  "template": "Please read the following distribution and definitions to determine if there are entity or relation types that **must be deleted**. Only suggest deletions when there is sufficient evidence; do not write items that are unclear or can be changed or not.\n\n[Deletion Criteria (satisfy any one; conservative execution)]\n- **Zero usage**: Count = 0 or document coverage = 0.\n- **Near zero and non-critical**: Overall proportion is extremely low and only appears in a very small number of documents, and the semantics can be stably covered by more general/clearer types.\n- **Systematic mismatch**: A large number of uses do not conform to the defined domain/range or direction, and these uses have been correctly carried by other types; continuing to retain them will only cause confusion.\n- **Redundant synonym**: Semantically equivalent or highly overlapping with another high-frequency and more clearly defined type, and historical usage can be losslessly mapped to this high-frequency type.\n- **Inoperable**: The definition is too vague or contradictory, and cannot be stably annotated/extracted for a long time.\n\n[Output Requirements]\n- Only output one JSON: {\\\"feedbacks\\\": [ ... ]}\n- Each item is a **natural language sentence**: write \\\"delete + type name + brief reason (including key numbers, such as count, coverage, overlap target)\\\". Use <entity> and <relation> as prefixes to represent whether the suggestion is for an entity or a relation.\n- Only list the names of **relation types or entity types**; do not write group names; do not provide alternative solutions.\n- If there are no items that must be deleted, return an empty list: {\\\"feedbacks\\\": []}\n\n[Entity Type Distribution]\n{entity_type_distribution}\n\n[Relation Type Distribution]\n{relation_type_distribution}\n\n[Entity Type Description]\n{entity_type_description_text}\n\n[Relation Type Description]\n{relation_type_description_text}\n\n[Output Format (only this JSON)]\n```json\n{\n  \"feedbacks\": [\n    \"<relation> delete 'supports', semantics covered by 'allies_with' (count=0, coverage=0).\",\n    \"<entity> delete 'Artifact', overlaps with 'Object'; usage can be mapped losslessly.\"\n  ]\n}\n```",
+  "name": "Schema Pruning: Remove Unneeded Types",
+  "description": "Based on the usage distribution and definition descriptions of entities/relations, output a list of entity or relation types that should be deleted. Only output necessary removals, without proposing merging/renaming/adding solutions.",
+  "template": "Read the following distributions and definitions, and determine whether there are entity or relation types that **must be deleted**. Only make deletion suggestions when evidence is sufficient; if the case is ambiguous or optional, do not include it.\n\n【Deletion Criteria (any one is sufficient; apply conservatively)】\n- **Zero usage**: count=0 or document coverage=0.\n- **Near-zero and non-critical**: overall proportion extremely low and only appearing in very few documents, and semantics can be stably covered by a more general/clear type.\n- **Systematic mismatch**: heavily used but domain/range or direction inconsistent with definition, and such usage is already properly covered by other types; keeping it will only cause confusion.\n- **Redundant synonym**: semantically equivalent or highly overlapping with another frequent and clearly defined type, and historical usage can be losslessly mapped to that type.\n- **Non-operational**: definition too vague or self-contradictory, making it impossible to label/extract stably over time.\n\n【Output Requirements】\n- Output only one JSON: {{\"feedbacks\": [ ... ]}}\n- Each item is **one natural language sentence**: write “Delete + type name + brief reason (include key numbers such as count, coverage, overlap target)”. Use <entity> or <relation> as a prefix to indicate whether the suggestion is for an entity or a relation.\n- Only list the names of relation types or entity types; do not write group names; do not provide alternatives.\n- If there are no types that must be deleted, return an empty list: {{\"feedbacks\": []}}\n\n【Entity Type Distribution】\n{entity_type_distribution}\n\n【Relation Type Distribution】\n{relation_type_distribution}\n\n【Entity Type Descriptions】\n{entity_type_description_text}\n\n【Relation Type Descriptions】\n{relation_type_description_text}\n\n【Output Format (JSON only)】\n```json\n{{\n  \"feedbacks\": [\n    \"Delete relation_type 'supports', semantics already stably covered by 'allies_with'.\",\n    \"Delete entity_type 'Artifact', definition overlaps with 'Object' and usage is replaceable.\"\n  ]\n}}\n```",
   "variables": [
     {
       "name": "entity_type_distribution",
-      "description": "Entity type usage distribution (suggestions include: type→count, ratio, doc_coverage, etc.)"
+      "description": "Entity type usage distribution (should include: type→count, ratio, doc_coverage, etc.)"
     },
     {
       "name": "relation_type_distribution",
-      "description": "Relation type usage distribution (suggestions include: type→count, ratio, doc_coverage, misuse rate of direction/domain range, etc.)"
+      "description": "Relation type usage distribution (should include: type→count, ratio, doc_coverage, domain/range misuse rates, etc.)"
     },
     {
       "name": "entity_type_description_text",
-      "description": "Entity type and its definition description (text or table converted to text)"
+      "description": "Entity types and their definition descriptions (text or table converted to text)"
     },
     {
       "name": "relation_type_description_text",
-      "description": "Relation type and its definition description (text or table converted to text)"
+      "description": "Relation types and their definition descriptions (text or table converted to text)"
     }
   ]
 }

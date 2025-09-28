@@ -10,7 +10,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError, wait, FIRST_COMPLETED
 from collections import defaultdict
 from copy import deepcopy
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, Hashable, Iterable, List, Tuple
+
 import asyncio
 import pandas as pd
 import random
@@ -18,7 +19,7 @@ import re
 import glob
 import logging
 from tqdm import tqdm
-
+from core.utils.function_manager import run_async_with_retries
 from core.utils.prompt_loader import PromptLoader
 from core.utils.format import correct_json_format
 from core.models.data import Entity, KnowledgeGraph, Relation, TextChunk, Document
@@ -282,6 +283,8 @@ class KnowledgeGraphBuilder:
             schema = json.load(open(self.config.probing.default_graph_schema_path, "r", encoding="utf-8"))
             if os.path.exists(self.config.probing.default_background_path):
                 settings = json.load(open(self.config.probing.default_background_path, "r", encoding="utf-8"))
+                if "abbreviations" not in settings:
+                    settings["abbreviations"] = []
             else:
                 settings = {"background": "", "abbreviations": []}
         else:
@@ -291,8 +294,8 @@ class KnowledgeGraphBuilder:
         if self.probing_mode != "fixed":
             schema, settings = self.update_schema(
                 schema,
-                background=settings["background"],
-                abbreviations=settings["abbreviations"],
+                background=settings.get("background", ""),
+                abbreviations=settings.get("abbreviations", []),
                 verbose=verbose,
                 sample_ratio=sample_ratio,
             )
@@ -406,87 +409,77 @@ class KnowledgeGraphBuilder:
     def extract_entity_and_relation(self, verbose: bool = True):
         return asyncio.run(self.extract_entity_and_relation_async(verbose=verbose))
 
+    
+    
     async def extract_entity_and_relation_async(self, verbose: bool = True):
         """
-        Concurrent extraction with a unified retry round; results persisted to disk.
+        多轮重试版：并发抽取实体/关系。失败样本按轮次集中重跑。
+        轮数由 self.config.agent.async_max_rounds 控制（若无该字段，可用 3）。
         """
         base = self.config.storage.knowledge_graph_path
         desc_chunks = [TextChunk(**o) for o in
-                       json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
+                    json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
 
         if verbose:
-            logger.info("Asynchronously extracting entities and relations...")
+            logger.info("Asynchronously extracting entities and relations with multi-round retries...")
 
-        sem = asyncio.Semaphore(self.max_workers)
+        # 单样本工作函数
+        async def _work(ch: TextChunk):
+            try:
+                if not ch.content.strip():
+                    res = {"entities": [], "relations": []}
+                else:
+                    res = await self.information_extraction_agent.arun(
+                        ch.content,
+                        timeout=self.config.agent.async_timeout,
+                        max_attempts=self.config.agent.async_max_attempts,
+                        backoff_seconds=self.config.agent.async_backoff_seconds,
+                    )
+                res.update(chunk_id=ch.id, chunk_metadata=ch.metadata)
+                return res
+            except Exception as e:
+                return {
+                    "chunk_id": ch.id,
+                    "chunk_metadata": ch.metadata,
+                    "entities": [],
+                    "relations": [],
+                    "error": f"{e.__class__.__name__}: {e}",
+                }
 
-        async def _arun_once(ch: TextChunk):
-            async with sem:
-                try:
-                    if not ch.content.strip():
-                        result = {"entities": [], "relations": []}
-                    else:
-                        result = await self.information_extraction_agent.arun(
-                            ch.content,
-                            timeout=self.config.agent.async_timeout,
-                            max_attempts=self.config.agent.async_max_attempts,
-                            backoff_seconds=self.config.agent.async_backoff_seconds,
-                        )
-                    result.update(chunk_id=ch.id, chunk_metadata=ch.metadata)
-                    return result
-                except Exception as e:
-                    if verbose:
-                        logger.error(f"Extraction failed: chunk_id={ch.id} | {e.__class__.__name__}: {e}")
-                    return {
-                        "chunk_id": ch.id,
-                        "chunk_metadata": ch.metadata,
-                        "entities": [],
-                        "relations": [],
-                        "error": f"{e.__class__.__name__}: {e}",
-                    }
+        def _key_fn(ch: TextChunk):
+            return ch.id
 
-        async def _arun_with_ch(ch: TextChunk):
-            """Return (chunk, result) to record failures precisely."""
-            res = await _arun_once(ch)
-            return ch, res
+        def _is_success(res: dict) -> bool:
+            # 定义成功标准：无 error
+            return not res.get("error")
 
-        # First round
-        tasks = [_arun_with_ch(ch) for ch in desc_chunks]
-        first_round_pairs = []
-        failed_chs = []
+        max_rounds = getattr(self.config.agent, "async_max_attempts", 3)
+        concurrency = getattr(self, "max_workers", 16)
+        backoff = getattr(self.config.agent, "async_backoff_seconds", 0.0)
 
-        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Async extraction"):
-            ch, res = await coro
-            first_round_pairs.append((ch, res))
-            if res.get("error"):
-                failed_chs.append(ch)
+        final_map, still_failed = await run_async_with_retries(
+            desc_chunks,
+            work_fn=_work,
+            key_fn=_key_fn,
+            is_success_fn=_is_success,
+            max_rounds=max_rounds,
+            concurrency=concurrency,
+            desc_label="Entity/Relation extraction",
+            retry_backoff_seconds=backoff,
+        )
 
-        # Unified single retry
-        retry_pairs = []
-        if failed_chs:
-            if verbose:
-                logger.info(f"Retrying {len(failed_chs)} failed chunks...")
-            retry_tasks = [_arun_with_ch(ch) for ch in failed_chs]
-            for coro in tqdm(asyncio.as_completed(retry_tasks), total=len(retry_tasks), desc="Retry extraction"):
-                ch, res = await coro
-                retry_pairs.append((ch, res))
-
-        # Merge results (replace failed with retries)
-        failed_ids = {ch.id for ch in failed_chs}
-        final_results = [res for ch, res in first_round_pairs if ch.id not in failed_ids]
-        final_results += [res for _, res in retry_pairs]
-
-        # Persist
+        # 写盘（保持与原格式一致：list，每项含 chunk_id/metadata/entities/relations 及可能的 error）
+        final_results = [final_map[ch.id] for ch in desc_chunks]
         output_path = os.path.join(base, "extraction_results.json")
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(final_results, f, ensure_ascii=False, indent=2)
 
         if verbose:
-            still_failed = sum(1 for r in final_results if r.get("error"))
-            logger.info(f"Entity & relation extraction finished. Total chunks: {len(final_results)}")
             if still_failed:
-                logger.warning(f"{still_failed} chunks still failed after retry (kept 'error' for debugging).")
+                logger.warning(f"{len(still_failed)} chunks still failed after {max_rounds} rounds.")
+            logger.info(f"Entity & relation extraction finished. Total chunks: {len(final_results)}")
             logger.info(f"Saved to: {output_path}")
-
+        
     # ═════════════════════════════════════════════════════════════════════
     #  4) Attribute extraction & refinement
     # ═════════════════════════════════════════════════════════════════════
@@ -538,77 +531,103 @@ class KnowledgeGraphBuilder:
 
     async def extract_entity_attributes_async(self, verbose: bool = True) -> Dict[str, Entity]:
         """
-        Asynchronous attribute extraction for merged entities.
-
-        - Merge entities from extraction results
-        - For each entity, call AttributeExtractionAgent.arun()
-        - arun() has built-in timeout and retry; won't hang indefinitely
+        多轮重试版：并发抽取实体属性；失败实体按轮次统一重跑。
+        轮数由 self.config.agent.async_max_rounds 控制（若无则默认 3）。
         """
         base = self.config.storage.knowledge_graph_path
         results = json.load(open(os.path.join(base, "extraction_results_refined.json"), "r", encoding="utf-8"))
 
-        # Merge / deduplicate entities
+        # 合并实体
         entity_map = self.merge_entities_info(results)  # {name: Entity}
 
         if verbose:
-            logger.info(f"Starting async attribute extraction, #entities: {len(entity_map)}")
+            logger.info(f"Starting async attribute extraction with multi-round retries, #entities: {len(entity_map)}")
 
-        sem = asyncio.Semaphore(self.max_workers)
+        # 为了 work_fn 易用，转为 (name, entity) 列表
+        items: List[Tuple[str, Entity]] = list(entity_map.items())
+
+        async def _work(item: Tuple[str, Entity]):
+            name, ent = item
+            try:
+                txt = ent.description or ""
+                if not txt.strip():
+                    # 空描述视为失败还是跳过？这里返回 None 表示失败（会进下一轮）
+                    return (name, None)
+
+                res = await self.attribute_extraction_agent.arun(
+                    text=txt,
+                    entity_name=name,
+                    entity_type=ent.type,
+                    source_chunks=ent.source_chunks,
+                    original_text="",
+                    timeout=self.config.agent.async_timeout,
+                    max_attempts=self.config.agent.async_max_attempts,
+                    backoff_seconds=self.config.agent.async_backoff_seconds,
+                )
+
+                if res.get("error"):
+                    return (name, None)
+
+                attrs = res.get("attributes", {}) or {}
+                if isinstance(attrs, str):
+                    try:
+                        attrs = json.loads(attrs)
+                    except json.JSONDecodeError:
+                        attrs = {}
+
+                new_ent = deepcopy(ent)
+                new_ent.properties = attrs
+
+                nd = res.get("new_description", "")
+                if nd:
+                    new_ent.description = nd
+
+                return (name, new_ent)
+            except Exception:
+                return (name, None)
+
+        def _key_fn(item: Tuple[str, Entity]):
+            name, _ = item
+            return name
+
+        def _is_success(res: Tuple[str, Optional[Entity]]) -> bool:
+            # 只要拿到了 Entity 对象就算成功
+            return isinstance(res, tuple) and res[1] is not None
+
+        max_rounds = getattr(self.config.agent, "async_max_attempts", 3)
+        concurrency = getattr(self, "max_workers", 16)
+        backoff = getattr(self.config.agent, "async_backoff_seconds", 0.0)
+
+        final_map, still_failed = await run_async_with_retries(
+            items,
+            work_fn=_work,
+            key_fn=_key_fn,
+            is_success_fn=_is_success,
+            max_rounds=max_rounds,
+            concurrency=concurrency,
+            desc_label="Attribute extraction",
+            retry_backoff_seconds=backoff,
+        )
+
+        # 汇总成功的实体
         updated_entities: Dict[str, Entity] = {}
+        for name, _ in items:
+            out = final_map.get(name)
+            if out and out[1] is not None:
+                updated_entities[name] = out[1]
 
-        async def _arun_attr(name: str, ent: Entity):
-            async with sem:
-                try:
-                    txt = ent.description or ""
-                    if not txt.strip():
-                        return name, None
-
-                    # AttributeExtractionAgent.arun has timeout+retry internally
-                    res = await self.attribute_extraction_agent.arun(
-                        text=txt,
-                        entity_name=name,
-                        entity_type=ent.type,
-                        source_chunks=ent.source_chunks,
-                        original_text="",
-                        timeout=self.config.agent.async_timeout,
-                        max_attempts=self.config.agent.async_max_attempts,
-                        backoff_seconds=self.config.agent.async_backoff_seconds,
-                    )
-
-                    if res.get("error"):
-                        return name, None
-
-                    attrs = res.get("attributes", {}) or {}
-                    if isinstance(attrs, str):
-                        try:
-                            attrs = json.loads(attrs)
-                        except json.JSONDecodeError:
-                            attrs = {}
-
-                    new_ent = deepcopy(ent)
-                    new_ent.properties = attrs
-
-                    nd = res.get("new_description", "")
-                    if nd:
-                        new_ent.description = nd
-
-                    return name, new_ent
-                except Exception as e:
-                    if verbose:
-                        logger.error(f"Attribute extraction failed (async): {name}: {e}")
-                    return name, None
-
-        # Concurrent execution
-        tasks = [_arun_attr(n, e) for n, e in entity_map.items()]
-        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Attribute extraction (async)"):
-            n, e2 = await coro
-            if e2:
-                updated_entities[n] = e2
-
-        # Persist
+        # 落盘
         output_path = os.path.join(base, "entity_info.json")
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump({k: v.dict() for k, v in updated_entities.items()}, f, ensure_ascii=False, indent=2)
+
+        # 记录失败名单（可选）
+        if still_failed:
+            fail_log = os.path.join(base, "entity_attr_failed.json")
+            with open(fail_log, "w", encoding="utf-8") as f:
+                json.dump({"failed_entities": sorted(list(still_failed))}, f, ensure_ascii=False, indent=2)
+            if verbose:
+                logger.warning(f"{len(still_failed)} entities still failed after {max_rounds} rounds. Logged to: {fail_log}")
 
         if verbose:
             logger.info(f"Attribute extraction finished. Processed entities: {len(updated_entities)}")
@@ -618,6 +637,7 @@ class KnowledgeGraphBuilder:
             "status": "success",
             "processed_entities": len(updated_entities),
             "output_path": output_path,
+            "failed_entities": sorted(list(still_failed)),
         }
 
     # ═════════════════════════════════════════════════════════════════════

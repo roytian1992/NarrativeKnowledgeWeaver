@@ -200,45 +200,52 @@ def main():
 
     # ---------- Knowledge graph phase ----------
     builder = KnowledgeGraphBuilder(config)
-    kg_stats = {}
     try:
-        # builder.prepare_chunks(args.input, verbose=args.verbose)
+        builder.prepare_chunks(args.input, verbose=args.verbose)
+        builder.store_chunks(verbose=args.verbose)
+    finally:
+        _close_component(builder)
+        builder = None
+        
+    builder = KnowledgeGraphBuilder(config)
+    try:
         builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35)
+    finally:
+        _close_component(builder)
+        builder = None
+        
+    builder = KnowledgeGraphBuilder(config)
+    try:
         builder.initialize_agents()
         builder.extract_entity_and_relation(verbose=args.verbose)
         builder.run_extraction_refinement(verbose=args.verbose)
+    finally:
+        _close_component(builder)
+        builder = None
+        
+    builder = KnowledgeGraphBuilder(config)
+    try:
+        builder.initialize_agents()
         builder.extract_entity_attributes(verbose=args.verbose)
         _ = builder.build_graph_from_results(verbose=args.verbose)
         builder.prepare_graph_embeddings()
-
-        kg_stats["knowledge_graph"] = {"status": "ok"}
-    except Exception as e:
-        logger.exception("Knowledge graph phase failed: %s", e)
-        kg_stats["knowledge_graph"] = {"status": "error", "error": str(e)}
-        # Continue to cleanup and subsequent phases as needed
     finally:
         _close_component(builder)
         builder = None
 
     # ---------- Relational DB phase ----------
     sql_builder = RelationalDatabaseBuilder(config)
-    rdb_stats = {}
     try:
         sql_builder.extract_cmp_information()
         sql_builder.build_relational_database()
         sql_builder.build_scene_info()
-
-        rdb_stats["relational_db"] = {"status": "ok"}
-    except Exception as e:
-        logger.exception("Relational DB phase failed: %s", e)
-        rdb_stats["relational_db"] = {"status": "error", "error": str(e)}
+        
     finally:
         _close_component(sql_builder)
         sql_builder = None
 
     # ---------- Event/plot graph phase ----------
     event_graph_builder = EventCausalityBuilder(config)
-    ev_stats = {}
     try:
         event_graph_builder.initialize(keep_event_cards=True)
         event_graph_builder.build_event_causality_graph()
@@ -247,25 +254,12 @@ def main():
         event_graph_builder.generate_plot_relations()
         event_graph_builder.prepare_graph_embeddings()
 
-        ev_stats["event_plot_graph"] = {"status": "ok"}
-    except Exception as e:
-        logger.exception("Event/plot graph phase failed: %s", e)
-        ev_stats["event_plot_graph"] = {"status": "error", "error": str(e)}
     finally:
         _close_component(event_graph_builder)
         event_graph_builder = None
 
     logger.info("✅ Knowledge graph and event/plot graph pipeline completed.")
 
-    # Optional: write summary stats
-    summary = {}
-    summary.update(kg_stats)
-    summary.update(rdb_stats)
-    summary.update(ev_stats)
-    if args.output_stats:
-        _write_stats_if_requested(args.output_stats, summary)
-
-    # Handle alive non-daemon threads (last-resort cleanup)
     _handle_alive_threads(grace_seconds=0.3)
 
     sys.exit(0)

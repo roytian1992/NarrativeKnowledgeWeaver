@@ -242,7 +242,11 @@ class AttributeExtractionAgent:
         entity_name = state["entity_name"]
         entity_type = state["entity_type"]
         source_chunks = state.get("source_chunks", []) or []
-
+        goal = f"Please focus on information relevant to '{entity_name}'." 
+        feedbacks = state.get("feedbacks", [])
+        if feedbacks:
+            goal += " Consider the following feedbacks:\n" + "\n".join(f"- {f}" for f in feedbacks if f)
+        
         # Fetch original chunks
         doc_objs = self.document_vector_store.search_by_ids(source_chunks) or []
         doc_texts = []
@@ -271,13 +275,26 @@ class AttributeExtractionAgent:
         # If too long, perform rolling summarization
         if len(new_text) >= 2000:
             new_text_splitted = self.base_splitter.split_text(new_text)
+            # prev = ""
             summaries = []
             for chunk in new_text_splitted:
-                chunk_result = self.document_parser.summarize_paragraph(chunk, 100, "")
+                chunk_result = self.document_parser.summarize_paragraph(chunk, 100, "", goal)
                 parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
                 summaries.extend(parsed)
+                # prev = parsed
             new_text = "\n".join(summaries) if summaries else new_text
-
+            # new_text = parsed
+            
+        if len(new_text) >= 2000:
+            new_text_splitted = self.base_splitter.split_text(new_text)
+            prev = ""
+            for chunk in new_text_splitted:
+                chunk_result = self.document_parser.summarize_paragraph(chunk, 1000, prev, goal)
+                parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
+                prev = parsed
+            # new_text = "\n".join(summaries) if summaries else new_text
+            new_text = parsed
+            
         return {**state, "content": new_text}
 
     # ---------------- Node: extract ----------------
@@ -305,6 +322,7 @@ class AttributeExtractionAgent:
             previous_results=state.get("previous_result", ""),
             feedbacks=feedbacks,
             original_text=state.get("original_text", ""),
+            enable_thinking=False
         )
         # Normalize and parse JSON output from extractor
         result = json.loads(correct_json_format(result))
@@ -351,6 +369,7 @@ class AttributeExtractionAgent:
             attributes=attrs_json_for_prompt,
             system_prompt=self.system_prompt,
             original_text=state.get("original_text", ""),
+            enable_thinking=False,
         )
         result = json.loads(correct_json_format(result))
 
@@ -427,7 +446,7 @@ class AttributeExtractionAgent:
         builder.add_edge("extract", "reflect")
         builder.add_conditional_edges("reflect", self._check_reflection, {
             "complete": END,
-            "retry": "extract"
+            "retry": "get_related_context"
         })
         return builder.compile()
 

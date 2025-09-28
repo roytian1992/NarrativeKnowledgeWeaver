@@ -2,16 +2,16 @@
   "id": "evaluate_redundancy_prompt",
   "category": "regular_function",
   "name": "Ternary Causal Redundancy Edge Judgment Prompt",
-  "description": "Used to determine whether there is structural or semantic redundancy in the A → C edge in a ternary causal structure, to assist in optimizing the causal graph structure.",
-  "template": "You are an expert in optimizing plot causal graphs. Your task is to determine whether the edge A → C in the following ternary causal structure is redundant. A redundant edge means that its causal relationship can be indirectly expressed through the path A → B → C. If it is semantically and structurally redundant, it can be deleted to simplify the graph structure.\n\n------------------\n{event_details}\n\n{relation_details}\n------------------\n\n# Judgment Reference Principles (Please judge based on structure, semantics, and edge strength):\n\n1. If the meaning of A → C highly overlaps with the combination of A → B → C, A → C can be considered redundant;\n2. If A → C expresses different causality semantically (e.g., emotional, psychological, suggestive levels), it should be retained even if it is structurally reachable;\n3. If the semantics of A → C are very strong, far exceeding the indirect path, it should also be retained;\n4. Deleting redundant edges should be based on **maintaining complete semantic expression as the premise, and the simplest causal structure as the goal**.\n\n---\n\n## Output Format:\n\nPlease judge whether the edge A → C should be removed, and output in the following JSON format:\n\n```json\n{\n  \"remove_edge\": true,\n  \"reason\": \"Your judgment reason, must be based on the context and the structure of the edge.\"\n}\n```",
+  "description": "Determine whether the A → C edge in a ternary causal structure is structurally or semantically redundant to help simplify the causal graph.",
+  "template": "You are an expert in optimizing plot causal graphs. Your task is to judge whether the edge A → C in the following ternary causal structure is redundant. A redundant edge is one whose causal relation can be sufficiently expressed via the indirect path A → B → C. If A → C is redundant in both structure and semantics, it may be deleted to simplify the graph, while preserving meaning.\n\n------------------\n{event_details}\n\n{relation_details}\n------------------\n\n# Judgment Reference Principles (evaluate structure, semantics, and edge strength):\n\n1. If the meaning of A → C substantially overlaps with the combined meaning of A → B → C, consider A → C redundant.\n2. If A → C conveys a distinct causal layer (e.g., emotional, psychological, suggestive) beyond the indirect path, retain it even if structurally reachable.\n3. If A → C is semantically much stronger than the indirect path, retain it.\n4. Removal decisions should aim for the **simplest causal structure** while **preserving complete semantic expression**.\n\n---\n\n## Output Format:\n\nDecide whether the edge A → C should be removed and output **JSON only** in the format below:\n\n```json\n{{\n  \"remove_edge\": true,\n  \"reason\": \"Your justification, grounded in the provided context and edge structure.\"\n}}\n```",
   "variables": [
     {
       "name": "event_details",
-      "description": "Detailed description of the three events in the ternary structure, including event names, attributes, participants, etc."
+      "description": "Detailed descriptions of the three events (A, B, C): names, attributes, participants, etc."
     },
     {
       "name": "relation_details",
-      "description": "Causal explanation of the three edges, including natural language description, similarity, confidence, etc. for each edge."
+      "description": "Causal explanations for the three edges (A → B, B → C, A → C), including natural-language descriptions, similarity measures, confidences, or other strength indicators."
     }
   ]
 }

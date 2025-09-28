@@ -75,7 +75,8 @@ class SemanticSplitter:
                 required_fields=self.required_fields,
                 field_validators=self.field_validators,
                 max_retries=1,
-                repair_template=self.repair_template
+                repair_template=self.repair_template,
+                enable_thinking=False,
             )
             
             if status == "success":
