@@ -115,13 +115,15 @@ class DocumentParser:
         self,
         text: str,
         max_length: int = 200, 
-        previous_summary: str = ""
+        previous_summary: str = "",
+        goal: str = ""
     ) -> str:
         """Summarize a paragraph, optionally using a previous rolling summary."""
         params = {
             "text": text.strip(),
             "max_length": max_length,
-            "previous_summary": previous_summary
+            "previous_summary": previous_summary,
+            "goal": goal
         }
         result = self.paragraph_summarizer.call(
             params=json.dumps(params, ensure_ascii=False)

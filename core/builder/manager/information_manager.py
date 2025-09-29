@@ -162,6 +162,7 @@ class InformationExtractor:
         previous_results: str = None,
         feedbacks: str = None,
         original_text: str = None,
+        enable_thinking: bool = True,
     ) -> str:
         """Extract structured attributes for a given entity."""
         params = {
@@ -174,6 +175,7 @@ class InformationExtractor:
             "previous_results": previous_results,
             "feedbacks": feedbacks,
             "original_text": original_text,
+            "enable_thinking": enable_thinking,
         }
         result = self.attribute_extraction.call(params=json.dumps(params))
         return result
@@ -186,6 +188,7 @@ class InformationExtractor:
         attributes: str,
         original_text: str = "",
         system_prompt: str = "",
+        enable_thinking: bool = True,
     ) -> str:
         """Reflect on attribute extraction quality (completeness, correctness, retry needs)."""
         params = {
@@ -195,6 +198,7 @@ class InformationExtractor:
             "attributes": attributes,
             "original_text": original_text,
             "system_prompt": system_prompt,
+            "enable_thinking": enable_thinking,
         }
         result = self.attribute_reflection.call(params=json.dumps(params))
         return result
