@@ -57,6 +57,7 @@ class RelationExtractor:
             entity_list = params_dict.get("entity_list", "")
             system_prompt = params_dict.get("system_prompt", "")
             reflection_results = params_dict.get("reflection_results", {})
+            previous_results = reflection_results.get("reflection_results", {})
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
@@ -67,8 +68,8 @@ class RelationExtractor:
         try:
             previous_issues = reflection_results.get("issues", "")
             previous_suggestions = reflection_results.get("suggestions", "")
-            previous_results = reflection_results.get("previous_relations", "")
-            entitity_extraction_results = reflection_results.get("previous_entities", "")
+            # previous_results = reflection_results.get("previous_relations", "")
+            # entitity_extraction_results = reflection_results.get("previous_entities", "")
             score = reflection_results.get("score", "")
             
             prompt_text = self.prompt_loader.render_prompt(
@@ -90,18 +91,33 @@ class RelationExtractor:
             if previous_suggestions:
                 previous_suggestions = "\n".join(previous_suggestions)
                 background_info +=  f"在执行知识图谱构建的过程中，以下是一些可供参考的建议：\n{previous_suggestions}\n\n"
-
-            if previous_results and previous_issues and score:
-                previous_issues = "\n".join(previous_issues)
-                background_info += f"这是你之前抽取的结果，部分内容有待改进： \n{previous_results}, 相关问题为: \n {previous_issues}，得分为: {score}"
-
+            
             messages.append({
                 "role": "user",
                 "content": background_info
             })
+
+            if previous_results and previous_issues and score:
+                # print("****: ", json.loads(previous_results).keys())
+                previous_issues = "\n".join(previous_issues)
+                previous_ = f"这是你之前抽取的结果，部分内容有待改进： \n{previous_results}, 相关问题为: \n {previous_issues}，得分为: {score}"
+
+                relations = json.loads(previous_results).get("relations", [])
+                for relation in relations:
+                    subject_ = relation.get("subject")
+                    object_ = relation.get("object")
+                    if subject_ == object_:
+                        print(f"[WARNING]发现自连接实体: {subject_}")
+                        print(f"[WARNING]相关关系: {relation}")
+                        previous_ += f"\n注意到你之前抽取的关系({json.dumps(relation, ensure_ascii=False)})中，实体 '{subject_}' 同时作为主语和宾语出现，这很可能是生成回答时候的错误，请检查这种自连接是否合理，抽取正确的subject和object。\n"
+                    
+                messages.append({
+                    "role": "user",
+                    "content": previous_
+                })
                 
-            if entitity_extraction_results:
-                messages.append({"role": "user", "content": f"这是你最新的实体抽取的结果，之后请抽取这些实体之间的关系：\n{entitity_extraction_results}"})
+            # if entitity_extraction_results:
+            #     messages.append({"role": "user", "content": f"这是你最新的实体抽取的结果，之后请抽取这些实体之间的关系：\n{entitity_extraction_results}"})
             
             messages.append({"role": "user", "content": prompt_text})
             

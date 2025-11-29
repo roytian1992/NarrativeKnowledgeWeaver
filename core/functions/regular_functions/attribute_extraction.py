@@ -51,7 +51,6 @@ class AttributeExtractor:
             attribute_definitions = params_dict.get("attribute_definitions", "")
             system_prompt = params_dict.get("system_prompt", "")
             feedbacks = params_dict.get("feedbacks", "")
-            original_text = params_dict.get("original_text", "")
             previous_results = params_dict.get("previous_results", "")
             
         except Exception as e:
@@ -75,13 +74,6 @@ class AttributeExtractor:
             
             messages = [{"role": "system", "content": system_prompt}]
             
-
-            if original_text:
-                 messages.append({
-                    "role": "user",
-                    "content": f"这些是原始文本：\n{original_text}\n\n请在此基础上进行属性抽取。"
-                })
-
             background_info = ""
             if  previous_results and feedbacks:
                 background_info += f"上一次抽取的结果如下：\n{previous_results}\n反馈建议如下：\n{feedbacks}\n请仅针对缺失字段或内容错误的字段进行补充，保留已有正确的字段。"

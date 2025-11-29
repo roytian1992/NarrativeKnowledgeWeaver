@@ -10,7 +10,7 @@ from .data import (
     KnowledgeGraph,
     # EntityType,
     # RelationType,
-    ExtractionResult,
+    # ExtractionResult,
 )
 
 __all__ = [

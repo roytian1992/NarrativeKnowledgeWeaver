@@ -48,7 +48,6 @@ class AttributeReflector:
             entity_type = params_dict.get("entity_type", "")
             attribute_definitions = params_dict.get("attribute_definitions", "")
             system_prompt = params_dict.get("system_prompt", "")  # 和实体抽取逻辑保持一致
-            original_text = params_dict.get("original_text", "")
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
@@ -77,11 +76,6 @@ class AttributeReflector:
             # agent 指令（system prompt），同你之前写法
             messages = [{"role": "system", "content": system_prompt}]
             
-            if original_text:
-                 messages.append({
-                    "role": "user",
-                    "content": f"这些是原始文本：\n{original_text}\n\n请在此基础上进行属性抽取。"
-                })
 
             messages.append({"role": "user", "content": prompt_text})
             

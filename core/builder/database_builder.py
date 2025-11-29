@@ -15,25 +15,52 @@ from core.utils.prompt_loader import PromptLoader
 from core.agent.cmp_extraction_agent import CMPExtractionAgent
 
 
+# =========================
+# 版本名映射（统一在此维护）
+# =========================
+VERSION_MAP: Dict[str, str] = {
+    "Part_1": "流浪地球3上部",
+    "Part_2": "流浪地球3下部",
+    # 需要时可以继续补充：
+    # "Part_3": "流浪地球3彩蛋",
+}
+
+def map_version_name(raw: str) -> str:
+    """将内部 version 转换为对外展示名；未知则回退到原值或 'default'。"""
+    if not raw:
+        return "default"
+    return VERSION_MAP.get(raw, raw)
+
+
+# =========================
+# 数据清洗
+# =========================
 def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # 统一去空格（只处理会用到的列）
-    norm_cols = ['名称','类别','相关角色','chunk_id','场次','子类别','外观','状态','文中线索','补充信息','子场次']
+    norm_cols = [
+        '名称','类别','相关角色','chunk_id','场次','子类别','外观','状态',
+        '文中线索','补充信息','子场次','版本','场次名','子场次名'
+    ]
     for c in norm_cols:
         if c in df.columns:
             df[c] = df[c].astype('string').str.strip()
 
-    # 1) 删除名称缺失/空白的行
-    df = df[ df['名称'].notna() & (df['名称'] != '') ]
+    # 1) 删除名称缺失/空白的行（若存在此列）
+    if '名称' in df.columns:
+        df = df[ df['名称'].notna() & (df['名称'] != '') ]
 
     # 2) 类别=propitem -> prop（不区分大小写）
     if '类别' in df.columns:
         df.loc[df['类别'].str.lower() == 'propitem', '类别'] = 'prop'
 
     # 3) 按关键列去重（保留第一条）
-    keys = [c for c in ['名称','类别','相关角色','chunk_id','场次'] if c in df.columns]
-    df = df.drop_duplicates(subset=keys, keep='first').reset_index(drop=True)
+    keys = [c for c in ['名称','类别','相关角色','chunk_id','场次','版本'] if c in df.columns]
+    if keys:
+        df = df.drop_duplicates(subset=keys, keep='first').reset_index(drop=True)
+    else:
+        df = df.reset_index(drop=True)
 
     return df
 
@@ -68,8 +95,7 @@ class RelationalDatabaseBuilder:
             background=settings.get("background", ""),
             abbreviations=settings.get("abbreviations", []),
         )
-        # doc_type = self.config.knowledge_graph_builder.doc_type
-        system_prompt_id = "agent_prompt_cmp" 
+        system_prompt_id = "agent_prompt_cmp"
         return self.prompt_loader.render_prompt(system_prompt_id, {"background_info": background_info})
 
     def get_background_info(self, background: str, abbreviations: List[dict]) -> str:
@@ -92,6 +118,10 @@ class RelationalDatabaseBuilder:
     # ---------------- 服化道抽取 ----------------
     def _rows_from_result(self, chunk: Dict[str, Any], merged_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         md = chunk.get("metadata", {}) or {}
+        # 原始 version -> 对外映射名
+        raw_version = md.get("version", "default")
+        version_mapped = map_version_name(raw_version)
+
         rows = []
         for r in merged_results:
             rows.append({
@@ -106,7 +136,9 @@ class RelationalDatabaseBuilder:
                 "chunk_id": chunk.get("id", ""),
                 "title": md.get("title", ""),
                 "subtitle": md.get("subtitle", ""),
-                "scene_id": md.get("scene_id", "")
+                "scene_id": md.get("scene_id", ""),
+                "version": version_mapped,         # ★ 新增：版本（映射后）
+                "version_raw": raw_version,        # （可选）保留原始 version，便于排查
             })
         return rows
 
@@ -154,7 +186,7 @@ class RelationalDatabaseBuilder:
 
         return all_rows, failures
 
-    # ---------------- 主流程 ----------------
+    # ---------------- 主流程：抽取 ----------------
     def extract_cmp_information(self):
         base = self.config.storage.knowledge_graph_path
         input_json_path = os.path.join(base, "all_document_chunks.json")
@@ -170,21 +202,13 @@ class RelationalDatabaseBuilder:
         print(f"✅ 服化道抽取完成: 成功 {len(all_rows)} 行, 失败 {len(still_failed)} 行 (最大尝试 {self.max_retries} 轮)")
         return
 
+    # ---------------- 主流程：建库 ----------------
     def build_relational_database(self):
         with open(os.path.join(self.config.storage.sql_database_path, "extraction_results.json"), "r") as f:
             all_rows = json.load(f)
         df_cmp = pd.DataFrame(all_rows)
 
-        # scene_id_list = []
-        # for i in range(df_cmp.shape[0]):
-        #     row = df_cmp.iloc[0]
-        #     if row["subtitle"]:
-        #         scene_id = row["subtitle"].split("、")[0]
-        #     else:
-        #         scene_id = row["title"].split("、")[0]
-        #     scene_id_list.append(scene_id)
-        # df_cmp["scene_id"] = scene_id_list
-        
+        # 字段中文化 + 保留映射后的“版本”
         df_cmp = df_cmp.rename(columns={
             "name": "名称",
             "category": "类别",
@@ -197,26 +221,31 @@ class RelationalDatabaseBuilder:
             "scene_id": "场次",
             "title": "场次名",
             "subtitle": "子场次名",
-            "notes": "补充信息"
+            "notes": "补充信息",
+            "version": "版本",
+            # version_raw 不改名，作为内部排查字段存在即可
         })
 
+        # 构建 SQLite
         db_path = os.path.join(self.config.storage.sql_database_path, "CMP.db")
         os.makedirs(self.config.storage.sql_database_path, exist_ok=True)
         if os.path.exists(db_path):
             os.remove(db_path)
         conn = sqlite3.connect(db_path)
+
         df_cmp = clean_df(df_cmp)
         df_cmp.to_sql("CMP_info", conn, if_exists="replace", index=False)
         conn.commit()
         print(f"✅ 构建SQL数据库成功: {db_path}")
+
+        # 同步导出 CSV
         df_cmp.to_csv(os.path.join(self.config.storage.sql_database_path, "CMP_info.csv"), index=False)
         conn.close()
 
+    # ---------------- 主流程：场次信息表 ----------------
     def build_scene_info(self):
         db_path = os.path.join(self.config.storage.sql_database_path, "CMP.db")
         os.makedirs(self.config.storage.sql_database_path, exist_ok=True)
-        # if os.path.exists(db_path):
-        #     os.remove(db_path)
         conn = sqlite3.connect(db_path)
 
         rows = []
@@ -226,12 +255,21 @@ class RelationalDatabaseBuilder:
             chunks = json.load(fr)
 
         for chunk in chunks:
-            metadata = chunk.get("metadata", {})
+            metadata = chunk.get("metadata", {}) or {}
+            raw_version = metadata.get("version", "default")
+            version_mapped = map_version_name(raw_version)
+
+            title = metadata.get("title") or ""
+            subtitle = metadata.get("subtitle") or ""
+            # 若没给 scene_id，降级用 title 的 “、” 前缀
+            fallback_scene_id = (title.split("、")[0] if title else "")
             rows.append({
                 "chunk_id": chunk.get("id"),
-                "scene_id": metadata.get("scene_id", metadata.get("title").split("、")[0]),
-                "title": metadata.get("title"),
-                "subtitle": metadata.get("subtitle")
+                "scene_id": metadata.get("scene_id", fallback_scene_id),
+                "title": title,
+                "subtitle": subtitle,
+                "version": version_mapped,     # ★ 新增：版本（映射后）
+                "version_raw": raw_version,    # （可选）保留原始 version
             })
 
         df_scene = pd.DataFrame(rows)
@@ -240,8 +278,13 @@ class RelationalDatabaseBuilder:
             "scene_id": "场次",
             "title": "场次名",
             "subtitle": "子场次名",
+            "version": "版本",
+            # version_raw 保持英文名
         }).drop_duplicates()
+
+        df_scene = clean_df(df_scene)
         df_scene.to_sql("Scene_info", conn, if_exists="replace", index=False)
         conn.commit()
+
         df_scene.to_csv(os.path.join(self.config.storage.sql_database_path, "Scene_info.csv"), index=False)
         conn.close()

@@ -352,7 +352,7 @@ class Search_By_Scene(BaseTool):
             conn.close()
 
     def call(self, params: str, **kwargs) -> str:
-        logger.info("🎬 search_by_scene: 按场次检索完整记录")
+        # logger.info("🎬 search_by_scene: 按场次检索完整记录")
         p: Dict[str, Any] = json.loads(params)
         scene_name = str(p.get("scene_name", "")).strip()
         subscene_name = (str(p["subscene_name"]).strip()

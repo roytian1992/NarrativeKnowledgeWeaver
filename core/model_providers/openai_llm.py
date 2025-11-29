@@ -12,7 +12,7 @@ from pydantic import PrivateAttr
 from typing import List, Optional
 import copy, re
 from qwen_agent.llm.schema import Message, ASSISTANT, USER, SYSTEM
-
+import asyncio
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 ROLE_MAP = {
@@ -100,8 +100,21 @@ class OpenAILLM(ChatOpenAI):
 
         # 执行生成（调用 _generate）
         output = self._generate(messages=lc_messages, **kwargs)
-        result = [Message(role=ASSISTANT, content=output.generations[0].message.content)] 
+        # print("LLM output:", output)
+        content = output.generations[0].message.content.split("</think>")
+        if len(content) == 1:
+            result = [Message(role=ASSISTANT, content=content[0])]
+        else:
+            result = [Message(role=ASSISTANT, content=content[1])] 
+            
         return result
+    
+    async def arun(self, messages, enable_thinking=None, **kwargs):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,  # 默认线程池
+            lambda: self.run(messages, enable_thinking=enable_thinking, **kwargs)
+        )
 
 
     # ---------- 工具 ----------

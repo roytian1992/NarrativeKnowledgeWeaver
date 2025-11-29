@@ -20,6 +20,7 @@ class DocumentProcessor:
       2) Run sliding-window summaries directly on the *post-split* chunks (if enabled).
       3) Compute document-level metadata ONCE from (Title, Aggregated Summary), and
          attach it to each chunk as `doc_metadata` (if enabled).
+      4) (New) Extract a document-level timeline by aggregating chunk-level time elements (if enabled).
     """
 
     # ------------------------------------------------------------------ #
@@ -63,6 +64,7 @@ class DocumentProcessor:
         """
         results: List[str] = []
         carry = ""
+        last_min_length = 200  # 记录最近一次使用的 min_length（目前恒为 200）
 
         for i, seg in enumerate(segments):
             # Merge carry with current base chunk to form the candidate window
@@ -77,7 +79,9 @@ class DocumentProcessor:
                 continue
 
             max_segments = self.max_segments - 1 if total_len < self.chunk_size + 100 else self.max_segments
-            min_length = max(1, int(total_len / self.max_segments))
+            # min_length = max(1, int(total_len / self.max_segments))
+            min_length = 200
+            last_min_length = min_length  # 记录这次的阈值，后面处理最后一个 segment 用
 
             payload = {
                 "text": safe_text_for_json(text_input),
@@ -113,8 +117,15 @@ class DocumentProcessor:
                         print("[CHECK] splitter raw result:", locals().get("raw", "N/A"))
                         raise RuntimeError(f"Sliding semantic split failed on chunk {i}: {e}") from e
 
+        # ------ 这里改动：对“最后一个 segment”做 min_length 合并规则 ------
         if isinstance(carry, str) and carry.strip():
-            results.append(carry.strip())
+            tail = carry.strip()
+            if results and len(tail) < last_min_length:
+                # 和前一个块合并
+                # 这里简单用拼接，你如果需要可以加换行或空格
+                results[-1] = (results[-1] or "") + tail
+            else:
+                results.append(tail)
 
         return results
 
@@ -146,6 +157,7 @@ class DocumentProcessor:
         title = item.get("title", "") or ""
         subtitle = item.get("subtitle", "") or ""
         raw_text = item.get("content", "") or ""
+        version = item.get("version", "") or "default"
         metadata = item.get("metadata", {}) or {}
 
         # Keep a minimal partition marker for downstream compatibility
@@ -155,6 +167,7 @@ class DocumentProcessor:
             "id": doc_id,
             "doc_type": "document",
             "title": title,
+            "version": version,
             "partition": metadata["partition"],
             "subtitle": subtitle,
             "metadata": metadata,
@@ -172,7 +185,109 @@ class DocumentProcessor:
         return Document(id=chunk.id, content=chunk.content, metadata=chunk.metadata)
 
     # ------------------------------------------------------------------ #
-    # Unified chunking + sliding-window summary + doc-level metadata
+    # Helpers for timelines
+    # ------------------------------------------------------------------ #
+    def _parse_timelines_response(self, raw: Any) -> List[str]:
+        """
+        Parse response of document_parser.extract_time_elements into a list of timeline strings.
+        Accepts dict or JSON string. Expected schema: {"timelines": [ ... ]}.
+        """
+        try:
+            data = raw if isinstance(raw, dict) else json.loads(correct_json_format(raw))
+        except Exception:
+            return []
+        tls = data.get("timelines", [])
+        if tls is None:
+            return []
+        if isinstance(tls, list):
+            return [x for x in tls if isinstance(x, str) and x.strip()]
+        # Fallback: single str
+        return [str(tls)] if str(tls).strip() else []
+
+    def _merge_timelines(self, existing: List[str], new_items: List[str]) -> List[str]:
+        """
+        Stable ordered de-duplication. Preserves first occurrence order across chunks.
+        """
+        seen = set()
+        out: List[str] = []
+        for x in chain(existing, new_items):
+            k = x.strip()
+            if not k or k in seen:
+                continue
+            seen.add(k)
+            out.append(k)
+        return out
+
+    def extract_timelines_over_chunks(
+        self,
+        split_docs: List[str],
+        *,
+        per_task_timeout: float = 120.0,
+        max_retry_rounds: int = 1,
+        max_in_flight: Optional[int] = None,
+    ) -> List[str]:
+        """
+        Aggregate timelines by calling document_parser.parse_time_elements
+        on each chunk with the current 'existing' list to encourage alignment.
+        Returns a single ordered, de-duplicated list at doc level.
+        """
+        if not split_docs:
+            return []
+
+        if max_in_flight is None:
+            max_in_flight = int(self.max_workers)
+
+        existing: List[str] = []
+
+        # ---------- Phase A (bootstrap with the first chunk, sequential) ----------
+        try:
+            existing_str = ", ".join(existing) if existing else ""
+            raw0 = self.document_parser.parse_time_elements(split_docs[0], existing_str)
+            tls0 = self._parse_timelines_response(raw0)
+            existing = self._merge_timelines(existing, tls0)
+        except Exception as e:
+            # 不吞异常信息，便于定位
+            print(f"[WARN] timelines phase A failed: {e}")
+
+        # ---------- Phase B (parallel for the rest, each with a snapshot string) ----------
+        def _task(payload):
+            idx, text, snapshot_list = payload
+            try:
+                snapshot_str = ", ".join(snapshot_list) if snapshot_list else ""
+                raw = self.document_parser.parse_time_elements(text, snapshot_str)
+                return idx, self._parse_timelines_response(raw)
+            except Exception as e:
+                # 保证单任务失败不影响整体
+                print(f"[WARN] timelines phase B task {idx} failed: {e}")
+                return idx, []
+
+        items = [(i, split_docs[i], list(existing)) for i in range(1, len(split_docs))]
+
+        results_map, _failed = run_concurrent_with_retries(
+            items=items,
+            task_fn=_task,
+            per_task_timeout=per_task_timeout,
+            max_retry_rounds=max_retry_rounds,
+            max_in_flight=max_in_flight,
+            max_workers=max_in_flight,
+            thread_name_prefix="timelines",
+            desc_prefix="Extracting timelines",
+            treat_empty_as_failure=False,
+            # 如果你的 run_concurrent_with_retries 没有这个参数，删掉即可
+            # show_progress=False
+        )
+
+        # Merge results in chunk-index order for stability
+        for i in range(1, len(split_docs)):
+            if i in results_map:
+                _, tls = results_map[i]
+                existing = self._merge_timelines(existing, tls)
+
+        return existing
+
+
+    # ------------------------------------------------------------------ #
+    # Unified chunking + sliding-window summary + doc-level metadata + timelines
     # ------------------------------------------------------------------ #
     def prepare_chunk(
         self,
@@ -181,6 +296,7 @@ class DocumentProcessor:
         use_semantic_split: bool = True,
         extract_summary: bool = False,
         extract_metadata: bool = False,
+        extract_timelines: bool = False,          # <--- NEW
         summary_max_words: int = 200,
     ) -> Dict[str, List[TextChunk]]:
         document_chunks: List[TextChunk] = []
@@ -189,9 +305,11 @@ class DocumentProcessor:
         meta = (document.get("metadata") or {}).copy()
         title = document.get("title", "") or ""
         subtitle = document.get("subtitle", "") or ""
+        version = document.get("version", "") or "default"
         meta["title"] = title
         meta["subtitle"] = subtitle
         meta["order"] = int(str(document["id"]).split("_")[-1]) if "id" in document else 0
+        meta["version"] = version
 
         text = document.get("content", "") or ""
         current_pos = 0
@@ -203,6 +321,11 @@ class DocumentProcessor:
             split_docs = self.base_splitter.split_text(text)
             if use_semantic_split:
                 split_docs = self.sliding_semantic_split(split_docs)
+
+        # ---- (1.5) (New) Doc-level timelines from post-split chunks ----
+        doc_timelines: List[str] = []
+        if extract_timelines and split_docs:
+            doc_timelines = self.extract_timelines_over_chunks(split_docs)
 
         # ---- (2) Rolling summary -> keep ONLY the final doc-level summary ----
         doc_summary: str = ""
@@ -238,6 +361,10 @@ class DocumentProcessor:
             except Exception:
                 pass
 
+        # ---- (3.5) Inject timelines into doc-level metadata (always top-level key)
+        if extract_timelines:
+            flat_doc_metadata["timelines"] = doc_timelines or []
+
         # ---- (4) Build chunks ----
         for i, desc in enumerate(split_docs):
             start = current_pos
@@ -248,7 +375,7 @@ class DocumentProcessor:
                 "chunk_type": "document",
                 "doc_title": subtitle or title,
                 **meta,                # copy from doc-level
-                **flat_doc_metadata,   # flatten metadata here
+                **flat_doc_metadata,   # flatten metadata here (includes timelines if enabled)
             }
 
             document_chunks.append(
@@ -256,6 +383,7 @@ class DocumentProcessor:
                     id=f"{document['id']}_chunk_{i}",
                     content=desc,
                     document_id=document["id"],
+                    version=version,
                     start_pos=start,
                     end_pos=end,
                     metadata=chunk_meta,
@@ -270,6 +398,7 @@ class DocumentProcessor:
 
         return {"document_chunks": document_chunks}
 
+    # ------------------------------------------------------------------ #
     # Insights extraction (uses global concurrent executor)
     # ------------------------------------------------------------------ #
     def _parse_insights_response(self, raw: Any) -> List[str]:
@@ -378,4 +507,3 @@ class DocumentProcessor:
             print(f"[WARN] {len(failed_idxs)} chunks failed after retries: {sorted(failed_idxs)}")
 
         return out
-

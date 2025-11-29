@@ -47,10 +47,12 @@ from core.functions.regular_functions import (
     ExtractionReflector,
     AttributeExtractor,
     AttributeReflector,
+    AttributeUpdater,
     PropItemExtractor,
     WardrobeExtractor,
     StylingExtractor,
     CMPReflector,
+    CharacterStatusExtractor
 )
 from core.utils.prompt_loader import PromptLoader
 import os
@@ -79,11 +81,13 @@ class InformationExtractor:
         self.relation_extraction = RelationExtractor(self.prompt_loader, self.llm)
         self.extraction_reflection = ExtractionReflector(self.prompt_loader, self.llm)
         self.attribute_extraction = AttributeExtractor(self.prompt_loader, self.llm)
+        self.attribute_updater = AttributeUpdater(self.prompt_loader, self.llm)
         self.attribute_reflection = AttributeReflector(self.prompt_loader, self.llm)
         self.propitem_extraction = PropItemExtractor(self.prompt_loader, self.llm)
         self.styling_extraction = StylingExtractor(self.prompt_loader, self.llm)
         self.wardrobe_extraction = WardrobeExtractor(self.prompt_loader, self.llm)
-        self.custume_reflection = CMPReflector(self.prompt_loader, self.llm)
+        self.costume_reflection = CMPReflector(self.prompt_loader, self.llm)
+        self.character_status_extraction = CharacterStatusExtractor(self.prompt_loader, self.llm)
 
     # ---------------- Entity & Relation ----------------
 
@@ -93,6 +97,7 @@ class InformationExtractor:
         entity_type_description_text: str,
         system_prompt: str,
         reflection_results: dict,
+        previous_results: dict,
         enable_thinking: bool = True,
     ) -> str:
         """Extract entities from text."""
@@ -101,6 +106,7 @@ class InformationExtractor:
             "entity_type_description_text": entity_type_description_text,
             "system_prompt": system_prompt,
             "reflection_results": reflection_results,
+            "previous_results": previous_results,
         }
         result = self.entity_extraction.call(params=json.dumps(params), enable_thinking=enable_thinking)
         return result
@@ -112,6 +118,7 @@ class InformationExtractor:
         relation_type_description_text: str,
         system_prompt: str,
         reflection_results: dict | str,
+        previous_results: dict,
         enable_thinking: bool = True,
     ) -> str:
         """Extract relations from text."""
@@ -120,6 +127,7 @@ class InformationExtractor:
             "entity_list": entity_list,
             "relation_type_description_text": relation_type_description_text,
             "reflection_results": reflection_results,
+            "previous_results": previous_results,
             "system_prompt": system_prompt,
         }
         result = self.relation_extraction.call(params=json.dumps(params), enable_thinking=enable_thinking)
@@ -161,7 +169,6 @@ class InformationExtractor:
         system_prompt: str = "",
         previous_results: str = None,
         feedbacks: str = None,
-        original_text: str = None,
         enable_thinking: bool = True,
     ) -> str:
         """Extract structured attributes for a given entity."""
@@ -174,11 +181,11 @@ class InformationExtractor:
             "system_prompt": system_prompt,
             "previous_results": previous_results,
             "feedbacks": feedbacks,
-            "original_text": original_text,
             "enable_thinking": enable_thinking,
         }
         result = self.attribute_extraction.call(params=json.dumps(params))
         return result
+
 
     def reflect_entity_attributes(
         self,
@@ -186,7 +193,6 @@ class InformationExtractor:
         description: str,
         attribute_definitions: str,
         attributes: str,
-        original_text: str = "",
         system_prompt: str = "",
         enable_thinking: bool = True,
     ) -> str:
@@ -196,12 +202,59 @@ class InformationExtractor:
             "description": description,
             "attribute_definitions": attribute_definitions,
             "attributes": attributes,
-            "original_text": original_text,
             "system_prompt": system_prompt,
             "enable_thinking": enable_thinking,
         }
         result = self.attribute_reflection.call(params=json.dumps(params))
         return result
+
+    def update_entity_attributes(
+        self,
+        text: str,
+        entity_name: str,
+        description: str,
+        entity_type: str,
+        attribute_definitions: str,
+        prev_attributes: Any = None,
+        prev_description: str = "",
+        system_prompt: str = "",
+        feedbacks: str = None,
+        enable_thinking: bool = True,
+    ) -> str:
+        """
+        基于 IncrementalAttributeExtractor 的增量属性抽取接口。
+
+        Args:
+            text: 当前 chunk 的文本
+            entity_name: 实体名称
+            description: 实体类型描述
+            entity_type: 实体类型
+            attribute_definitions: 初始/推荐属性定义
+            prev_attributes: 上一轮 attributes（可为 dict / str）
+            prev_description: 上一轮描述
+            system_prompt: 系统提示词
+            feedbacks: 外部反馈
+            enable_thinking: 是否启用 llm 的思考模式
+
+        Returns:
+            str: 处理后的 JSON 字符串（符合 new_description + attributes）
+        """
+        params = {
+            "text": text,
+            "description": description,
+            "entity_name": entity_name,
+            "entity_type": entity_type,
+            "attribute_definitions": attribute_definitions,
+            "system_prompt": system_prompt,
+            "feedbacks": feedbacks,
+            "prev_attributes": prev_attributes,
+            "prev_description": prev_description,
+            "enable_thinking": enable_thinking,
+        }
+
+        result = self.attribute_updater.call(params=json.dumps(params))
+        return result
+
 
     # ---------------- CMP (Costume / Makeup / Props) ----------------
 
@@ -237,5 +290,21 @@ class InformationExtractor:
             "system_prompt": system_prompt,
             "previous_reflection": previous_reflection,
         }
-        result = self.custume_reflection.call(params=json.dumps(params))
+        result = self.costume_reflection.call(params=json.dumps(params))
         return result
+
+    def extract_character_status(
+        self,
+        scene_contents: str,
+        timelines: str,
+        character_list: str,
+        enable_thinking: bool = True,
+    ) -> str:
+        """Extract character status over time from scene contents."""
+        params = {
+            "scene_contents": scene_contents,
+            "timelines": timelines,
+            "character_list": character_list,
+        }
+        result = self.character_status_extraction.call(params=json.dumps(params), enable_thinking=enable_thinking)
+        return result   

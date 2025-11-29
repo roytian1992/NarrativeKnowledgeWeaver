@@ -1,0 +1,17 @@
+{
+  "id": "continuity_chain_analysis_prompt",
+  "category": "regular_function",
+  "name": "接戏链整体制作连续性评估提示词（多场景布景合拍判断）",
+  "description": "基于自动生成的接戏链（多个场景的有向连续关系），从拍摄制作层面评估这些场景是否可以作为同一个拍摄布景（production setup）进行拍摄，并给出整体连贯度评分、保留/拆分/丢弃决策以及必要的拆分建议。",
+  "template": "你现在的身份是一名电影拍摄现场的「高级场记 / Script Supervisor」。\n系统已经根据 pairwise continuity 判定自动生成了一条“接戏链”（continuity chain）。\n你的任务是：\n\n**检查整条链是否真的能作为同一个拍摄布景（production setup）进行拍摄。**\n\n请从专业电影制作角度进行严格判断，包括但不限于：\n- 场景空间（location / set layout）是否一致或可复用  \n- 灯光基调（lighting baseline）是否一致或可调至一致  \n- 整体视觉风格（色调、氛围）是否协调  \n- 服化道（costuming, makeup, props; CMP）是否具备连续性  \n- 是否存在任何“视觉突兀”的场景  \n- 是否出现链条过长、内部不一致、边缘场景被硬凑进来等问题  \n- 是否需要拆分成多个更小、更一致的连续链  \n\n你将基于以下信息进行判断：\n\n----------------------------------------\n【Scene IDs（按剧本顺序排序）】  \n{scene_id_list}\n\n【Per-Scene Metadata（summarized metadata for each scene）】  \n{scene_metadata_blocks}\n----------------------------------------\n\n## **你必须输出合法 JSON（不允许额外文本）**  \n并且严格遵守以下字段语义：\n\n### 必须输出的 JSON 字段定义：\n\n- **coherence_score（0.0–1.0）**：  \n  评估整条接戏链整体的视觉连贯程度。  \n  1.0 = 完全连续、可直接作为同一布景拍摄  \n  0.0 = 完全不连续、无法共享布景  \n  请基于空间、灯光、服化道、视觉风格的一致性综合判断。\n\n- **keep_decision**：  \n  - `\"keep\"`：整条链一致，可作为单一布景拍摄  \n  - `\"split\"`：链条内部存在明显断点，需拆成多个拍摄段  \n  - `\"drop\"`：链条整体不成立，应丢弃（几乎无可复用性）\n\n- **suggested_splits**：  \n  当 keep_decision = \"split\" 时必须给出一个二维数组；  \n  每个子数组是一段内部高度一致、可作为独立 setup 的 scene ID 列表。  \n  若为 keep 或 drop，则给空数组：`[]`。\n\n- **rationale（不超过 3 句）**：  \n  用专业角度总结你做出上述判断的关键原因。  \n  必须简短、抓住最重要的视觉连续性因素。\n\n- **decision_confidence（low | medium | high）**：  \n  表示你对输出的信心程度。\n\n### 输出格式（必须完全合法 JSON）：\n\n```json\n{{\n  \"coherence_score\": 0.0,\n  \"keep_decision\": \"\",\n  \"suggested_splits\": [],\n  \"rationale\": \"\",\n  \"decision_confidence\": \"\"\n}}\n```\n\n不要输出任何解释性文本、Markdown、或代码块标记。",
+  "variables": [
+    {
+      "name": "scene_id_list",
+      "description": "按剧本顺序排列的场景 ID 列表，用逗号或空格分隔，例如：scene_1, scene_3, scene_5"
+    },
+    {
+      "name": "scene_metadata_blocks",
+      "description": "每个场景的精简元信息汇总文本，包括地点/空间、时间、氛围、服化道、关键事件等，用于支撑视觉与制作连续性判断。通常由上游 summarizer 生成，按场景顺序拼接。"
+    }
+  ]
+}

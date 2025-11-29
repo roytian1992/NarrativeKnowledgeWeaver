@@ -35,6 +35,7 @@ class KnowledgeGraphBuilderConfig:
     prompt_dir: str = "./core/prompts"
     doc_type: str = "screenplay"
     max_workers: int = 32
+    versions: List[str] = field(default_factory=lambda: ["default"])
 
 
 @dataclass
@@ -112,6 +113,7 @@ class AgentConfig:
     max_workers: int = 32
     score_threshold: int = 7
     max_retries: int = 2
+    max_rounds: int = 5
     async_timeout: int = 600
     async_max_attempts: int = 3
     async_backoff_seconds: int = 60
@@ -185,6 +187,18 @@ class KAGConfig:
         # knowledge_graph_builder
         if "knowledge_graph_builder" in data:
             _update_dc_from_dict(cfg.knowledge_graph_builder, data["knowledge_graph_builder"])
+            vs = cfg.knowledge_graph_builder.versions
+            if vs is None:
+                cfg.knowledge_graph_builder.versions = ["default"]
+            elif isinstance(vs, (str, int, float, bool)):
+                cfg.knowledge_graph_builder.versions = [str(vs)]
+            elif isinstance(vs, tuple):
+                cfg.knowledge_graph_builder.versions = [str(x) for x in vs]
+            elif isinstance(vs, list):
+                cfg.knowledge_graph_builder.versions = [str(x) for x in vs]
+            else:
+                print(f"[KAGConfig] 提示：knowledge_graph_builder.versions 类型异常（{type(vs)}），已回退为 ['default']。")
+                cfg.knowledge_graph_builder.versions = ["default"]
 
         # event_plot_graph_builder
         if "event_plot_graph_builder" in data:

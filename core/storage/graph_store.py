@@ -128,6 +128,7 @@ class GraphStore:
                 e.description = $description,
                 e.scope = $scope,
                 e.types = $types,
+                e.version = $version,
                 e.properties = $properties,
                 e.source_chunks = $source_chunks
             """
@@ -138,6 +139,7 @@ class GraphStore:
                     "name": entity.name,
                     "aliases": entity.aliases,
                     "description": entity.description,
+                    "version": entity.version,
                     "scope": getattr(entity, "scope", None) or "local",
                     "types": types,
                     "properties": json.dumps(entity.properties, ensure_ascii=False),

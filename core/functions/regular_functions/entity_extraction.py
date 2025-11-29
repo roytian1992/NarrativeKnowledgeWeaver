@@ -54,8 +54,23 @@ class EntityExtractor:
             params_dict = json.loads(params)
             text = params_dict.get("text", "")
             entity_type_description_text = params_dict.get("entity_type_description_text", "")
+            # self.entity_type_description_text = "\n".join(
+            #     f"- {e['type']}: {e['description']}" for e in entity_types
+            # )
+           
+            entity_types = []
+            for line in entity_type_description_text.splitlines():
+                line = line.strip()
+                if line.startswith("- "):
+                    line = line[2:]  # 去掉开头的 "- "
+                if ": " in line:
+                    t, desc = line.split(": ", 1)
+                    entity_types.append(t.strip())
+
+
             system_prompt = params_dict.get("system_prompt", "")
             reflection_results = params_dict.get("reflection_results", {})
+            previous_results = params_dict.get("previous_results", {})
             
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
@@ -78,7 +93,7 @@ class EntityExtractor:
             
             previous_issues = reflection_results.get("issues", [])
             previous_suggestions = reflection_results.get("suggestions", [])
-            previous_results = reflection_results.get("previous_entities", "")
+            # previous_results = reflection_results.get("previous_entities", "")
             score = reflection_results.get("score", "")
             
             background_info = f"这是实体和关系抽取时需要遵守的一些准则：\n{general_rules}"
@@ -90,8 +105,14 @@ class EntityExtractor:
             if previous_results and previous_issues and score:
                 previous_issues = "\n".join(previous_issues)
                 background_info += f"这是你之前抽取的结果，部分内容有待改进： \n{previous_results}, 相关问题为: \n {previous_issues}，得分为: {score}"
+                entities = json.loads(previous_results).get("entities", [])
+                for entity in entities:
+                    entity_type = entity.get("type", "")
+                    if entity_type not in entity_types:  # 替换为实际的实体类型
+                        print("[WARNING]发现错误的实体类型:", entity_type)
+                        background_info += f"\n注意到你之前抽取的实体({json.dumps(entity, ensure_ascii=False)})中，实体类型为 '{entity_type}'，这很可能是生成回答时候的错误，请在: {"、".join(entity_types)} 中选择正确的实体类型。\n"
 
-            
+
             messages.append({
                 "role": "user",
                 "content": background_info

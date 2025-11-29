@@ -254,8 +254,10 @@ def safe_text_for_json(raw: str) -> str:
 def is_valid_json(text: str) -> bool:
     try:
         # 尝试从 JSON 起始位置截取解析
-        content = correct_json_format(text)
-        json.loads(content)
+        body = _extract_json_code(text)
+        body = body.replace("True", "true").replace("False", "false")
+        body = _escape_inner_quotes(body)
+        json.loads(body)
         return True
     except Exception:
         return False

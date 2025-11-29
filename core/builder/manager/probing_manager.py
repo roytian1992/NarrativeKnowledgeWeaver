@@ -108,7 +108,7 @@ class GraphProber:
                 }
             )
         )
-        # print("[CHECK] entity_schema: ", result)
+        print("[CHECK] entity_schema: ", result)
         return result
 
     def update_relation_schema(
@@ -128,7 +128,7 @@ class GraphProber:
             "task_goals": task_goals,
         }
         result = self.relation_schema_parser.call(params=json.dumps(params))
-        # print("[CHECK] relation_schema: ", result)
+        print("[CHECK] relation_schema: ", result)
         return result
 
     # ---------------- Pruning & Reflection ----------------

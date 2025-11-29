@@ -1,0 +1,16 @@
+{
+  "id": "incremental_extract_attributes_prompt",
+  "category": "regular_function",
+  "name": "实体属性增量抽取提示词",
+  "description": "在不改变输出 JSON 结构的前提下，对分段文本进行增量属性抽取；在继承已有属性的同时，允许新增字段，并增量维护 attribute_definitions。",
+  "template": "你是一名资深知识图谱工程师，使用 **CMP（Common-sense & Manuscript Prior）** 原则：在确保不与原文矛盾的前提下，根据上下文证据和常识进行稳定、合理的推断。\n\n本任务为**增量属性抽取**：长文已按 chunk 切分，你会被多次调用，每次仅接收一个片段的内容与上一轮的抽取结果，需要在此基础上进行补充、修正与整合。\n\n## 一、输入信息\n- 当前实体：`{entity_name}`\n- 实体类型：`{entity_type}`\n- 实体类型描述：\n{description}\n\n- 当前片段的原文上下文：\n{text}\n\n- 初始/推荐的属性定义（可能不完整，仅供参考）：\n{attribute_definitions}\n\n- 上一轮已抽取到的属性（attributes）：\n{prev_attributes}\n\n- 上一轮生成的实体描述（prev_description）：\n{prev_description}\n\n## 二、增量抽取目标\n结合当前片段与之前轮次的结果，对实体属性进行增量更新：\n\n1. **继承已有属性**：保留 prev_attributes 中的正确信息；\n2. **补全缺失属性**：基于当前片段补充 attribute_definitions 中已有字段；\n3. **更新冲突项**：如当前片段提供了更准确或更明确的值，可覆盖旧值；\n4. **新增关键属性字段**：若当前片段引入了理解实体所必需的新信息，则可新增属性字段（同时更新 attribute_definitions）；\n5. **维护 attribute_definitions**：为新增字段补充简短、准确的属性含义；\n6. **生成新的描述（new_description）**：综合 prev_description 与当前证据进行更新，要求简洁一致（≤60字或≤40英文词），不得与原文矛盾。\n\n## 三、增量 CMP 原则\n1. **证据优先**：原文明确信息权重最高；\n2. **合理推断**：可基于上下文 + 稳定常识填补缺失信息，但必须确保不与原文冲突；\n3. **保守空缺**：若无法确认或推断不稳定，则属性值置为 \"\"；\n4. **字段稳定性**：已有字段名不得改动；新增字段名必须语义清晰、通用、非臆断；\n5. **一致性检查**：不得在 attributes / new_description 中出现逻辑冲突。\n\n## 四、输出格式（严格输出以下 JSON，不得添加多余文本）\n请输出包含以下内容的结构：\n\n- `new_description`：整合本轮与之前信息后的最终描述；\n- `attributes`：继承 + 更新后的所有属性字段；\n- `attribute_definitions`：更新并补充后的属性定义（dict），包括新增字段。\n\n输出格式：\n{{\n  \"new_description\": \"实体最终描述（必须非空）\",\n  \"attributes\": {{\n    \"属性1\": \"...\",\n    \"属性2\": \"...\",\n    \"新增属性X\": \"...\"\n  }},\n  \"attribute_definitions\": {{\n    \"属性1\": \"含义（简洁）\",\n    \"属性2\": \"含义（简洁）\",\n    \"新增属性X\": \"含义（简洁）\"\n  }}\n}}",
+  "variables": [
+    { "name": "entity_name", "description": "当前实体名称" },
+    { "name": "entity_type", "description": "当前实体类型" },
+    { "name": "description", "description": "该实体类型的简要自然语言描述" },
+    { "name": "text", "description": "当前片段（chunk）的原文内容" },
+    { "name": "attribute_definitions", "description": "已有属性定义，可能不完整" },
+    { "name": "prev_attributes", "description": "上一轮的属性值字典" },
+    { "name": "prev_description", "description": "上一轮的实体简述文本" }
+  ]
+}

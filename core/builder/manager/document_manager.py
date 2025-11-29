@@ -37,7 +37,9 @@ from core.functions.regular_functions import (
     EntityMerger, 
     InsightExtractor, 
     EntityTypeValidator, 
-    EntityScopeValidator
+    EntityScopeValidator,
+    TimelineParser,
+    AgenticSearch
 )
 from core.utils.prompt_loader import PromptLoader
 import os
@@ -65,6 +67,8 @@ class DocumentParser:
         self.insight_extractor = InsightExtractor(self.prompt_loader, self.llm)
         self.entity_type_validator = EntityTypeValidator(self.prompt_loader, self.llm)
         self.entity_scope_validator = EntityScopeValidator(self.prompt_loader, self.llm)
+        self.timeline_parser = TimelineParser(self.prompt_loader, self.llm)
+        self.agentic_search = AgenticSearch(self.prompt_loader, self.llm)
 
     def parse_metadata(
         self,
@@ -83,6 +87,21 @@ class DocumentParser:
         result = self.metadata_parser.call(
             params=json.dumps(params, ensure_ascii=False)
         )
+        return result
+    
+    def parse_time_elements(
+        self,
+        text: str,
+        existing: str = None,
+    ):
+        params = {
+            "text": text,
+            "existing": existing or "",
+        }
+        result = self.timeline_parser.call(
+            params=json.dumps(params, ensure_ascii=False)
+        )
+        print(result)
         return result
     
     def extract_insights(
@@ -126,6 +145,23 @@ class DocumentParser:
             "goal": goal
         }
         result = self.paragraph_summarizer.call(
+            params=json.dumps(params, ensure_ascii=False)
+        )
+        return result
+    
+    def search_content(
+        self,
+        text: str,
+        max_length: int = 200, 
+        goal: str = ""
+    ) -> str:
+        """Summarize a paragraph, optionally using a previous rolling summary."""
+        params = {
+            "text": text.strip(),
+            "max_length": max_length,
+            "goal": goal
+        }
+        result = self.agentic_search.call(
             params=json.dumps(params, ensure_ascii=False)
         )
         return result

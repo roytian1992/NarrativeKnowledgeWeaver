@@ -1,3 +1,4 @@
+# core.utils.function_manager.py
 import json
 import logging
 from typing import Dict, Any, List, Optional, Callable, Tuple, Set
@@ -15,6 +16,15 @@ from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, Timeou
 import asyncio
 from typing import Any, Awaitable, Callable, Dict, Hashable, Iterable, List, Tuple
 
+import asyncio
+from typing import Any, Awaitable, Callable, Dict, Hashable, Iterable, List, Optional, Tuple, Set
+from tqdm import tqdm
+import random
+
+class _TimeoutSentinel:
+    pass
+
+TIMEOUT = _TimeoutSentinel()
 
 async def run_async_with_retries(
     items: Iterable[Any],
@@ -26,46 +36,117 @@ async def run_async_with_retries(
     concurrency: int = 16,
     desc_label: str = "Async tasks",
     retry_backoff_seconds: float = 0.0,
-) -> Tuple[Dict[Hashable, Any], set]:
+    per_task_timeout: Optional[float] = 600.0,
+    decay_per_round: float = 0.7,     # 每轮并发衰减比例
+    use_exponential_backoff: bool = True,
+) -> Tuple[Dict[Hashable, Any], Set[Hashable]]:
+    """
+    - 结构化地跑多轮任务：每轮仅对“失败且需要重试”的 key 重新调度
+    - 不留下悬挂的 Task，避免 asyncio.run() 关闭时的递归取消风暴
+    - 允许：软超时、并发逐轮降低、指数退避 + 抖动
+    - 结果策略：始终把“本轮产出的结果”记录到 final_result_map 中（成功/失败都记录），
+      但只有 is_success_fn(res) 为 True 的才视为成功；是否进入下一轮由“失败且 retryable=True”决定。
+      ——其中“是否 retryable=True”，由调用方在结果中加字段 `retryable: bool` 指示；
+        如果没有该字段，默认失败均可重试（保守策略）。
+    """
     assert max_rounds >= 1, "max_rounds must be >= 1"
 
     items = list(items)
     keys = [key_fn(it) for it in items]
     key2item: Dict[Hashable, Any] = {k: it for k, it in zip(keys, items)}
 
-    sem = asyncio.Semaphore(concurrency)
     final_result_map: Dict[Hashable, Any] = {}
 
-    async def _wrapped(it):
+    async def _wrapped(it: Any, sem: asyncio.Semaphore):
         async with sem:
-            return await work_fn(it)
+            try:
+                if per_task_timeout is not None:
+                    return await asyncio.wait_for(work_fn(it), timeout=per_task_timeout)
+                else:
+                    return await work_fn(it)
+            except asyncio.TimeoutError:
+                # 由调用方可识别：没有 ok/retryable 字段时，runner 视作失败且可重试
+                return TIMEOUT
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                # 透传异常对象，调用方可据此判断 retryable
+                return e
 
-    # 第一轮
-    pending_keys = set(keys)
+    pending_keys: Set[Hashable] = set(keys)
+
     for round_id in range(1, max_rounds + 1):
-        round_items = [key2item[k] for k in pending_keys]
-        if not round_items:
+        if not pending_keys:
             break
 
-        bar_desc = f"{desc_label} (round {round_id}/{max_rounds})"
-        coros = [_wrapped(it) for it in round_items]
-        new_failed_keys = set()
+        # 逐轮降并发
+        concurrency_this_round = max(1, int(concurrency * (decay_per_round ** (round_id - 1))))
+        sem = asyncio.Semaphore(concurrency_this_round)
 
-        for it, coro in tqdm(zip(round_items, asyncio.as_completed(coros)), total=len(round_items), desc=bar_desc):
-            res = await coro
-            k = key_fn(it)
-            final_result_map[k] = res  # 始终记录最新结果
-            if not is_success_fn(res):
-                new_failed_keys.add(k)
+        round_items = [key2item[k] for k in pending_keys]
+        task_map: Dict[asyncio.Task, Hashable] = {
+            asyncio.create_task(_wrapped(it, sem)): key_fn(it) for it in round_items
+        }
+
+        new_failed_keys: Set[Hashable] = set()
+        pbar = tqdm(total=len(task_map), desc=f"{desc_label} (round {round_id}/{max_rounds})", ncols=100)
+
+        try:
+            while task_map:
+                done, _ = await asyncio.wait(set(task_map.keys()), return_when=asyncio.FIRST_COMPLETED)
+                for t in done:
+                    key = task_map.pop(t)
+                    try:
+                        res = await t
+                    except asyncio.CancelledError:
+                        # 级联取消：把剩余任务都取消后抛出
+                        for rem in task_map:
+                            rem.cancel()
+                        raise
+                    except Exception as e:
+                        res = e
+
+                    # 记录最新结果（成功或失败）
+                    final_result_map[key] = res
+
+                    ok = False
+                    retryable = True  # 默认失败可重试（保守）
+                    try:
+                        ok = is_success_fn(res)
+                    except Exception:
+                        ok = False
+
+                    if not ok:
+                        # 调用方若返回 dict 且带 retryable 字段，以它为准
+                        if isinstance(res, dict) and ("retryable" in res):
+                            retryable = bool(res["retryable"])
+                        else:
+                            # 如果是 TIMEOUT 或 Exception，runner 认为可重试；其它类型的失败由默认策略处理
+                            if res is TIMEOUT or isinstance(res, Exception):
+                                retryable = True
+                            # 其余不带标记的失败，保持默认 True（你也可以在此改成 False）
+                        if retryable:
+                            new_failed_keys.add(key)
+                    pbar.update(1)
+        finally:
+            pbar.close()
+            if task_map:
+                for t in task_map:
+                    t.cancel()
+                await asyncio.gather(*task_map.keys(), return_exceptions=True)
 
         pending_keys = new_failed_keys
 
+        # 退避（指数 + 抖动）
         if pending_keys and round_id < max_rounds and retry_backoff_seconds > 0:
-            await asyncio.sleep(retry_backoff_seconds)
+            if use_exponential_backoff:
+                base = retry_backoff_seconds * (2 ** (round_id - 1))
+            else:
+                base = retry_backoff_seconds
+            await asyncio.sleep(base * (0.75 + 0.5 * random.random()))
 
     still_failed = pending_keys
     return final_result_map, still_failed
-
 
 def run_with_soft_timeout_and_retries(
     items: List[Any],
@@ -189,28 +270,14 @@ def run_concurrent_with_retries(
     desc_prefix: str = "Concurrent jobs",
     treat_empty_as_failure: bool = False,
     is_empty_fn: Optional[Callable[[Any], bool]] = None,
+    show_progress: bool = True,   # 👈 新增参数
 ) -> Tuple[Dict[int, Any], List[int]]:
     """
-    Windowed concurrency with soft timeouts (measured from when the task actually starts)
-    and multi-round retries. Good default for all batch LLM / IO tasks.
-
-    Returns: (results_by_index, still_failed_indices)
-    - results_by_index: dict {idx -> result} for tasks that succeeded in any round
-    - still_failed_indices: indices that failed/time-out in the last round
-
-    Behavior:
-    - Keeps at most `max_in_flight` tasks running at any time (default=max_workers).
-    - Soft timeout: a future is considered timed out when (now - start_time) >= per_task_timeout.
-      We try to cancel the future; regardless of cancel outcome, we mark it timeout and continue.
-    - Retries: up to `max_retry_rounds` rounds total (round 1 + (max_retry_rounds-1) retries).
-      Each later round only re-runs the failed/time-out indices.
-
-    Failure policy:
-    - If `treat_empty_as_failure=True`, a task returning None/[]/{} (or custom `is_empty_fn`) is treated as failure.
+    Windowed concurrency with soft timeouts and multi-round retries.
+    Now supports toggling tqdm progress display with `show_progress`.
     """
     assert max_retry_rounds >= 1, "max_retry_rounds must be >= 1"
     if max_workers is None and max_in_flight is None:
-        # reasonable default
         max_in_flight = 4
     if max_in_flight is None:
         max_in_flight = max_workers or 4
@@ -230,7 +297,6 @@ def run_concurrent_with_retries(
 
         def _submit_one(idx: int):
             item = items[idx]
-            # store the actual start time in a small box (set inside the worker)
             start_box = {"t": None}
 
             def _wrapper(_item, _box):
@@ -245,7 +311,8 @@ def run_concurrent_with_retries(
         while todo and len(pending) < max_in_flight:
             _submit_one(todo.popleft())
 
-        pbar = tqdm(total=len(round_indices), desc=f"{desc_prefix} / round {attempt_idx+1}", ncols=100)
+        pbar = tqdm(total=len(round_indices), desc=f"{desc_prefix} / round {attempt_idx+1}", ncols=100) if show_progress else None
+
         try:
             while pending:
                 done, _ = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
@@ -271,19 +338,19 @@ def run_concurrent_with_retries(
                     except Exception:
                         failures_round.append(idx)
                     pending.remove(f)
-                    pbar.update(1)
+                    if pbar:
+                        pbar.update(1)
 
-                    # keep the window full
+                    # keep window full
                     if todo and len(pending) < max_in_flight:
                         _submit_one(todo.popleft())
 
-                # 2) soft timeout inspection
+                # 2) timeout inspection
                 now = time.monotonic()
                 to_timeout = []
                 for f in list(pending):
                     sb = fut_info[f]["start_box"]
                     t0 = sb.get("t")
-                    # only time out after the task actually started
                     if t0 is not None and (now - t0) >= per_task_timeout:
                         to_timeout.append(f)
 
@@ -295,12 +362,14 @@ def run_concurrent_with_retries(
                     finally:
                         failures_round.append(idx)
                         pending.remove(f)
-                        pbar.update(1)
+                        if pbar:
+                            pbar.update(1)
                         if todo and len(pending) < max_in_flight:
                             _submit_one(todo.popleft())
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
-            pbar.close()
+            if pbar:
+                pbar.close()
 
         return results_round, failures_round
 
@@ -318,7 +387,6 @@ def run_concurrent_with_retries(
         attempt += 1
 
     return all_results, failures
-
 
 def apply_concurrent_with_retries(
     items: List[Any],
@@ -482,6 +550,7 @@ class EnhancedJSONUtils:
         # First attempt
         result = llm_client.run(initial_messages, enable_thinking=enable_thinking)
         content = result[0]["content"] if isinstance(result, list) else result.get("content", "")
+        # print("****", content)
 
         # Validate
         is_valid, error_msg, parsed, corrected_content = EnhancedJSONUtils.enhanced_json_validation(

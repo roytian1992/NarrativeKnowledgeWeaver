@@ -79,27 +79,17 @@ class Neo4jUtils:
         entity_type: Optional[str] = None,
         keyword: Optional[str] = None
     ) -> List[Entity]:
-        """
-        搜索图中所有满足类型和关键词的实体（可选过滤）
-        
-        Args:
-            entity_type: 实体类型（如 "Character", "Concept", "Object"，传 None 表示不限制）
-            keyword: 可选名称关键词（模糊匹配 name 或 aliases）
-            limit: 返回结果上限
-            
-        Returns:
-            List[Entity]
-        """
+
         if self.driver is None:
             return []
 
-        cypher_template = f"""
-        MATCH (e:{entity_type if entity_type else ''})
-        {{where_clause}}
-        RETURN DISTINCT e
-        """
+        # 构造 MATCH 子句
+        if entity_type:
+            match_clause = f"MATCH (e:{entity_type})"
+        else:
+            match_clause = "MATCH (e)"
 
-        # 动态拼接 WHERE 子句
+        # 构造 WHERE 子句
         where_clauses = []
         params = {}
 
@@ -113,15 +103,20 @@ class Neo4jUtils:
         if where_clauses:
             where_clause = "WHERE " + " AND ".join(where_clauses)
 
-        cypher = cypher_template.format(where_clause=where_clause)
+        # 拼完整 Cypher
+        cypher = f"""
+        {match_clause}
+        {where_clause}
+        RETURN DISTINCT e
+        """
 
         # 执行查询
         with self.driver.session() as session:
             result = session.run(cypher, params)
             entities = []
             for record in result:
-                data = record["e"]
-                entities.append(self._build_entity_from_data(data))
+                node = record["e"]
+                entities.append(self._build_entity_from_data(node))
             return entities
 
     def get_k_hop_subgraph(
@@ -956,9 +951,9 @@ class Neo4jUtils:
         predicate = rel.get("predicate", rel.type)
         
         if direction == "forward":
-            relation_id_str = f"{source_id}_{predicate}_{data["id"]}"
+            relation_id_str = f"{source_id}_{predicate}_{data['id']}"
         else:
-            relation_id_str = f"{data["id"]}_{predicate}_{source_id}"
+            relation_id_str = f"{data['id']}_{predicate}_{source_id}"
             
         rel_id = f"rel_{hash(relation_id_str) % 1000000}"
         
@@ -1033,7 +1028,7 @@ class Neo4jUtils:
             for label in node_types:
                 query = f"""
                 MATCH (e:{label})
-                RETURN labels(e) AS labels, e.id AS id, e.name AS name, e.description AS description, e.properties AS properties
+                RETURN labels(e) AS labels, e.id AS id, e.name AS name, e.description AS description, e.properties AS properties, e.source_chunks AS source_chunks
                 """
                 res = session.run(query)
                 results.extend([r.data() for r in res])
@@ -1293,6 +1288,7 @@ class Neo4jUtils:
                         context += f"- {k}：{v}\n"
         except:
             print("运行失败，获取到的node为： ", entity_id, " 内容为： ", ent_node)
+            context = None
 
         return context
     
@@ -2128,11 +2124,14 @@ class Neo4jUtils:
             "conflict": plot_data.get("conflict", ""),
             "resolution": plot_data.get("resolution", ""),
         }
-        
+
+        # print("****", properties)
+        properties_ = plot_data.get("properties", {})
+
         params = {
             "plot_id": plot_data["id"],
             "name": plot_data["title"],  # 原 title
-            "description": plot_data["summary"],  # 原 summary
+            "description": plot_data.get("summary", properties_.get("summary", "")),
             "properties": json.dumps(properties, ensure_ascii=False)
         }
         
@@ -2191,6 +2190,8 @@ class Neo4jUtils:
         if not edges:
             print("[!] 没有传入任何情节关系，跳过创建。")
             return False
+        else:
+            print(f"[i] 准备创建 {len(edges)} 条情节关系...")
 
         import hashlib
 
@@ -2263,17 +2264,17 @@ class Neo4jUtils:
                 r.reason        = row.reason
             RETURN count(r) AS relationships_created
             """
-            try:
-                result = self.execute_query(cypher, {"data": subset})
-                created = list(result)[0]["relationships_created"]
-                if created != len(subset):
-                    all_created = False
-                    print(f"[!] {rtype} 仅创建 {created}/{len(subset)} 条，可能存在节点缺失或并发竞争。")
-                else:
-                    print(f"[✓] {rtype} 已创建 {created} 条关系")
-            except Exception as e:
-                print(f"[❌] 创建 {rtype} 关系失败: {e}")
+            # try:
+            result = self.execute_query(cypher, {"data": subset})
+            created = list(result)[0]["relationships_created"]
+            if created != len(subset):
                 all_created = False
+                print(f"[!] {rtype} 仅创建 {created}/{len(subset)} 条，可能存在节点缺失或并发竞争。")
+            else:
+                print(f"[✓] {rtype} 已创建 {created} 条关系")
+            # except Exception as e:
+            #     print(f"[❌] 创建 {rtype} 关系失败: {e}")
+            #     all_created = False
 
         return all_created
 
@@ -2324,22 +2325,22 @@ class Neo4jUtils:
         Returns:
             bool: 写入是否成功
         """
-        try:
-            # 1. 创建Plot节点
-            if not self.create_plot_node(plot_data):
-                return False
-            
-            # 2. 创建HAS_EVENT关系
-            event_ids = plot_data.get("event_ids", [])
-            if event_ids and not self.create_plot_event_relationships(plot_data["id"], event_ids):
-                return False
-            
-            # print(f"成功写入Plot: {plot_data['id']}")
-            return True
-            
-        except Exception as e:
-            print(f"写入Plot到Neo4j失败: {e}")
+        # try:
+        # 1. 创建Plot节点
+        if not self.create_plot_node(plot_data):
             return False
+        
+        # 2. 创建HAS_EVENT关系
+        event_ids = plot_data.get("event_ids", [])
+        if event_ids and not self.create_plot_event_relationships(plot_data["id"], event_ids):
+            return False
+        
+        # print(f"成功写入Plot: {plot_data['id']}")
+        return True
+            
+        # except Exception as e:
+        #     print(f"写入Plot到Neo4j失败: {e}")
+        #     return False
     
     
     def load_connected_components_subgraph(self, node_ids: List[int]) -> tuple[Dict[int, Dict], List[Dict]]:
@@ -2560,6 +2561,7 @@ class Neo4jUtils:
         RETURN p1.id AS src, p2.id AS tgt, path_len
         """
         results = self.execute_query(cypher)
+        print("***: ", results)
 
         # 2) 计算 Plot 数 & 设上限（建议≈ 3x）
         plot_cypher = "MATCH (p:Plot) RETURN count(DISTINCT p) AS plot_count"
@@ -2681,6 +2683,72 @@ class Neo4jUtils:
         SET n:{label_str}
         """
         self.execute_query(query, {"node_id": node_id})
+
+
+    # 放到 Neo4jUtils 类里（和其它 create_* 方法同级）
+    def create_plot_has_event_edges(self, edges: List[Dict[str, Any]]) -> int:
+        """
+        批量创建 Plot->Event 的 HAS_EVENT 边。
+        支持的输入元素键名：
+        - 标准：{"plot_id": "...", "event_id": "..."}
+        - 兼容：{"src": plot_id, "tgt": event_id} / {"from": plot_id, "to": event_id}
+                / {"source": plot_id, "target": event_id}
+        返回成功创建/更新的关系条数（与输入有效条数相同即为全成功）。
+        """
+        import hashlib
+
+        if not edges:
+            return 0
+
+        def _get(e: Dict[str, Any], *keys):
+            for k in keys:
+                if k in e and e[k]:
+                    return e[k]
+            return None
+
+        rows = []
+        seen = set()
+        for e in edges:
+            plot_id  = _get(e, "plot_id", "src", "from", "source", "p")
+            event_id = _get(e, "event_id", "tgt", "to", "target", "e")
+            if not plot_id or not event_id or plot_id == event_id:
+                continue
+            key = (plot_id, event_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            rel_id = "rel_" + hashlib.sha1(f"{plot_id}-HAS_EVENT-{event_id}".encode("utf-8")).hexdigest()[:16]
+            rows.append({
+                "src_id": plot_id,
+                "tgt_id": event_id,
+                "rel_id": rel_id,
+                "predicate": "HAS_EVENT",
+                "relation_name": "包含事件",
+            })
+
+        if not rows:
+            return 0
+
+        cypher = """
+        UNWIND $data AS row
+        MATCH (p:Plot {id: row.src_id})
+        MATCH (e:Event {id: row.tgt_id})
+        MERGE (p)-[r:HAS_EVENT {id: row.rel_id}]->(e)
+        SET r.predicate     = row.predicate,
+            r.relation_name = row.relation_name
+        RETURN count(r) AS relationships_created
+        """
+        try:
+            result = self.execute_query(cypher, {"data": rows})
+            # 针对不同驱动返回形态做点兼容
+            try:
+                return int(list(result)[0].get("relationships_created", 0))
+            except Exception:
+                return 0
+        except Exception as ex:
+            print(f"[❌] 批量创建 HAS_EVENT 失败：{ex}")
+            return 0
+
 
     def update_entity_properties(self, node_id: str, properties: Dict[str, Any], mode: str = "json"):
         """

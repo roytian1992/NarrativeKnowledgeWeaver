@@ -1,0 +1,117 @@
+{
+  "entities": [
+    {
+      "type": "Character",
+      "description": "A concrete character in the story (human or anthropomorphized object).",
+      "properties": {
+        "name": "Name / designation",
+        "gender": "Gender (optional)",
+        "age": "Age range or exact age (optional)",
+        "identity": "Identity/profession (optional)",
+        "affiliation": "Affiliated organization/faction (optional)"
+      }
+    },
+    {
+      "type": "Event",
+      "description": "An occurrence in the narrative world that can be described as 'who did what to whom/what, when and where, leading to what result'. Events can be **actions (e.g., attack, movement, dialogue)** or **state changes (e.g., death, birth, disappearance, arrival, transformation)**. Events must be content-centered; narrative devices such as montage, narration/voice-over, subtitles, or camera switches must not be treated as events. Each event should map to at least one specific action or state change; if a montage contains multiple concurrent actions, they should be split into atomic events rather than named 'montage start'.",
+      "properties": {
+        "name": "Event title",
+        "description": "A complete sentence describing what happened",
+        "event_type": "Category (conflict/disaster/decision, optional)",
+        "cause": "Cause of the event, describing what triggered or led to it",
+        "process": "Process of the event, describing main steps or key developments",
+        "result": "Outcome of the event, describing its consequences or impact"
+      }
+    },
+    {
+      "type": "Action",
+      "description": "A specific unit of action performed by a character or object; can be part of an Event.",
+      "properties": {
+        "verb": "Core action verb",
+        "description": "Complete description of the action (e.g., someone raises a gun to aim)"
+      }
+    },
+    {
+      "type": "Location",
+      "description": "Place, scene, or geographic location.",
+      "properties": {
+        "name": "Place name / site name",
+        "loc_type": "Type (city/room/spaceship, optional)",
+        "description": "Brief description (optional)"
+      }
+    },
+    {
+      "type": "TimePoint",
+      "description": "A specific time point or period.",
+      "properties": {
+        "description": "Time expression (e.g., 'dusk', '2084-07-16 18:00')",
+        "time_type": "Precise / vague / relative (optional)"
+      }
+    },
+    {
+      "type": "Object",
+      "description": "An item or device that plays a role in the story.",
+      "properties": {
+        "name": "Object name",
+        "obj_type": "Category (weapon/chip/document, optional)",
+        "description": "Brief description (optional)"
+      }
+    },
+    {
+      "type": "Concept",
+      "description": "Abstract or collective entities such as organizations, factions, ideologies, or identity categories.",
+      "properties": {
+        "name": "Concept/organization name",
+        "category": "Domain (political/technological/cultural, optional)",
+        "definition": "Brief definition (optional)"
+      }
+    },
+    {
+      "type": "Emotion",
+      "description": "Emotional or psychological states expressed by characters in the narrative.",
+      "properties": {
+        "emotion_type": "Emotion category (anger/sadness/fear, etc.)",
+        "intensity": "Emotion intensity (optional)",
+        "description": "Brief description (optional)"
+      }
+    }
+  ],
+
+  "relations": {
+    "character_relations": [
+      { "type": "kinship_with",    "description": "Kinship or marital relationship (Character ↔ Character)" },
+      { "type": "social_with",     "description": "Social/friendship/colleague relationship (Character ↔ Character)" },
+      { "type": "allies_with",     "description": "Alliance, support (Character / Concept ↔ Character / Concept)" },
+      { "type": "conflicts_with",  "description": "Opposition, hostility (Character / Concept ↔ Character / Concept)" },
+      { "type": "affiliated_with", "description": "Affiliated with an organization or faction (Character → Concept)" }
+    ],
+
+    "event_action_relations": [
+      { "type": "performs",        "description": "Performs an action (Character / Object → Action)" },
+      { "type": "participates_in", "description": "Participates in an event (Character / Object → Event)" },
+      { "type": "has_action",      "description": "An event is composed of multiple actions (Event → Action)" },
+      { "type": "precedes",        "description": "Temporal or narrative precedence (Event / Action → Event / Action)" },
+      { "type": "causes",          "description": "Direct causal trigger (Event / Action → Event / Action)" },
+      { "type": "affects",         "description": "Event or action affects a character/object (Event / Action → Character / Object)" }
+    ],
+
+    "object_relations": [
+      { "type": "possesses", "description": "Possession of an object (Character / Concept → Object)" },
+      { "type": "uses",      "description": "Use or manipulation of an object (Character / Object → Object)" }
+    ],
+
+    "semantic_relations": [
+      { "type": "part_of_event", "description": "An action or sub-event belongs to a larger event (Action / Event → Event)" },
+      { "type": "is_a",          "description": "Entity belongs to an abstract concept or category (Any → Concept)" },
+      { "type": "part_of",       "description": "Compositional/hierarchical relationship (Location / Object / Action → Location / Object)" },
+      { "type": "experiences",   "description": "A character experiences an emotion (Character → Emotion)" }
+    ],
+
+    "spatiotemporal_relations": [
+      { "type": "occurs_at",  "description": "Event/action occurs at a location (Event / Action → Location)" },
+      { "type": "occurs_on",  "description": "Event/action occurs at a time point or period (Event / Action → TimePoint)" },
+      { "type": "located_at", "description": "Character or object is located/appears at a location (Character / Object → Location)" },
+      { "type": "present_on", "description": "Character or object is present at a specific time point or period (Character / Object → TimePoint)" }
+    ]
+  }
+}

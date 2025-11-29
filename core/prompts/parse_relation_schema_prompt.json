@@ -1,9 +1,9 @@
 {
   "id": "parse_relation_schema_prompt",
   "category": "regular_function",
-  "name": "背景驱动关系Schema生成（思维链约束版）",
-  "description": "根据背景信息与实体schema设计精炼、可复用的关系schema。模型可在内部逐步思考，但最终仅输出合规JSON。",
-  "template": "请阅读洞见文本与【背景信息】，结合【实体Schema】生成一套**关系 Schema**。你可以在内部逐步推理，但**不要在输出中展示任何思考过程**，只给最终 JSON。\n\n【约束要求】\n- 只输出一个 JSON，顶层只能包含 `relations` 键。\n- `relations` 的值为对象；其中包含若干分组（1–6个），分组名由你自定。\n- 每个分组是数组；数组内每条关系是对象，且只能包含：\n  - `type`：英文 snake_case。\n  - `description`：中文短句；句尾括号注明参与类型与方向。\n- 总关系类型数 ≤ 20；避免同义冗余。\n- 严禁中文或口语化动词，需归并为规范谓词。\n\n【输出格式示例】\n```json\n{{\n  \"relations\": {{\n    \"core_interactions\": [\n      {{ \"type\": \"participates_in\", \"description\": \"角色参与事件（Character → Event）\" }},\n      {{ \"type\": \"has_action\", \"description\": \"事件包含动作步骤（Event → Action）\" }}\n    ],\n    \"spatiotemporal\": [\n      {{ \"type\": \"occurs_at\", \"description\": \"事件/动作发生在某地（Event / Action → Location）\" }},\n      {{ \"type\": \"occurs_on\", \"description\": \"事件/动作发生在某时间（Event / Action → TimePoint）\" }}\n    ],\n    \"affiliation_conflict\": [\n      {{ \"type\": \"affiliated_with\", \"description\": \"个体/单位隶属于组织或阵营（Character / Object → Concept）\" }},\n      {{ \"type\": \"conflicts_with\", \"description\": \"两方存在对立/敌对关系（Character / Concept ↔ Character / Concept）\" }}\n    ]\n  }}\n}}\n```\n\n【当前的背景信息】\n{current_background}\n\n【实体Schema】\n{entity_schema}\n\n【最终输出格式（仅此 JSON）】\n```json\n{{\n  \"relations\": {{\n    \"<group_name>\": [ {{ \"type\": \"...\", \"description\": \"...（TypeA → TypeB）\" }} ]\n  }}\n}}\n```",
+  "name": "背景驱动关系Schema生成（类型自适应对齐·思维链约束）",
+  "description": "依据背景信息与实体schema自动解析类型集合，允许在内部进行逐步思考（思维链），但最终仅输出合规JSON（只含 relations）。",
+  "template": "请阅读【背景信息】与【实体Schema】，在内心完成【思维链】步骤 S1–S6，但不要在输出中展示任何思考过程；最终仅输出一个 JSON，且顶层只包含 relations。\n\nS1 类型解析（隐性推理）\n- 仅从实体Schema的 entities 数组提取所有 type，去重后得到类型集合 T（不改写、不新增）。\n\nS2 谓词草拟（隐性推理）\n- 在不新增类型名的前提下，基于 T 草拟候选谓词（英文 snake_case），覆盖互动/时序/空间/对象/认知情感等常见维度。\n\nS3 过滤与合并（隐性推理）\n- 去除同义或功能重叠的谓词，使总关系类型数 ≤ 15；优先选择可跨场景复用、语义最清晰者。\n\nS4 分组组织（隐性推理）\n- 将关系分为 3–5 个分组（分组名自定）；每条关系对象仅包含：type、description。\n- description 用中文短句，并在句尾以中文括号标注方向，格式为“TypeA → TypeB”或“TypeA ↔ TypeB”。\n- 方向两端的类型必须取自 T；如需并列候选，用斜杠表示（如“TypeA1 / TypeA2 → TypeB”），所有候选都必须属于 T。\n\nS5 语义映射（隐性推理）\n- 若语义需要但 T 中不存在某类概念，请在内部将其映射到 T 中最接近的已有类型，但输出中只能出现 T 内类型名。\n\nS6 产出与校验（仅输出 JSON）\n- 只输出一个 JSON，顶层只包含 relations；不得出现 T 外类型名；不得把镜头、旁白、字幕等叙事手法当作实体类型使用。\n\n约束摘要\n- 关系类型总数 ≤ 15；分组数 3–5；type 为英文 snake_case；description 为中文短句 + 方向标注。\n- 严禁输出任何思考过程或解释性文本。\n\n输出前自检（隐性执行，不输出）\n- ✅ 所有方向标注的类型均属于 T\n- ✅ 未引入 T 外类型名\n- ✅ 关系总数 ≤ 15；分组 3–5 个\n- ✅ 无同义冗余；谓词命名规范\n\n示例（描述性范例，占位符需用 T 中类型替换）\n{{ \"relations\": {{ \"<group_name>\": [ {{ \"type\": \"<predicate_snake>\", \"description\": \"<中文短句>（<TypeA> → <TypeB>）\" }} ] }} }}\n\n示例（具体一组，类型需存在于 T）\n{{ \"relations\": {{ \"object_relations\": [ {{ \"type\": \"possesses\", \"description\": \"占有/持有关系（Character / Concept → Object）\" }}, {{ \"type\": \"uses\", \"description\": \"使用或操作对象（Character / Object → Object）\" }} ] }} }}\n\n现在基于以下输入生成最终 JSON（仅输出 relations 对象的 JSON，不要任何解释）：\n【背景信息】{current_background}\n【实体Schema】{entity_schema}",
   "variables": [
     {
       "name": "current_background",
@@ -11,7 +11,7 @@
     },
     {
       "name": "entity_schema",
-      "description": "现有的实体schema JSON（仅含 entities 数组；type/description/properties）"
+      "description": "现有的实体schema JSON（仅含 entities 数组；含 type/description/properties）"
     }
   ]
 }

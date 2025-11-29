@@ -73,11 +73,6 @@ class AttributeExtractionAgent:
         self.history_memory = VectorMemory(config, "history_memory")
         self.load_schema(schema)
         self.system_prompt = system_prompt
-        self.global_entity_types = (
-            ["Character", "Concept", "Object", "Location"]
-            if global_entity_types is None
-            else global_entity_types
-        )
 
         # Retrieval resources
         self.reranker = OpenAIRerankModel(config)
@@ -229,6 +224,39 @@ class AttributeExtractionAgent:
         ratio = non_empty / max(1, len(expected_keys))
         return round(ratio * 10.0, 2)
 
+    def get_summary_per_chunk(self, text, goal):
+        new_text_splitted = self.base_splitter.split_text(text)
+        # prev = ""
+        summaries = []
+        for chunk in new_text_splitted:
+            chunk_result = self.document_parser.search_content(text=chunk, goal=goal, max_length=100)
+            parsed = json.loads(correct_json_format(chunk_result)).get("related_content", [])
+            if parsed:
+                summaries.extend(parsed)
+        # new_text = "\n".join(summaries) 
+        return summaries
+
+    def get_rolling_summary(self, text, goal, max_size=1000):
+        # from tqdm import tqdm
+        new_text_splitted = self.base_splitter.split_text(text)
+        prev = ""
+        for chunk in new_text_splitted:
+            chunk_result = self.document_parser.summarize_paragraph(chunk, max_size, prev, goal)
+            parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
+            prev = parsed
+        final_text = parsed
+        return final_text
+    
+    
+    def summarize_text(self, text, goal, max_size=1000):
+        summaries = self.get_summary_per_chunk(text, goal)
+        new_text = "\n".join(summaries)
+        if len(new_text) >= max_size:
+            final_text = self.get_rolling_summary(text, goal, max_size)
+        else:
+            final_text = new_text
+        return final_text, summaries
+    
     # ---------------- Node: build consolidated context (once) ----------------
     def get_related_context(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -239,14 +267,19 @@ class AttributeExtractionAgent:
           augment with ParentChildRetriever results.
         - If the merged text is long, summarize it with rolling summaries.
         """
+
+        # print("****", state)
         entity_name = state["entity_name"]
         entity_type = state["entity_type"]
+        version = state["version"]
         source_chunks = state.get("source_chunks", []) or []
+        additional_chunks = state.get("additional_chunks", []) or []
         goal = f"Please focus on information relevant to '{entity_name}'." 
         feedbacks = state.get("feedbacks", [])
         if feedbacks:
             goal += " Consider the following feedbacks:\n" + "\n".join(f"- {f}" for f in feedbacks if f)
         
+        content = state.get("content", "")
         # Fetch original chunks
         doc_objs = self.document_vector_store.search_by_ids(source_chunks) or []
         doc_texts = []
@@ -256,49 +289,37 @@ class AttributeExtractionAgent:
             elif isinstance(d, dict) and "content" in d:
                 doc_texts.append(d["content"])
 
-        # Optional augmented retrieval for global types
-        extra_texts = []
-        if entity_type in self.global_entity_types:
-            try:
-                extra = self.retriever.retrieve(entity_name, ks=20, kp=5, window=1, topn=5) or []
-                for item in extra:
-                    if hasattr(item, "content"):
-                        extra_texts.append(item.content)
-                    elif isinstance(item, dict) and "content" in item:
-                        extra_texts.append(item["content"])
-            except Exception as e:
-                logger.debug("ParentChildRetriever failed or returned nothing: %s", e)
+        related_text = "\n".join(doc_texts)
+        per_chunk_summaries = state.get("per_chunk_summaries", "")
+        if len(related_text) >= 2000 and per_chunk_summaries:
+            final_text = self.get_rolling_summary(per_chunk_summaries, goal, 800)
+            return {**state, "content": final_text}
+        
+        if version == "Part_1":
+            related_text, per_chunk_summaries = self.summarize_text(related_text, goal, 800)  
+            final_text = "当前版本整理出来的相关信息：\n" + related_text    
 
-        merged_texts = doc_texts + extra_texts
-        new_text = "\n".join(t for t in merged_texts if t) or state.get("content", "")
+        else:
+            related_text, per_chunk_summaries = self.summarize_text(related_text, goal, 500) 
+            doc_objs_prev = self.document_vector_store.search_by_ids(additional_chunks) or []
+            doc_texts_prev = []
+            for d in doc_objs_prev:
+                if hasattr(d, "content"):
+                    doc_texts_prev.append(d.content)
+                elif isinstance(d, dict) and "content" in d:
+                    doc_texts_prev.append(d["content"])
+            additional_text = "\n".join(doc_texts_prev)
+            additional_text, per_chunk_summaries_ = self.summarize_text(additional_text, goal, 300)
+            per_chunk_summaries = ["上一版本（Part_1）的相关信息: \n" + "\n".join(per_chunk_summaries_) + "\n注意：若是存在冲突，以当前版本（Part_2）的信息为准。"] + per_chunk_summaries
+            # print("*** related_text: ", type(related_text))
+            # print("*** additional_text: ", type(additional_text))
+            final_text = "当前版本（Part_2）整理出来的相关信息：\n" + related_text + "\n" + "上一版本（Part_1）的相关信息: \n" + additional_text + "\n注意：若是存在冲突，以当前版本（Part_2）的信息为准。"
 
-        # If too long, perform rolling summarization
-        if len(new_text) >= 2000:
-            new_text_splitted = self.base_splitter.split_text(new_text)
-            # prev = ""
-            summaries = []
-            for chunk in new_text_splitted:
-                chunk_result = self.document_parser.summarize_paragraph(chunk, 100, "", goal)
-                parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
-                summaries.extend(parsed)
-                # prev = parsed
-            new_text = "\n".join(summaries) if summaries else new_text
-            # new_text = parsed
-            
-        if len(new_text) >= 2000:
-            new_text_splitted = self.base_splitter.split_text(new_text)
-            prev = ""
-            for chunk in new_text_splitted:
-                chunk_result = self.document_parser.summarize_paragraph(chunk, 1000, prev, goal)
-                parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
-                prev = parsed
-            # new_text = "\n".join(summaries) if summaries else new_text
-            new_text = parsed
-            
-        return {**state, "content": new_text}
+        
+        return {**state, "content": final_text, "per_chunk_summaries": per_chunk_summaries}
 
     # ---------------- Node: extract ----------------
-    def extract(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_native(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run attribute extraction on the consolidated context and store the raw result.
         """
@@ -321,7 +342,6 @@ class AttributeExtractionAgent:
             system_prompt=self.system_prompt,
             previous_results=state.get("previous_result", ""),
             feedbacks=feedbacks,
-            original_text=state.get("original_text", ""),
             enable_thinking=False
         )
         # Normalize and parse JSON output from extractor
@@ -337,6 +357,58 @@ class AttributeExtractionAgent:
             "previous_result": self._json_dumps(result),
         }
 
+    def extract_incremental(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run attribute extraction on the consolidated context and store the raw result.
+        """
+        entity_name = state["entity_name"]
+        entity_type_raw = state["entity_type"]
+        entity_type = self._resolve_type(entity_type_raw)
+        type_description = self._resolve_description(entity_type_raw)
+        properties = self._resolve_properties(entity_type_raw)
+
+        feedbacks_list = state.get("feedbacks", []) or []
+        feedbacks = "\n".join(feedbacks_list)
+
+        attribute_definitions = format_property_definitions(properties)
+        previous_results = json.loads(state.get("previous_result", ""))
+        prev_attributes = previous_results.get("attributes", {})
+        prev_description = previous_results.get("new_description", "")
+
+
+        per_chunk_summaries = state.get("per_chunk_summaries", [])
+        full_summary = "\n".join(per_chunk_summaries)
+        chunks = self.base_splitter.split_text(full_summary)
+
+        for chunk in chunks:
+            previous_results = json.loads(state.get("previous_result", ""))
+            result = self.extractor.update_entity_attributes(
+                text=chunk,                # consolidated context
+                entity_name=entity_name,
+                description=type_description,
+                entity_type=entity_type,
+                attribute_definitions=attribute_definitions,
+                system_prompt=self.system_prompt,
+                prev_attributes=prev_attributes,
+                prev_description=prev_description,
+                feedbacks=feedbacks,
+                enable_thinking=False
+            )
+            result = json.loads(correct_json_format(result))
+            attrs = self._ensure_dict(result.get("attributes", {}))
+            new_desc = result.get("new_description", "")
+            attribute_definitions = format_property_definitions(result.get("attribute_definitions", {}))
+            prev_attributes = attrs
+            prev_description = new_desc
+
+        return {
+            **state,
+            "attributes": attrs,
+            "new_description": new_desc,
+            "attribute_definitions": attribute_definitions,
+            "previous_result": self._json_dumps(result),
+        }
+    
     # ---------------- Node: reflect/score/fix ----------------
     def reflect(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -354,8 +426,7 @@ class AttributeExtractionAgent:
         entity_type = self._resolve_type(entity_type_raw)
         description = self._resolve_description(entity_type_raw)
         properties = self._resolve_properties(entity_type_raw)
-
-        attribute_definitions = format_property_definitions(properties)
+        attribute_definitions = state.get("attribute_definitions") or format_property_definitions(properties)
         expected_keys = self._parse_attribute_keys(attribute_definitions)
 
         # Prepare attributes string for prompt
@@ -368,9 +439,9 @@ class AttributeExtractionAgent:
             attribute_definitions=attribute_definitions,
             attributes=attrs_json_for_prompt,
             system_prompt=self.system_prompt,
-            original_text=state.get("original_text", ""),
             enable_thinking=False,
         )
+
         result = json.loads(correct_json_format(result))
 
         # Attempts
@@ -438,26 +509,30 @@ class AttributeExtractionAgent:
         """
         builder = StateGraph(dict)
         builder.add_node("get_related_context", self.get_related_context)
-        builder.add_node("extract", self.extract)
+        builder.add_node("extract_native", self.extract_native)
+        builder.add_node("extract_incremental", self.extract_incremental)
         builder.add_node("reflect", self.reflect)
 
         builder.set_entry_point("get_related_context")
-        builder.add_edge("get_related_context", "extract")
-        builder.add_edge("extract", "reflect")
+        builder.add_edge("get_related_context", "extract_native")
+        builder.add_edge("extract_native", "reflect")
+        builder.add_edge("extract_incremental", "reflect")
         builder.add_conditional_edges("reflect", self._check_reflection, {
             "complete": END,
-            "retry": "get_related_context"
+            "retry": "extract_incremental"
         })
         return builder.compile()
 
-    # ---------------- Public sync interface (unchanged) ----------------
+
+    # # ---------------- Public sync interface (unchanged) ----------------
     def run(
         self,
         text: str,
         entity_name: str,
         entity_type: str,
+        version: str,
         source_chunks: list = [],
-        original_text: str = None,
+        additional_chunks: list = [],
     ):
         """
         Synchronous entry. The internal flow may still run multiple reflection rounds.
@@ -466,8 +541,9 @@ class AttributeExtractionAgent:
             "content": text,                      # Consolidated context (may be replaced in get_related_context)
             "entity_name": entity_name,
             "entity_type": entity_type,
+            "versib": version,
             "source_chunks": source_chunks or [],
-            "original_text": original_text or text,
+            "additional_chunks": additional_chunks or [],
             "previous_result": "",
             "feedbacks": [],
             "attempt": 0,
@@ -477,25 +553,27 @@ class AttributeExtractionAgent:
     # ---------------- Public async interface (unchanged) ----------------
     async def arun(
         self,
-        text: str,
+       text: str,
         entity_name: str,
         entity_type: str,
-        source_chunks: list = None,
-        original_text: str | None = None,
-        timeout: int = 120,
+        version: str,
+        source_chunks: list = [],
+        additional_chunks: list = [],
+        timeout: float = 600.0,
         max_attempts: int = 3,
-        backoff_seconds: int = 30,
+        backoff_seconds: float = 120.0,
     ):
         """
         Async entry with overall timeout & light retry.
         The extract/reflect retries are governed by the graph flow and score.
         """
         payload = {
-            "content": text,
+            "content": text,                      # Consolidated context (may be replaced in get_related_context)
             "entity_name": entity_name,
             "entity_type": entity_type,
+            "version": version,
             "source_chunks": source_chunks or [],
-            "original_text": original_text or text,
+            "additional_chunks": additional_chunks or [],
             "previous_result": "",
             "feedbacks": [],
             "attempt": 0,

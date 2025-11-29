@@ -1,0 +1,21 @@
+{
+  "id": "extract_goal_related_text",
+  "category": "regular_function",
+  "name": "目标相关内容提取",
+  "description": "根据 goal 从原文 text 中提取与之直接相关的内容，并在不超过 max_length 字内给出结构化 JSON 输出",
+  "template": "你是一位擅长中文阅读理解与关键信息提取的语言专家，任务是根据给定的 goal，从 text 中筛选、提炼与 goal 直接相关的内容，并在不超过 {max_length} 字内输出。\n\n请遵循以下要求：\n1. 仅保留与 goal 明确相关、能够支持 goal 的内容，忽略无关信息；\n2. 不得杜撰 text 中不存在的内容；\n3. 输出应是凝练的原文要点，可引用原意但避免逐字照搬长句；\n4. 若提供了历史摘要，则需在保证 goal 相关性的前提下整合最新 text；\n5. 请仅输出合法 JSON 对象，结构如下：\n```json\n{{\n  \"related_content\": \"<与目标相关的内容>\"\n}}\n```\n请根据以下原文与目标开始提取：\n-----\n目标（goal）：{goal}\n-----\n原文（text）：{text}\n注意：如果没有重要信息，直接输出\n```json\n{{\n  \"related_content\": \"\"\n}}\n```",
+  "variables": [
+    {
+      "name": "text",
+      "description": "需要分析的原始中文文本"
+    },
+    {
+      "name": "goal",
+      "description": "需要从文本中提取的目标内容或主题"
+    },
+    {
+      "name": "max_length",
+      "description": "输出内容的最大字数限制"
+    }
+  ]
+}

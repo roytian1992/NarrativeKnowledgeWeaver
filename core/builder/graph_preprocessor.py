@@ -21,75 +21,94 @@ from core.utils.format import correct_json_format
 # =========================
 def compute_weighted_similarity_and_laplacian(entity_dict, alpha=0.8, knn_k=40):
     """
-    Compute a weighted similarity matrix (name vs. description), build a symmetric
-    k-NN graph, derive its Laplacian, and estimate cluster count from spectral gaps.
-
-    Args:
-        entity_dict (Dict[str, Dict[str, Any]]): name -> { 'name_embedding', 'description_embedding', ... }
-        alpha (float): Weight for name vs. description similarities (0..1).
-        knn_k (int): Number of neighbors for the k-NN graph.
-
-    Returns:
-        Tuple[int, np.ndarray]:
-            - estimated_k: Estimated number of clusters from Laplacian eigen-gaps.
-            - sim: Weighted similarity matrix.
+    Robust: handle tiny n (n<3), cap knn_k, and return a safe estimated_k.
     """
     names = list(entity_dict.keys())
-    name_embs = np.vstack([entity_dict[n]['name_embedding'] for n in names])
-    desc_embs = np.vstack([entity_dict[n]['description_embedding'] for n in names])
+    n = len(names)
+    if n == 0:
+        return 0, np.zeros((0, 0))
+    if n == 1:
+        # 单样本，无需聚类
+        sim = np.array([[1.0]])
+        return 1, sim
+
+    name_embs = np.vstack([entity_dict[nm]['name_embedding'] for nm in names])
+    desc_embs = np.vstack([entity_dict[nm]['description_embedding'] for nm in names])
 
     sim_name = cosine_similarity(name_embs)
     sim_desc = cosine_similarity(desc_embs)
     sim = alpha * sim_name + (1 - alpha) * sim_desc
 
-    n = sim.shape[0]
-    adj = np.zeros((n, n))
+    # kNN 构图：最多取 n-1 个邻居
+    k = max(1, min(knn_k, n - 1))
+    adj = np.zeros((n, n), dtype=float)
     for i in range(n):
-        idx = np.argsort(sim[i])[-(knn_k + 1):-1]  # exclude self
-        adj[i, idx] = sim[i, idx]
-    adj = np.maximum(adj, adj.T)  # symmetrize
+        # 排除自己后取 top-k
+        idx = np.argsort(sim[i])[-(k + 1):-1]  # 已排除 self
+        if idx.size:
+            adj[i, idx] = sim[i, idx]
+    adj = np.maximum(adj, adj.T)  # 对称化
 
     deg = np.diag(adj.sum(axis=1))
     lap = deg - adj
 
     eigvals = np.linalg.eigvalsh(lap)
-    gaps = np.diff(eigvals)
-    estimated_k = int(np.argmax(gaps[1:]) + 1)  # skip the first gap
+    # n<3 时 gaps[1:] 会为空，直接回退
+    if n < 3:
+        estimated_k = 1
+        return estimated_k, sim
+
+    gaps = np.diff(eigvals)          # 长度 n-1
+    inner = gaps[1:]                 # 跳过第一处间隙
+    if inner.size == 0 or not np.isfinite(inner).any():
+        # 回退：保守取 1
+        estimated_k = 1
+    else:
+        estimated_k = int(np.argmax(inner) + 1)
+
+    # 上下限保护
+    estimated_k = max(1, min(estimated_k, n))
     return estimated_k, sim
 
 
 def run_kmeans_clustering(entity_dict, n_clusters, alpha=0.8):
     """
-    Run KMeans on concatenated (weighted) embeddings to produce clusters.
-
-    Args:
-        entity_dict (Dict[str, Dict[str, Any]]): name -> { 'name_embedding', 'description_embedding', ... }
-        n_clusters (int): Number of clusters.
-        alpha (float): Weight for name vs. description embeddings in concatenation.
-
-    Returns:
-        List[List[str]]: Clusters as lists of names; only clusters with size >= 2 are returned.
+    Robust KMeans: ensure 2 <= n_clusters <= n, safe fallback for tiny n.
     """
     names = list(entity_dict.keys())
-    name_embs = np.vstack([entity_dict[n]['name_embedding'] for n in names])
-    desc_embs = np.vstack([entity_dict[n]['description_embedding'] for n in names])
+    n = len(names)
+    if n < 2:
+        return []
 
-    combined_embs = np.hstack([
-        name_embs * alpha,
-        desc_embs * (1 - alpha)
-    ])
+    name_embs = np.vstack([entity_dict[nm]['name_embedding'] for nm in names])
+    desc_embs = np.vstack([entity_dict[nm]['description_embedding'] for nm in names])
 
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-    labels = kmeans.fit_predict(combined_embs)
+    combined_embs = np.hstack([name_embs * alpha, desc_embs * (1 - alpha)])
+
+    # 约束簇数
+    if n_clusters is None or n_clusters < 2:
+        # 常用回退：sqrt(n) 或 2 中较大者
+        n_clusters = max(2, int(np.sqrt(n)))
+    n_clusters = min(max(2, n_clusters), n)
+
+    # 极端情况下 KMeans 可能告警/报错，做一次兜底
+    try:
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
+        labels = kmeans.fit_predict(combined_embs)
+    except Exception:
+        # 回退到两簇或单簇（如果 n==2，必为两簇）
+        if n >= 2:
+            kmeans = KMeans(n_clusters=min(2, n), random_state=42, n_init='auto')
+            labels = kmeans.fit_predict(combined_embs)
+        else:
+            return []
 
     cluster_result = defaultdict(list)
     for name, label in zip(names, labels):
         cluster_result[label].append(name)
 
-    collected_clusters = []
-    for _, group in cluster_result.items():
-        if len(group) >= 2:
-            collected_clusters.append(group)
+    # 仅保留 size>=2 的候选
+    collected_clusters = [group for group in cluster_result.values() if len(group) >= 2]
     return collected_clusters
 
 
@@ -296,32 +315,40 @@ class GraphPreprocessor:
 
     def detect_candidates(self, merged_global_entities: Dict[str, List[Dict[str, Any]]]):
         """
-        Detect candidate groups of same-named entities to be merged.
-        Uses spectral estimation for cluster count and KMeans for grouping.
-
-        Args:
-            merged_global_entities: type -> list of entities (with embeddings)
-
-        Returns:
-            List[List[str]]: Candidate groups (lists of names) to consider for merging.
+        Robust candidate detection: skip tiny sets; cap knn; safe n_clusters.
         """
         candidates = []
         for t, ent_list in merged_global_entities.items():
+            # 聚合同名（同名合并描述，避免重复干扰）
             by_name = {}
             for e in ent_list:
                 nm = e["name"]
                 if nm in by_name:
                     by_name[nm]["description"] = by_name[nm].get("description", "") + e.get("description", "")
+                    # 保留已有 embedding/summary
                 else:
                     by_name[nm] = e
 
-            knn_k = max(5, min(int(len(by_name) / 4), 25))
+            n = len(by_name)
+            if n < 3:
+                # 样本太少，不做谱估计与聚类，直接跳过
+                continue
+
+            # knn_k：随 n 调整并上限保护
+            knn_k = max(5, min(int(n / 4), 25, n - 1))
+
+            # 谱估计 + 聚类
             estimated_k, _ = compute_weighted_similarity_and_laplacian(by_name, alpha=0.8, knn_k=knn_k)
-            n_clusters = max(2, int((estimated_k + len(by_name) / 2) / 2))
+
+            # 给一个稳健的 n_clusters 回退：介于 2..n 之间
+            # 原式：max(2, int((estimated_k + n/2) / 2))
+            rough = max(2, int((estimated_k + n / 2) / 2))
+            n_clusters = min(max(2, rough), n)
 
             clusters = run_kmeans_clustering(by_name, n_clusters=n_clusters, alpha=0.5)
             candidates.extend(clusters)
         return candidates
+
 
     def merge_entities(self, all_candidates_with_info, per_task_timeout: float = 120.0):
         """
@@ -387,19 +414,18 @@ class GraphPreprocessor:
         *,
         type_rules: Optional[Dict[str, Dict[str, str]]] = None,   # {entity_name: {old_type: new_type, ...}}
         scope_rules: Optional[Dict[str, str]] = None,              # {entity_name: "global"/"local"}
-        normalize_types: bool = True                                # Apply mapping then normalize type/types
+        normalize_types: bool = True                                # 仅用于整理 types 列表；不应强行改动主 type
     ) -> Tuple[List[Dict[str, Any]], int, int]:
         """
-        Apply type/scope rules on a deep copy of `extraction_results`.
+        在 extraction_results 的深拷贝上应用类型/作用域规则。
 
-        Enhancements:
-        - Merge `type` and `types` for each entity, apply mappings and cleanup once;
-        - Cleanup uses the class strategies (drop Concept, Action→Event, sort by priority, cap count);
-        - Write back both `types` and primary `type`.
-
-        Returns:
-            (new_results, type_changed_count, scope_changed_count)
+        关键语义调整：
+        - 仅当命中“该实体名对应的 type_rules”时，才修改该实体的 types/主 type；
+        - 主 type（ent["type"]）只在其自身被映射（old_type 命中）时才会改变；
+        - normalize_types=True 只用于整理 ent["types"] 列表（去重/清理/限长），不再自动把主 type 设为列表第一个；
+        若归一化后主 type 不在列表中，会把主 type 注入回列表以保持一致性。
         """
+
         new_results = deepcopy(extraction_results)
         type_changed = 0
         scope_changed = 0
@@ -414,35 +440,28 @@ class GraphPreprocessor:
                 if not nm:
                     continue
 
-                # 1) Aggregate current types (type ∪ types)
-                current_types: List[str] = []
-                if isinstance(ent.get("type"), str) and ent["type"].strip():
-                    current_types.append(ent["type"].strip())
+                # ---- 收集原始主类型与列表 ----
+                original_primary = ent.get("type") if isinstance(ent.get("type"), str) else None
+                original_list = []
                 if isinstance(ent.get("types"), list):
-                    for t in ent["types"]:
-                        if isinstance(t, str) and t.strip():
-                            current_types.append(t.strip())
+                    original_list = [t for t in ent["types"] if isinstance(t, str) and t.strip()]
+                # 确保主类型也在集合中（保持一致）
+                if isinstance(original_primary, str) and original_primary.strip():
+                    if original_primary not in original_list:
+                        original_list = [original_primary] + original_list
 
-                # Deduplicate while preserving order
+                # 去重但保留相对次序（主类型优先）
                 seen = set()
                 merged_types = []
-                for t in current_types:
+                for t in original_list:
                     if t not in seen:
                         seen.add(t)
                         merged_types.append(t)
 
-                before_types = list(merged_types)
+                before_primary = original_primary
+                before_types_list = list(merged_types)
 
-                # 2) Apply per-entity type mapping (old_type -> new_type)
-                if nm in type_rules and isinstance(type_rules[nm], dict):
-                    mapping = type_rules[nm]
-                    mapped = []
-                    for t in merged_types:
-                        new_t = mapping.get(t, t)
-                        mapped.append(new_t)
-                    merged_types = mapped
-
-                # 3) Normalize scope via rules
+                # ---- 作用域规则（独立于类型规则；立即写回）----
                 if nm in scope_rules and isinstance(scope_rules[nm], str):
                     tgt_norm = scope_rules[nm].strip().lower()
                     if tgt_norm in ("global", "local"):
@@ -451,29 +470,86 @@ class GraphPreprocessor:
                             ent["scope"] = tgt
                             scope_changed += 1
 
-                # 4) Normalize type set (drop Concept, unify Action->Event, sort, cap)
-                if normalize_types:
-                    cleaned_list = self._sanitize_type_set(set(merged_types))
+                # ---- 类型规则：仅当该 name 存在映射时才处理 ----
+                mapping = type_rules.get(nm, None)
+                if mapping and isinstance(mapping, dict):
+                    # 1) 列表映射
+                    mapped_list = []
+                    any_list_mapped = False
+                    for t in merged_types:
+                        new_t = mapping.get(t, t)
+                        mapped_list.append(new_t)
+                        if new_t != t:
+                            any_list_mapped = True
+
+                    # 2) 主类型映射（仅当主类型命中时才改变主类型）
+                    if isinstance(before_primary, str) and before_primary.strip():
+                        mapped_primary = mapping.get(before_primary, before_primary)
+                    else:
+                        mapped_primary = before_primary
+                    primary_changed = (mapped_primary != before_primary)
+
+                    merged_types = mapped_list
+
+                    # 如果需要整理 types 列表
+                    if normalize_types:
+                        cleaned_list = self._sanitize_type_set(set(merged_types))
+                        # 确保主类型在列表中（主类型可能因为清理不在集合里）
+                        if isinstance(mapped_primary, str) and mapped_primary not in cleaned_list:
+                            # 主类型优先插入到列表最前（不改变主类型本身）
+                            cleaned_list = [mapped_primary] + [t for t in cleaned_list if t != mapped_primary]
+                        final_types_list = cleaned_list if cleaned_list else ( [mapped_primary] if mapped_primary else ["Concept"] )
+                    else:
+                        # 仅去重保序
+                        tmp_seen = set()
+                        final_types_list = []
+                        for t in merged_types:
+                            if t not in tmp_seen:
+                                tmp_seen.add(t)
+                                final_types_list.append(t)
+                        if not final_types_list:
+                            final_types_list = [mapped_primary] if mapped_primary else ["Concept"]
+                        # 确保主类型在列表中
+                        if isinstance(mapped_primary, str) and mapped_primary not in final_types_list:
+                            final_types_list = [mapped_primary] + [t for t in final_types_list if t != mapped_primary]
+
+                    # ---- 写回（仅当有变化）----
+                    wrote = False
+
+                    # types 列表变化？
+                    if final_types_list != before_types_list:
+                        ent["types"] = final_types_list if self.ALLOW_MULTI_TYPE else [final_types_list[0]]
+                        wrote = True
+                    else:
+                        # 未变化也要确保字段存在（与原始保持一致）
+                        if self.ALLOW_MULTI_TYPE:
+                            ent["types"] = before_types_list
+                        else:
+                            ent["types"] = [before_types_list[0]] if before_types_list else []
+
+                    # 主类型是否需要改变？（仅当主类型被映射命中时）
+                    if primary_changed:
+                        ent["type"] = mapped_primary
+                        wrote = True
+                    else:
+                        # 不改变主类型；但如果为空，回退一个
+                        if not isinstance(ent.get("type"), str) or not ent["type"].strip():
+                            ent["type"] = mapped_primary if isinstance(mapped_primary, str) and mapped_primary.strip() else \
+                                        (final_types_list[0] if final_types_list else "Concept")
+
+                    if wrote:
+                        type_changed += 1
+
                 else:
-                    cleaned_list = list(dict.fromkeys(merged_types))
-
-                # Ensure at least one type remains
-                if not cleaned_list:
-                    cleaned_list = ["Concept"]
-
-                # 5) Write back `types` and primary `type`
-                if self.ALLOW_MULTI_TYPE:
-                    ent["types"] = cleaned_list
-                else:
-                    ent["types"] = [cleaned_list[0]]
-
-                old_type = ent.get("type")
-                ent["type"] = cleaned_list[0]
-
-                if cleaned_list != before_types or ent["type"] != old_type:
-                    type_changed += 1
+                    # 没有命中任何类型规则：完全不动 types 与主 type（除非字段缺失则稳健补齐）
+                    if "types" not in ent or not isinstance(ent["types"], list):
+                        ent["types"] = before_types_list
+                    if not isinstance(ent.get("type"), str) or not ent["type"].strip():
+                        ent["type"] = before_primary or (before_types_list[0] if before_types_list else "Concept")
+                    # 不计入 type_changed
 
         return new_results, type_changed, scope_changed
+
 
     # ---------- Multi-type: set cleanup & primary selection ----------
     def _sanitize_type_set(self, tset: set) -> List[str]:
@@ -526,69 +602,227 @@ class GraphPreprocessor:
     def _attach_multilabel(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Attach `types` (multi-label) and set primary `type` to the highest-priority label.
-        If ALLOW_MULTI_TYPE is False, only keep the primary type.
+        但对已消歧名的实体（名字形如 name(Type)）启用“固定类型”保护：
+        - 直接把 Type 作为唯一类型与主 type 写回
+        - 不参与基于名字的全局聚合
         """
+        import re
         new_results = deepcopy(results)
+
+        # 收集全局（按名字）的类型集合
         type_sets = self._collect_type_sets(new_results)
 
+        # 识别已消歧名的名字：末尾括号中的内容作为固定类型
+        disambig_pattern = re.compile(r"^(.*)\(([^)]+)\)$")
+        pinned_types: Dict[str, str] = {}  # name -> pinned_type
+        for name in list(type_sets.keys()):
+            m = disambig_pattern.match(name)
+            if m:
+                pinned_types[name] = m.group(2)
+
+        # 对已消歧名的 name，直接覆盖其聚合类型为 pinned_type
+        for name, ptype in pinned_types.items():
+            type_sets[name] = {ptype}
+
+        # 计算每个名字应写回的类型列表
         per_name_types: Dict[str, List[str]] = {}
         for name, s in type_sets.items():
-            cleaned = self._sanitize_type_set(s)
-            if not cleaned:
-                cleaned = ["Concept"]
+            if name in pinned_types:
+                cleaned = [pinned_types[name]]
+            else:
+                cleaned = self._sanitize_type_set(set(s)) or ["Concept"]
             per_name_types[name] = cleaned
 
+        # 写回
         for doc in new_results:
             for ent in doc.get("entities", []):
                 nm = ent.get("name")
+                if not nm:
+                    continue
                 if nm in per_name_types:
                     types_list = per_name_types[nm]
-                    ent["types"] = types_list if self.ALLOW_MULTI_TYPE else [types_list[0]]
-                    ent["type"] = types_list[0]
+                    # 已消歧名的，严格固定主 type 与 types
+                    if nm in pinned_types:
+                        ent["types"] = [types_list[0]]
+                        ent["type"] = types_list[0]
+                    else:
+                        ent["types"] = types_list if self.ALLOW_MULTI_TYPE else [types_list[0]]
+                        ent["type"] = types_list[0]
         return new_results
+
 
     # ---------- Type refinement (concurrent + rules + multi-label writeback) ----------
     def refine_entity_types(self, extraction_results, per_task_timeout: float = 120.0):
         """
-        Refine entity types by:
-        - Collecting multi-typed entities,
-        - Applying deterministic rules (Concept removal, Action→Event),
-        - Asking the LLM for additional filtering when necessary,
-        - Applying rules and writing back multi-label `types` and primary `type`.
+        Two-stage refinement (base rules -> LLM). Base rules are applied once and then discarded.
+        After applying LLM rules, any names that STILL have multiple types *without* LLM guidance
+        will be disambiguated by *renaming* each occurrence to "name(type)".
+        This renaming is applied to both entities and relations.
         """
-        entity_type_checker: Dict[str, set] = {}
-        for doc in extraction_results:
-            for ent in doc.get("entities", []):
-                entity_type_checker.setdefault(ent["name"], set()).add(ent["type"])
 
-        entity_type_checker = {k: v for k, v in entity_type_checker.items() if len(v) > 1}
+        # ---- helpers ----
+        def _collect_multi(results):
+            m = {}
+            for doc in results:
+                for ent in doc.get("entities", []):
+                    nm = ent.get("name")
+                    if not nm:
+                        continue
+                    m.setdefault(nm, set())
+                    tp = ent.get("type")
+                    if isinstance(tp, str) and tp.strip():
+                        m[nm].add(tp.strip())
+                    tps = ent.get("types")
+                    if isinstance(tps, list):
+                        for t in tps:
+                            if isinstance(t, str) and t.strip():
+                                m[nm].add(t.strip())
+            return {k: v for k, v in m.items() if len(v) > 1}
 
-        type_rules: Dict[str, Dict[str, str]] = {}
-
-        def best_non_concept(ts: set) -> Optional[str]:
+        def _best_non_concept(ts: set) -> str:
             pr_index = {t: i for i, t in enumerate(self.TYPE_PRIORITY)}
-            candidates = [t for t in ts if t != "Concept"]
-            if not candidates:
-                return None
-            return min(candidates, key=lambda t: pr_index.get(t, 10_000))
+            cands = [t for t in ts if t != "Concept"]
+            if not cands:
+                return "Concept"
+            return min(cands, key=lambda t: pr_index.get(t, 10_000))
 
+        def _type_priority_key(t: str) -> int:
+            pr_index = {tp: i for i, tp in enumerate(self.TYPE_PRIORITY)}
+            if t == "Concept":
+                return 10_000_000
+            return pr_index.get(t, 10_000)
+
+        def _rename_ambiguous_names(results, unresolved_names: set):
+            """
+            对仍多类型且 LLM 无规则的基础名按实例消歧，并对齐 relations。
+            - 实体：name -> "name(type)"，并将该实例的 types 固定为 [type]
+            - 关系：若 subject/object 仍是裸的基础名，用本 doc 的首选类型改写为 "name(type)"
+            * 首选类型 = 文档内该基础名出现频次最高的类型；频次并列按 TYPE_PRIORITY 排序最靠前者
+            """
+            import re
+            from collections import defaultdict, Counter
+            new_results = deepcopy(results)
+
+            # 用于 relations 端点选择“首选类型”的优先级
+            pr_index = {t: i for i, t in enumerate(self.TYPE_PRIORITY)}
+            def _prio(t: str) -> int:
+                # Concept 最低优先级
+                return 10_000_000 if t == "Concept" else pr_index.get(t, 10_000)
+
+            bracket_pat = re.compile(r"^(.*)\(([^)]+)\)$")  # 已消歧名检测
+
+            for doc in new_results:
+                ents = doc.get("entities", []) or []
+                rels = doc.get("relations", []) or []
+
+                # 1) 统计：该文档里，目标基础名 -> 出现的类型列表（按实体实例）
+                base_types = defaultdict(list)
+                for e in ents:
+                    base = e.get("name", "")
+                    # 注意：此时可能已有部分实体被消歧名过，先提取基础名
+                    m = bracket_pat.match(base)
+                    if m:
+                        base, typ = m.group(1), m.group(2)
+                        if base in unresolved_names:
+                            base_types[base].append(typ)
+                    else:
+                        if base in unresolved_names:
+                            base_types[base].append(e.get("type"))
+
+                # 2) 选 relations 端点的首选类型（频次优先，频次并列用优先级靠前者）
+                preferred_rel_type = {}
+                for base, tlist in base_types.items():
+                    cnt = Counter(tlist)
+                    # 候选按：频次降序，优先级升序
+                    preferred_rel_type[base] = sorted(cnt.keys(), key=lambda t: (-cnt[t], _prio(t)))[0]
+
+                # 3) 逐个实体重命名：name -> "name(type)"，并固定 types 为 [type]
+                for e in ents:
+                    nm = e.get("name", "")
+                    m = bracket_pat.match(nm)
+                    if m:
+                        # 已经是 name(type) 的，跳过（但仍确保 types 与主 type 对齐）
+                        base, typ = m.group(1), m.group(2)
+                        if base in unresolved_names:
+                            e["types"] = [typ]
+                            e["type"] = typ
+                        continue
+
+                    if nm in unresolved_names:
+                        cur_t = e.get("type")
+                        # 如果当前类型缺失，回退到 relations 的首选类型或 Concept
+                        if not isinstance(cur_t, str) or not cur_t:
+                            cur_t = preferred_rel_type.get(nm, "Concept")
+                        e["name"] = f"{nm}({cur_t})"
+                        e["types"] = [cur_t]
+                        e["type"] = cur_t
+
+                # 4) relations：把裸的基础名端点替换为 "name(preferred_type)"
+                def _rewrite_endpoint(val):
+                    if not isinstance(val, str) or not val:
+                        return val
+                    # 已带括号的视为已消歧，不改
+                    if bracket_pat.match(val):
+                        return val
+                    if val in preferred_rel_type:
+                        return f"{val}({preferred_rel_type[val]})"
+                    return val
+
+                for r in rels:
+                    r["subject"] = _rewrite_endpoint(r.get("subject"))
+                    r["object"]  = _rewrite_endpoint(r.get("object"))
+
+                    # 可选：relation_name 中若出现裸的基础名，且未带括号，则同步替换
+                    rn = r.get("relation_name")
+                    if isinstance(rn, str) and rn:
+                        updated = rn
+                        for base, t in preferred_rel_type.items():
+                            # 只在未出现括号版本时替换，避免重复
+                            if base in updated and f"{base}(" not in updated:
+                                updated = updated.replace(base, f"{base}({t})")
+                        r["relation_name"] = updated
+
+            return new_results
+
+        # ---- PASS 0: inspect ----
+        entity_type_checker = _collect_multi(extraction_results)
+        print("Refining entity types (pass0)", entity_type_checker)
+
+        # ---- PASS 1: build & APPLY BASE RULES, then discard them ----
+        base_rules: Dict[str, Dict[str, str]] = {}
         for name, types in entity_type_checker.items():
-            tset = types if isinstance(types, set) else set(types)
-
+            tset = set(types)
             if "Concept" in tset and len(tset) >= 2 and self.STRIP_CONCEPT_WHEN_OTHERS:
-                target = best_non_concept(tset) or "Concept"
-                type_rules.setdefault(name, {})
-                type_rules[name]["Concept"] = target
-
+                base_rules.setdefault(name, {})
+                base_rules[name]["Concept"] = _best_non_concept(tset)
             if self.UNIFY_ACTION_TO_EVENT and "Action" in tset and "Event" in tset:
-                type_rules.setdefault(name, {})
-                type_rules[name]["Action"] = "Event"
+                base_rules.setdefault(name, {})
+                base_rules[name]["Action"] = "Event"
 
-        to_check = [(n, t) for n, t in entity_type_checker.items() if n not in type_rules]
+        if base_rules:
+            print("Base type rules (pass1):", base_rules)
+
+        # Apply base rules ONCE
+        mid_results, _, _ = self._apply_entity_rules(
+            extraction_results=extraction_results,
+            type_rules=base_rules,
+            scope_rules=None,
+            normalize_types=True
+        )
+        # mid_results = self._attach_multilabel(mid_results)
+
+        # ---- PASS 2: re-check; only unresolved conflicts go to LLM ----
+        entity_type_checker_2 = _collect_multi(mid_results)
+        print("Refining entity types (pass1 -> pass2 input)", entity_type_checker_2)
+
+        to_check = [(n, tset) for n, tset in entity_type_checker_2.items() if len(tset) > 1]
+        print("*****to_check (pass2)", to_check)
+
+        llm_rules: Dict[str, Dict[str, str]] = {}
 
         def _check_entity(item):
             entity, types = item
-            ctx = self.prepare_context_by_type(entity_name=entity, extraction_results=extraction_results, types=list(types))
+            ctx = self.prepare_context_by_type(entity_name=entity, extraction_results=mid_results, types=list(types))
             raw = self.document_parser.validate_entity_type(ctx)
             data = json.loads(correct_json_format(raw))
             rules = {}
@@ -596,23 +830,48 @@ class GraphPreprocessor:
                 for d in data["filtering_rules"]:
                     if isinstance(d, dict):
                         rules.update(d)  # {old_type: new_type}
+            print("LLM rules for", entity, "=>", rules)
             return entity, rules
 
         if to_check:
             results = self._soft_timeout_pool(
                 to_check, _check_entity, per_task_timeout=per_task_timeout,
-                desc="Validate entity types (concurrent)", thread_prefix="etype"
+                desc="Validate entity types (pass2, concurrent)", thread_prefix="etype2"
             )
             for timeout_or_error, _item, res in results:
                 if timeout_or_error or res is None:
                     continue
                 entity, rules = res
-                if rules:
-                    type_rules[entity] = {**type_rules.get(entity, {}), **rules}
+                # 记录即使为空 dict，也要知道该实体在pass2没有给出规则
+                llm_rules[entity] = rules or {}
 
-        new_results, _type_changed, _ = self._apply_entity_rules(
-            extraction_results=extraction_results, type_rules=type_rules, scope_rules=None
-        )
+        # IMPORTANT: Base rules are discarded now. Only apply LLM rules in the final pass.
+        if any(v for v in llm_rules.values()):
+            # 有非空规则才应用到 mid_results
+            filtered_llm_rules = {k: v for k, v in llm_rules.items() if v}
+            print("Final LLM-only rules:", filtered_llm_rules)
+            new_results, _, _ = self._apply_entity_rules(
+                extraction_results=mid_results,
+                type_rules=filtered_llm_rules,
+                scope_rules=None,
+                normalize_types=True
+            )
+        else:
+            new_results = mid_results
+
+        # ---- FINAL: 对仍然多类型且 LLM 无规则的名字执行重命名 name(type) ----
+        # 重新检查（在应用了非空 LLM 规则之后）
+        checker_after_llm = _collect_multi(new_results)
+        # 未给出规则（或规则为空 dict）的名字，且依然多类型 → 需要重命名
+        unresolved_names = {
+            n for n, tset in checker_after_llm.items()
+            if len(tset) > 1 and (n not in llm_rules or not llm_rules.get(n))
+        }
+        if unresolved_names:
+            print("Renaming unresolved multi-typed names:", unresolved_names)
+            new_results = _rename_ambiguous_names(new_results, unresolved_names)
+
+        # Final multi-label write-back
         new_results = self._attach_multilabel(new_results)
         return new_results
 

@@ -16,8 +16,10 @@ class Entity(BaseModel):
     properties: Dict[str, Any] = Field(default_factory=dict, description="Entity attributes/properties")
     description: Optional[str] = Field(default=None, description="Entity description")
     scope: Optional[str] = Field(default=None, description="Entity scope (e.g., global/local)")
-    # confidence: float = Field(default=1.0, description="Confidence score")
+    version: Optional[str] = Field(default="default", description="Screenplay Version")
     source_chunks: List[str] = Field(default_factory=list, description="Source text chunk IDs")
+    additional_chunks: List[str] = Field(default_factory=list, description="Additional related text chunk IDs")
+    total_degree: Optional[float] = Field(default=0.0, description="Total degree of the entity")
 
     def __hash__(self):
         return hash(self.id)
@@ -34,7 +36,7 @@ class Relation(BaseModel):
     predicate: str = Field(description="Relation predicate/type")
     object_id: str = Field(description="Object entity ID")
     properties: Dict[str, Any] = Field(default_factory=dict, description="Relation attributes/properties")
-    # confidence: float = Field(default=1.0, description="Confidence score")
+    version: Optional[str] = Field(default="default", description="Screenplay Version")
     source_chunks: List[str] = Field(default_factory=list, description="Source text chunk IDs")
 
     def __hash__(self):
@@ -49,6 +51,7 @@ class Relation(BaseModel):
 class Document(BaseModel):
     id: str = Field(description="Unique identifier of the document")
     content: str = Field(description="Document content")
+    version: Optional[str] = Field(default="default", description="Screenplay Version")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Document metadata")
     created_at: datetime = Field(default_factory=datetime.now, description="Creation time")
 
@@ -67,6 +70,7 @@ class TextChunk(BaseModel):
     document_id: str = Field(description="Parent document ID")
     start_pos: int = Field(description="Start position within the document")
     end_pos: int = Field(description="End position within the document")
+    version: Optional[str] = Field(default="default", description="Screenplay Version")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Chunk metadata")
 
     def __hash__(self):
@@ -76,29 +80,6 @@ class TextChunk(BaseModel):
         if isinstance(other, TextChunk):
             return self.id == other.id
         return False
-
-
-class ExtractionResult(BaseModel):
-    entities: List[Entity] = Field(default_factory=list, description="Extracted entities")
-    relations: List[Relation] = Field(default_factory=list, description="Extracted relations")
-    chunk_id: str = Field(description="ID of the processed text chunk")
-    processing_time: float = Field(description="Processing time (seconds)")
-
-    def merge(self, other: "ExtractionResult") -> "ExtractionResult":
-        """
-        Merge two extraction results:
-        - De-duplicate entities/relations (by model equality/hash)
-        - Concatenate chunk IDs with '+'
-        - Sum processing time
-        """
-        merged_entities = list(set(self.entities + other.entities))
-        merged_relations = list(set(self.relations + other.relations))
-        return ExtractionResult(
-            entities=merged_entities,
-            relations=merged_relations,
-            chunk_id=f"{self.chunk_id}+{other.chunk_id}",
-            processing_time=self.processing_time + other.processing_time,
-        )
 
 
 class KnowledgeGraph(BaseModel):
