@@ -902,6 +902,7 @@ class Neo4jUtils:
             description=data.get("description", ""),
             properties=props,
             source_chunks=data.get("source_chunks", []),
+            version=data.get("version", "default")
         )
 
 

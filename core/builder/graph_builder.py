@@ -1085,10 +1085,10 @@ class KnowledgeGraphBuilder:
         for res in results:
             md = res.get("chunk_metadata", {}) or {}
             chunk_id = res.get("chunk_id", "")
+            # version = res.get("version", "default")
             version = md.get("version", "default")
-
             # --------- 场景/章节实体 ---------
-            secs = self._create_section_entities(md, chunk_id)
+            secs = self._create_section_entities(md, chunk_id, version)
             for se in secs:
                 if se.name not in self.section_names and se.id not in self.kg.entities:
                     self.kg.add_entity(se)
@@ -1570,7 +1570,7 @@ class KnowledgeGraphBuilder:
 
     
     # -------- Section / Contains --------
-    def _create_section_entities(self, md: Dict[str, Any], chunk_id: str) -> List[Entity]:
+    def _create_section_entities(self, md: Dict[str, Any], chunk_id: str, version: str) -> List[Entity]:
         """
         Create section/scene entities.
 
@@ -1616,6 +1616,7 @@ class KnowledgeGraphBuilder:
                 description=md.get("summary", ""),
                 properties=properties,
                 source_chunks=agg_chunks,
+                version=version
             )
         ]
 

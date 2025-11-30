@@ -179,10 +179,12 @@ def main():
     config = KAGConfig.from_yaml(args.config)
 
     supplementary_builder = SupplementaryBuilder(config)
-    # supplementary_builder.extract_character_status_for_all_scenes()
-    # supplementary_builder.build_character_status_database()
-    # supplementary_builder.check_scene_continuity(only_true=True)
+    supplementary_builder.extract_character_status_for_all_scenes()
+    supplementary_builder.build_character_status_database()
+    supplementary_builder.create_character_status_visualization()
+    supplementary_builder.check_scene_continuity(only_true=True)
     supplementary_builder.generate_continuity_chains()
+    supplementary_builder.create_scene_continuity_visualization()
 
     # logger.info("✅ Knowledge graph and event/plot graph pipeline completed.")
     _handle_alive_threads(grace_seconds=0.3)

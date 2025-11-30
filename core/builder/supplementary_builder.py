@@ -21,7 +21,7 @@ from core.storage.vector_store import VectorStore
 from core.utils.format import correct_json_format
 from core.utils.function_manager import run_with_soft_timeout_and_retries
 from core.utils.neo4j_utils import Neo4jUtils
-from core.utils.render import generate_html
+from core.utils.html_visualization import generate_strict_chain_html, load_character_status_csv, generate_character_status_html
 from core.functions.tool_calls.sqldb_tools import Search_By_Scene
 
 DECISION_CONF_MAP = {
@@ -647,9 +647,22 @@ class SupplementaryBuilder:
         with open(scenes_out_path, "w", encoding="utf-8") as fw:
             json.dump(scenes, fw, ensure_ascii=False, indent=2)
 
-        # 生成 HTML 可视化（使用最终 unique_chains）
-        html_path = os.path.join(kg_base, "接戏结果展示.html")
-        generate_html(scenes, unique_chains, html_path)
+        # # 生成 HTML 可视化（使用最终 unique_chains）
+        # html_path = os.path.join(kg_base, "接戏结果展示.html")
+        # generate_html(scenes, unique_chains, html_path)
+        # print(f"✅ 已生成接戏结果展示 HTML -> {html_path}")
+
+    def create_scene_continuity_visualization(self):
+        kg_base = self.config.storage.knowledge_graph_path
+        html_path = "./接戏结果展示.html"
+
+        with open(os.path.join(kg_base, "scene_information.json"), "r") as f:
+            scenes = json.load(f)
+
+        with open(os.path.join(kg_base, "continuity_chains.json"), "r") as f:
+            unique_chains = json.load(f)
+
+        generate_strict_chain_html(scenes, unique_chains, html_path)
         print(f"✅ 已生成接戏结果展示 HTML -> {html_path}")
 
     def _merge_overlapping_chains(
@@ -884,7 +897,7 @@ class SupplementaryBuilder:
           ...
         ]
         """
-        kg_cfg = getattr(self.config, "knowledge_graph", None)
+        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
         versions = getattr(kg_cfg, "versions", None) if kg_cfg is not None else None
 
         pairs: List[Dict[str, Any]] = []
@@ -1310,3 +1323,12 @@ class SupplementaryBuilder:
             f"✅ 角色状态数据库已生成：{db_path}（表：CharacterStatus），CSV：{csv_path}"
         )
         return db_path
+
+    def create_character_status_visualization(self):
+        scenes, characters, timelines = load_character_status_csv(os.path.join(self.config.storage.sql_database_path, "CharacterStatus.csv"))
+        generate_character_status_html(
+            scenes,
+            characters,
+            timelines,
+            output_file="角色状态追踪.html"
+        )
