@@ -766,7 +766,7 @@ def generate_html(scenes, characters, timelines, output_file):
                     <label>选择角色:</label>
                     <select id="character-select" onchange="showCharacterTimeline()">
                         <option value="">-- 请选择角色 --</option>
-                        {''.join(f'<option value="{{i}}">{{t["character"]}} ({{t["count"]}})</option>' for i, t in enumerate(timelines))}
+                        {''.join(f'<option value="{i}">{t["character"]} ({t["count"]})</option>' for i, t in enumerate(timelines))}
                     </select>
                 </div>
                 <div id="character-timeline"></div>
