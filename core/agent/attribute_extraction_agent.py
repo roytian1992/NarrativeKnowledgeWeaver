@@ -229,7 +229,7 @@ class AttributeExtractionAgent:
         # prev = ""
         summaries = []
         for chunk in new_text_splitted:
-            chunk_result = self.document_parser.search_content(text=chunk, goal=goal, max_length=100)
+            chunk_result = self.document_parser.search_content(text=chunk, goal=goal, max_length=50)
             parsed = json.loads(correct_json_format(chunk_result)).get("related_content", [])
             if parsed:
                 summaries.extend(parsed)

@@ -110,12 +110,8 @@ def extract_minimal_cmp_list(cmp_text: str) -> List[str]:
 
 def build_scenes_dict(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
     """
-    将包含 scene_id, title, summary, cmp_info 的 DataFrame 转换为 scenes 字典。
-    df.columns 至少包含：
-        - scene_id
-        - title
-        - summary
-        - cmp_info
+    将包含 scene_id, title, summary, cmp_info（以及可选 version）的 DataFrame
+    转换为 scenes 字典。
     """
     scenes: Dict[str, Dict[str, Any]] = {}
 
@@ -126,6 +122,7 @@ def build_scenes_dict(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
             "scene_title": row.get("title", "") or "",
             "summary": row.get("summary", "") or "",
             "cmp_info": row.get("cmp_info", "") or "",
+            "version": row.get("version", "") or "",   # ⭐ 新增，可为空
         }
 
     return scenes
@@ -234,6 +231,26 @@ class SupplementaryBuilder:
             llm=self.llm,
             prompt_loader=prompt_loader,
         )
+
+    def _use_version_partition(self) -> bool:
+        """
+        是否启用按 version 分区的逻辑：
+        - 如果 config.knowledge_graph.versions 为空 或 只有 ["default"]，
+          认为是旧行为：不按 version 过滤，所有 Scene 都可互相接戏判断。
+        - 否则（例如 ["Part_1", "Part_2"]），只在 version 一致的场次间做接戏判定。
+        """
+        kg_cfg = getattr(self.config, "knowledge_graph", None)
+        versions = getattr(kg_cfg, "versions", None) if kg_cfg is not None else None
+
+        if not versions:
+            # 未配置版本，保持旧逻辑
+            return False
+
+        if isinstance(versions, (list, tuple)) and len(versions) == 1 and versions[0] == "default":
+            # 只有一个 default，认为是单版本旧逻辑
+            return False
+
+        return True
 
     # ----------------------------------------------------------------------
     # 一、角色状态抽取
@@ -352,7 +369,7 @@ class SupplementaryBuilder:
     def check_scene_continuity(
         self,
         *,
-        per_task_timeout: float = 900.0,
+        per_task_timeout: float = 1800.0,
         retries: int = 3,
         retry_backoff: float = 2.0,
         max_workers: int = 16,
@@ -462,17 +479,26 @@ class SupplementaryBuilder:
         df_true = df[df["is_continuity"]].copy()
 
         # ---------- 构建接戏边 & 场次元数据 ----------
+        # ---------- 构建接戏边 & 场次元数据 ----------
         edges = set()
         scene_meta: Dict[str, Dict[str, Any]] = {}
 
-        def _update_meta(sid: str, title: str, summary: str, cmp_info: str) -> None:
+        def _update_meta(
+            sid: str,
+            title: str,
+            summary: str,
+            cmp_info: str,
+            version: str,
+        ) -> None:
             if sid not in scene_meta:
                 scene_meta[sid] = {
                     "scene_id": sid,
                     "title": title,
                     "summary": summary,
                     "cmp_info": cmp_info,
+                    "version": version or "",
                 }
+
 
         for _, r in df_true.iterrows():
             s1, s2 = r["scene_id_1"], r["scene_id_2"]
@@ -480,18 +506,23 @@ class SupplementaryBuilder:
                 continue
             edges.add(tuple(sorted((s1, s2))))
 
+            v = r.get("version", "")  # ⭐ 这条判定记录的 version
+
             _update_meta(
                 s1,
                 r.get("scene_title_1", ""),
                 r.get("summary_1", ""),
                 r.get("cmp_info_1", ""),
+                v,
             )
             _update_meta(
                 s2,
                 r.get("scene_title_2", ""),
                 r.get("summary_2", ""),
                 r.get("cmp_info_2", ""),
+                v,
             )
+
 
         print(f"接戏边数: {len(edges)}")
         print(f"涉及场次数: {len(scene_meta)}")
@@ -531,8 +562,10 @@ class SupplementaryBuilder:
                         "title": meta.get("title", ""),
                         "summary": meta.get("summary", ""),
                         "cmp_info": meta.get("cmp_info", ""),
+                        "version": meta.get("version", ""),  # ⭐ 新增
                     }
                 )
+
 
         chains_df = pd.DataFrame(chains_records)
 
@@ -578,12 +611,13 @@ class SupplementaryBuilder:
             # 若为 drop，则不加入
 
         # ====== 合并：大链结果 + 小链原样 ======
+                # ====== 合并：大链结果 + 小链原样 ======
         all_chains = refined_large_chains + small_chains
 
         # 剔除长度为 1 的链（有些 split 可能给出单点）
         all_chains = [chain for chain in all_chains if len(chain) >= 2]
 
-        # 可选：去重（有可能不同团/拆分后出现重复链）
+        # 先按集合去重一次，避免明显重复
         unique_chains: List[List[str]] = []
         seen = set()
         for chain in all_chains:
@@ -593,14 +627,19 @@ class SupplementaryBuilder:
             seen.add(key)
             unique_chains.append(chain)
 
-        print(f"最终保留接戏链数量（去重 & 剔除单点后）: {len(unique_chains)}")
+        print(f"初步去重后接戏链数量: {len(unique_chains)}")
+
+        # === 新增：合并有较大重叠的链（解决 A B C D E / A C D E F 分裂问题） ===
+        merged_chains = self._merge_overlapping_chains(unique_chains, min_overlap=2)
+        print(f"合并重叠后接戏链数量: {len(merged_chains)}")
 
         # 保存 continuity_chains.json
         kg_base = self.config.storage.knowledge_graph_path
         chains_out_path = os.path.join(kg_base, "continuity_chains.json")
         with open(chains_out_path, "w", encoding="utf-8") as fw:
-            json.dump(unique_chains, fw, ensure_ascii=False, indent=2)
-        print(f"✅ 已保存接戏链结果，共 {len(unique_chains)} 条 -> {chains_out_path}")
+            json.dump(merged_chains, fw, ensure_ascii=False, indent=2)
+        print(f"✅ 已保存接戏链结果，共 {len(merged_chains)} 条 -> {chains_out_path}")
+
 
         # scene 信息字典（给可视化用，这里可以直接用 chains_df 的场景元数据）
         scenes = build_scenes_dict(chains_df)
@@ -612,6 +651,83 @@ class SupplementaryBuilder:
         html_path = os.path.join(kg_base, "接戏结果展示.html")
         generate_html(scenes, unique_chains, html_path)
         print(f"✅ 已生成接戏结果展示 HTML -> {html_path}")
+
+    def _merge_overlapping_chains(
+        self,
+        chains: List[List[str]],
+        min_overlap: int = 2,
+    ) -> List[List[str]]:
+        """
+        将有较大重叠的接戏链做集合级合并：
+        - 如果两条链的交集场次数 >= min_overlap，则合并为并集
+        - 反复迭代直到无法继续合并
+        - 返回合并后的链列表（每条链去重、长度>=2、集合意义上去重）
+
+        注意：
+        - 这里采用 scene_id 的排序作为输出顺序，如果你更在意“剧本顺序”，
+          可以改成按 Scene 的 order 属性排序。
+        """
+        # 先去掉空链，并对单条链内部做去重
+        chains = [list(dict.fromkeys(chain)) for chain in chains if chain]
+
+        if not chains:
+            return []
+
+        changed = True
+        while changed:
+            changed = False
+            new_chains: List[List[str]] = []
+            used = [False] * len(chains)
+
+            for i in range(len(chains)):
+                if used[i]:
+                    continue
+
+                base_set = set(chains[i])
+                merged = False
+
+                for j in range(i + 1, len(chains)):
+                    if used[j]:
+                        continue
+
+                    other_set = set(chains[j])
+                    inter = base_set & other_set
+
+                    # 重叠达到阈值，则合并
+                    if len(inter) >= min_overlap:
+                        base_set |= other_set
+                        used[j] = True
+                        changed = True
+                        merged = True
+
+                # i 自己也标记已处理
+                used[i] = True
+
+                # 把合并后的 base_set 放进新链表
+                if merged:
+                    # 这里简单按 scene_id 排序；如果想按剧本顺序，
+                    # 可以改成用一个 scene_order_map 排序
+                    merged_chain = sorted(base_set)
+                    new_chains.append(merged_chain)
+                else:
+                    # 没合并到别人，就原样保留
+                    new_chains.append(chains[i])
+
+            chains = new_chains
+
+        # 最后一轮：丢掉长度 < 2 的，并按集合去重
+        final_chains: List[List[str]] = []
+        seen_sets = set()
+        for chain in chains:
+            if len(chain) < 2:
+                continue
+            key = tuple(sorted(chain))
+            if key in seen_sets:
+                continue
+            seen_sets.add(key)
+            final_chains.append(chain)
+
+        return final_chains
 
     # ----------------------------------------------------------------------
     # 三、接戏链的 LLM 多数投票评估
@@ -748,26 +864,83 @@ class SupplementaryBuilder:
     def _get_scene_pairs_with_common_neighbors(self) -> List[Dict[str, Any]]:
         """
         计算所有存在共同邻居(角色 Character)的 Scene 对。
+
+        - 如果 config.knowledge_graph.versions 未配置，或者为 ["default"]，
+          则保持旧行为：不过滤 version，所有 Scene 都可以互相组成 pair，
+          但返回结果中会统一带上 "version": "default"（或配置中的那一项）。
+
+        - 如果 versions 里有多个值（例如 ["Part_1", "Part_2"]），
+          则对每个 version 分别查询，只返回同一 version 下的场次对，
+          并在结果里带上该 version。
+
         返回结构：
         [
           {
             "scene1": <scene_id_1>,
             "scene2": <scene_id_2>,
-            "neighbor_ids": [<char_id_1>, <char_id_2>, ...]
+            "neighbor_ids": [<char_id_1>, <char_id_2>, ...],
+            "version": <version for both scene1 and scene2>,
           },
           ...
         ]
         """
-        cypher = """
-        MATCH (s1:Scene)-[]-(e:Character)-[]-(s2:Scene)
-        WHERE id(s1) < id(s2)
-        WITH s1, s2, collect(DISTINCT e.id) AS common
-        WHERE size(common) > 0
-        RETURN s1.id AS scene1, s2.id AS scene2, common AS neighbor_ids
-        ORDER BY scene1, scene2
-        """
-        rows = self.neo4j_utils.execute_query(cypher) or []
-        return rows
+        kg_cfg = getattr(self.config, "knowledge_graph", None)
+        versions = getattr(kg_cfg, "versions", None) if kg_cfg is not None else None
+
+        pairs: List[Dict[str, Any]] = []
+
+        # ---------- 情况一：未配置 versions 或仅有 ["default"]，保持旧逻辑 ----------
+        if (
+            not versions
+            or (
+                isinstance(versions, (list, tuple))
+                and len(versions) == 1
+                and versions[0] == "default"
+            )
+        ):
+            cypher = """
+            MATCH (s1:Scene)-[]-(e:Character)-[]-(s2:Scene)
+            WHERE id(s1) < id(s2)
+            WITH s1, s2, collect(DISTINCT e.id) AS common
+            WHERE size(common) > 0
+            RETURN s1.id AS scene1,
+                   s2.id AS scene2,
+                   common AS neighbor_ids
+            ORDER BY scene1, scene2
+            """
+            rows = self.neo4j_utils.execute_query(cypher) or []
+            default_version = (
+                versions[0] if (isinstance(versions, (list, tuple)) and versions) else "default"
+            )
+            for row in rows:
+                row["version"] = default_version
+                pairs.append(row)
+            return pairs
+
+        # ---------- 情况二：有多个 version（例如 ["Part_1", "Part_2"]） ----------
+        for v in versions:
+            if not v:
+                continue
+            # 简单做一下引号转义，防止 Cypher 拼接炸掉
+            v_str = str(v).replace("'", "\\'")
+            cypher = f"""
+            MATCH (s1:Scene)-[]-(e:Character)-[]-(s2:Scene)
+            WHERE id(s1) < id(s2)
+              AND s1.version = '{v_str}'
+              AND s2.version = '{v_str}'
+            WITH s1, s2, collect(DISTINCT e.id) AS common
+            WHERE size(common) > 0
+            RETURN s1.id AS scene1,
+                   s2.id AS scene2,
+                   common AS neighbor_ids
+            ORDER BY scene1, scene2
+            """
+            rows = self.neo4j_utils.execute_query(cypher) or []
+            for row in rows:
+                row["version"] = v
+                pairs.append(row)
+
+        return pairs
 
     def _filter_pair_by_order(
         self, row: Dict[str, Any], threshold: int = 50
@@ -899,6 +1072,7 @@ class SupplementaryBuilder:
             "cmp_info_2": pair_info["cmp_info2"],
             "common_neighbor_info": pair_info["common_neighbor_info"],
             "neighbor_ids": neighbor_ids,
+            "version": pair.get("version", ""),  # ⭐ 新增：这条 pair 所属的 Part
         }
 
         # 把 LLM 的字段扁平合入（is_continuity, reason 等）

@@ -11,7 +11,8 @@ def generate_html(scenes, chains, output_file):
                     "scene_id": "scene_1",
                     "scene_title": "...",
                     "summary": "...",
-                    "cmp_info": "..."
+                    "cmp_info": "...",
+                    "version": "Part_1"   # 可选字段
                 },
                 ...
             }
@@ -24,6 +25,14 @@ def generate_html(scenes, chains, output_file):
     # 按链的大小排序
     chains_sorted = sorted(chains, key=len, reverse=True)
 
+    # 收集所有版本信息（用于 Version 下拉）
+    all_versions = set()
+    for s in scenes.values():
+        v = (s.get("version") or "").strip()
+        if v:
+            all_versions.add(v)
+    versions_list = sorted(all_versions)  # 可能为空（老数据）
+
     # 颜色方案
     colors = [
         '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
@@ -31,6 +40,11 @@ def generate_html(scenes, chains, output_file):
         '#F39C12', '#9B59B6', '#1ABC9C', '#E67E22', '#34495E',
         '#16A085', '#27AE60', '#2980B9', '#8E44AD', '#D35400'
     ]
+
+    # 构造 version 下拉的 options HTML
+    version_options_html = '<option value="all">全部版本</option>'
+    for v in versions_list:
+        version_options_html += f'<option value="{v}">{v}</option>'
 
     # HTML 头部
     html_content = '''<!DOCTYPE html>
@@ -122,11 +136,21 @@ def generate_html(scenes, chains, output_file):
             padding: 20px;
             background: #f8f9fa;
             border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-left {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
         
         .filter-label {
             font-weight: bold;
-            margin-bottom: 10px;
             color: #2c3e50;
         }
         
@@ -150,6 +174,22 @@ def generate_html(scenes, chains, output_file):
         .filter-btn:hover, .filter-btn.active {
             background: #667eea;
             color: white;
+        }
+
+        .version-filter {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9em;
+            color: #2c3e50;
+        }
+
+        #version-select {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid #ced4da;
+            font-size: 0.9em;
+            background: white;
         }
         
         .chain-container {
@@ -316,6 +356,10 @@ def generate_html(scenes, chains, output_file):
                 max-width: 100%;
                 margin: 10px 0;
             }
+
+            .filter-section {
+                align-items: flex-start;
+            }
         }
     </style>
 </head>
@@ -353,12 +397,20 @@ def generate_html(scenes, chains, output_file):
     html_content += '''        </div>
         
         <div class="filter-section">
-            <div class="filter-label">筛选接戏链（按场景数）:</div>
-            <div class="filter-buttons">
-                <button class="filter-btn active" onclick="filterChains('all', this)">全部显示</button>
-                <button class="filter-btn" onclick="filterChains('large', this)">大型链 (≥5场)</button>
-                <button class="filter-btn" onclick="filterChains('medium', this)">中型链 (3-4场)</button>
-                <button class="filter-btn" onclick="filterChains('small', this)">小型链 (2场)</button>
+            <div class="filter-left">
+                <div class="filter-label">筛选接戏链（按场景数）:</div>
+                <div class="filter-buttons">
+                    <button class="filter-btn active" onclick="filterChains('all', this)">全部显示</button>
+                    <button class="filter-btn" onclick="filterChains('large', this)">大型链 (≥5场)</button>
+                    <button class="filter-btn" onclick="filterChains('medium', this)">中型链 (3-4场)</button>
+                    <button class="filter-btn" onclick="filterChains('small', this)">小型链 (2场)</button>
+                </div>
+            </div>
+            <div class="version-filter">
+                <span class="filter-label">按版本:</span>
+                <select id="version-select" onchange="filterChainsByVersion()">
+                    ''' + version_options_html + '''
+                </select>
             </div>
         </div>
 '''
@@ -376,12 +428,30 @@ def generate_html(scenes, chains, output_file):
         else:
             size_class = 'small'
 
+        # 该链的 version（理论上同一链内 version 一致）
+        chain_versions_in_chain = { (scenes[sid].get('version') or '').strip() for sid in chain if sid in scenes }
+        chain_version = ''
+        if len(chain_versions_in_chain) == 1:
+            chain_version = next(iter(chain_versions_in_chain))
+        else:
+            # 理论上不会走到这，兜底
+            non_empty = [v for v in chain_versions_in_chain if v]
+            if len(non_empty) == 1:
+                chain_version = non_empty[0]
+            elif non_empty:
+                chain_version = 'mixed'
+            else:
+                chain_version = ''
+
+        version_badge_html = f'<span class="chain-badge">版本: {chain_version}</span>' if chain_version else ''
+
         html_content += f'''
-        <div class="chain-container" data-size="{size_class}" style="--chain-color: {color};">
+        <div class="chain-container" data-size="{size_class}" data-version="{chain_version}" style="--chain-color: {color};">
             <div class="chain-header" onclick="toggleChain({chain_idx})">
                 <div class="chain-title">
                     接戏链 {chain_idx + 1}
                     <span class="chain-badge">完全连通</span>
+                    {version_badge_html}
                 </div>
                 <div class="chain-info">包含 {len(chain)} 个场景 | 任意两场景都可直接接戏</div>
             </div>
@@ -434,11 +504,31 @@ def generate_html(scenes, chains, output_file):
         </div>
     '''
 
-    # 尾部 JS
+    # 尾部 JS：增加 size + version 双重筛选
     html_content += '''
     </div>
     
     <script>
+        let currentSizeFilter = 'all';
+        let currentVersionFilter = 'all';
+
+        function applyFilters() {
+            const chains = document.querySelectorAll('.chain-container');
+            chains.forEach(function(chain) {
+                const size = chain.getAttribute('data-size');
+                const version = chain.getAttribute('data-version') || '';
+                
+                const matchSize = (currentSizeFilter === 'all' || size === currentSizeFilter);
+                const matchVersion = (currentVersionFilter === 'all' || version === currentVersionFilter);
+                
+                if (matchSize && matchVersion) {
+                    chain.classList.remove('hidden');
+                } else {
+                    chain.classList.add('hidden');
+                }
+            });
+        }
+
         function toggleDetails(sceneId) {
             const details = document.getElementById('details-' + sceneId);
             if (!details) return;
@@ -456,6 +546,8 @@ def generate_html(scenes, chains, output_file):
         }
         
         function filterChains(type, btn) {
+            currentSizeFilter = type;
+
             // 更新按钮状态
             document.querySelectorAll('.filter-btn').forEach(function(b) {
                 b.classList.remove('active');
@@ -463,21 +555,15 @@ def generate_html(scenes, chains, output_file):
             if (btn) {
                 btn.classList.add('active');
             }
-            
-            // 筛选链
-            const chains = document.querySelectorAll('.chain-container');
-            chains.forEach(function(chain) {
-                if (type === 'all') {
-                    chain.classList.remove('hidden');
-                } else {
-                    const size = chain.getAttribute('data-size');
-                    if (size === type) {
-                        chain.classList.remove('hidden');
-                    } else {
-                        chain.classList.add('hidden');
-                    }
-                }
-            });
+
+            applyFilters();
+        }
+
+        function filterChainsByVersion() {
+            const select = document.getElementById('version-select');
+            if (!select) return;
+            currentVersionFilter = select.value;
+            applyFilters();
         }
     </script>
 </body>
