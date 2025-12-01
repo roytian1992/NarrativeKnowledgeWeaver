@@ -53,7 +53,7 @@ Attribute extraction and costume/prop extraction follow the same **extract → r
 ### Attribute Extraction Agent
 Dedicated to extracting entity attributes.
 
-<img src="./assets/attr_agent.png" alt="Attribute Extraction Agent" width="600"/>
+<img src="./assets/attribute_extraction_process.png" alt="Attribute Extraction Agent" width="600"/>
 
 ---
 

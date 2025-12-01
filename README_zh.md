@@ -45,7 +45,7 @@
 ### Attribute Extraction Agent
 AttributeExtractionAgent是系统中专门负责实体属性抽取的核心组件。
 
-<img src="./assets/attr_agent.png" alt="Attribute Extraction Agent" width="600"/>
+<img src="./assets/attribute_extraction_process.png" alt="Attribute Extraction Agent" width="600"/>
 
 ### Graph Probing Agent
 主要目标是确保知识图谱的 schema 结构能够与文本内容和用户需求高度契合，从而支撑不同层面的分析与推理任务
