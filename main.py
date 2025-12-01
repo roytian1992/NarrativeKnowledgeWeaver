@@ -32,6 +32,7 @@ from core import KAGConfig
 from core.builder.graph_builder import KnowledgeGraphBuilder
 from core.builder.database_builder import RelationalDatabaseBuilder
 from core.builder.narrative_graph_builder import EventCausalityBuilder
+from core.builder.supplementary_builder import SupplementaryBuilder
 
 import logging
 
@@ -46,6 +47,7 @@ logging.getLogger("neo4j.bolt").setLevel(logging.ERROR)
 logging.getLogger("core.memory.vector_memory").setLevel(logging.INFO)
 logging.getLogger("core.storage.vector_store").setLevel(logging.INFO)
 logging.getLogger("core.storage.vector_store").setLevel(logging.INFO)
+# logging.getLogger("core.functions.tool_calls.sqldb_tools").setLevel(logging.ERROR)
 logging.getLogger("asyncio").setLevel(logging.INFO)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("chromadb").setLevel(logging.WARNING)
@@ -199,66 +201,97 @@ def main():
         logger.debug("Loaded config from %s", args.config)
 
     # ---------- Knowledge graph phase ----------
-    builder = KnowledgeGraphBuilder(config)
-    try:
-        builder.prepare_chunks(args.input, verbose=args.verbose)
-        builder.store_chunks(verbose=args.verbose)
-    finally:
-        _close_component(builder)
-        builder = None
+    # builder = KnowledgeGraphBuilder(config)
+    # try:
+    #     builder.prepare_chunks(args.input, verbose=args.verbose, extract_timelines=False)
+    #     builder.store_chunks(verbose=args.verbose)
+    # finally:
+    #     _close_component(builder)
+    #     builder = None
         
-    builder = KnowledgeGraphBuilder(config)
-    try:
-        builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35)
-    finally:
-        _close_component(builder)
-        builder = None
+    # builder = KnowledgeGraphBuilder(config)
+    # try:
+    #     builder.run_graph_probing(verbose=args.verbose, sample_ratio=0.35)
+    # finally:
+    #     _close_component(builder)
+    #     builder = None
         
-    builder = KnowledgeGraphBuilder(config)
-    try:
-        builder.initialize_agents()
-        builder.extract_entity_and_relation(verbose=args.verbose)
-        builder.run_extraction_refinement(verbose=args.verbose)
-    finally:
-        _close_component(builder)
-        builder = None
+    # builder = KnowledgeGraphBuilder(config)
+    # try:
+    #     builder.initialize_agents()
+    #     builder.extract_entity_and_relation(verbose=args.verbose)
+    # finally:
+    #     _close_component(builder)
+    #     builder = None
+
+    # builder = KnowledgeGraphBuilder(config)
+    # try:
+    #     builder.initialize_agents()
+    #     builder.run_extraction_refinement(verbose=args.verbose)
+    # finally:
+    #     _close_component(builder)
+    #     builder = None
         
+    # builder = KnowledgeGraphBuilder(config)
+    # try:
+    #     builder.initialize_agents()
+    #     builder.extract_entity_attributes(verbose=args.verbose)
+    # finally:
+    #     _close_component(builder)
+    #     builder = None
+
+          
     builder = KnowledgeGraphBuilder(config)
     try:
-        builder.initialize_agents()
-        builder.extract_entity_attributes(verbose=args.verbose)
+        builder.graph_store.reset_knowledge_graph()
         _ = builder.build_graph_from_results(verbose=args.verbose)
         builder.prepare_graph_embeddings()
     finally:
         _close_component(builder)
         builder = None
 
-    # ---------- Relational DB phase ----------
-    sql_builder = RelationalDatabaseBuilder(config)
-    try:
-        sql_builder.extract_cmp_information()
-        sql_builder.build_relational_database()
-        sql_builder.build_scene_info()
+    # # ---------- Relational DB phase ----------
+    # sql_builder = RelationalDatabaseBuilder(config)
+    # try:
+    #     sql_builder.extract_cmp_information()
+    #     sql_builder.build_relational_database()
+    #     sql_builder.build_scene_info()
         
-    finally:
-        _close_component(sql_builder)
-        sql_builder = None
+    # finally:
+    #     _close_component(sql_builder)
+    #     sql_builder = None
 
-    # ---------- Event/plot graph phase ----------
     event_graph_builder = EventCausalityBuilder(config)
     try:
-        event_graph_builder.initialize(keep_event_cards=True)
-        event_graph_builder.build_event_causality_graph()
-        event_graph_builder.run_SABER()
-        event_graph_builder.build_event_plot_graph()
-        event_graph_builder.generate_plot_relations()
-        event_graph_builder.prepare_graph_embeddings()
+        # event_graph_builder.initialize(keep_event_cards=False)
+        # event_graph_builder.produce_causality_artifacts(limit_events=None)   # 计算 & 落JSON（事件清单/候选对/因果结果等）
+        event_graph_builder.materialize_causality_graph()                    # 读取JSON & 写入事件-事件因果边
+    finally:
+        _close_component(event_graph_builder)
+        event_graph_builder = None
+    
+    # event_graph_builder = EventCausalityBuilder(config)
+    # try:
+    #     event_graph_builder.extract_event_chains()
+    #     event_graph_builder.build_and_save_plot_nodes()
+    # finally:
+    #     _close_component(event_graph_builder)
+    #     event_graph_builder = None
 
+    event_graph_builder = EventCausalityBuilder(config)
+    try:
+        # event_graph_builder.build_and_save_plot_relations()
+        event_graph_builder.materialize_plot_graph()
     finally:
         _close_component(event_graph_builder)
         event_graph_builder = None
 
-    logger.info("✅ Knowledge graph and event/plot graph pipeline completed.")
+    # supplementary_builder = SupplementaryBuilder(config)
+    # supplementary_builder.extract_character_status_for_all_scenes()
+    # supplementary_builder.build_character_status_database()
+    # supplementary_builder.check_scene_continuity(only_true=True)
+
+    # logger.info("✅ Knowledge graph and event/plot graph pipeline completed.")
 
     _handle_alive_threads(grace_seconds=0.3)
 
