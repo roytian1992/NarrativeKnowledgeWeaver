@@ -1,0 +1,81 @@
+id: optimize_tool_description
+category: memory
+name: Optimize Tool Description
+description: >
+  Decide whether a tool description should be kept or revised when the same question has both successful and failed trajectories.
+
+task_variables:
+  - name: tool_name
+    type: string
+    required: true
+  - name: current_description
+    type: string
+    required: true
+  - name: parameter_descriptions
+    type: string
+    required: true
+  - name: question
+    type: string
+    required: true
+  - name: query_pattern_json
+    type: string
+    required: true
+  - name: successful_attempt_json
+    type: string
+    required: true
+  - name: failed_attempts_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are reflecting on a tool description.
+
+  Tool name:
+  {tool_name}
+
+  Current description:
+  {current_description}
+
+  Parameter descriptions:
+  {parameter_descriptions}
+
+  Current question:
+  {question}
+
+  Query abstraction (JSON):
+  {query_pattern_json}
+
+  Successful trajectory summary (JSON):
+  {successful_attempt_json}
+
+  Failed trajectory summaries (JSON):
+  {failed_attempts_json}
+
+  Task:
+  - Decide whether the current tool description should be revised so the agent can choose this tool more reliably on similar questions.
+  - Recommend a revision only if the wording of the description is likely part of the routing problem.
+  - If the current description is already clear enough, or the failures are mainly caused by something else, keep it unchanged.
+
+  Requirements:
+  - Improve the description only while preserving and clearly expressing the tool's original core capability.
+  - If no change is necessary, keep the original description unchanged.
+  - If revision is needed, write a short explanatory paragraph, usually 2 to 4 sentences.
+  - Focus on what the tool does and what kinds of questions it is suitable for.
+  - Do not mention specific novels, scripts, characters, sections, or text-specific facts.
+  - Do not copy question examples into the description.
+  - Do not exaggerate the tool's capability or invent new abilities.
+  - Keep the tone professional, direct, and consistent.
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "decision": "keep" or "revise",
+      "proposed_description": "string",
+      "reason": "string"
+    }}
+  - If `decision` is `keep`, `proposed_description` must be exactly the original current description.
+  - If `decision` is `revise`, `proposed_description` must be the rewritten description.
+  - No markdown. No extra explanation.

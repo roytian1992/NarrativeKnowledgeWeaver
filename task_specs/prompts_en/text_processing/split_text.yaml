@@ -1,0 +1,68 @@
+id: split_text
+category: text_processing
+name: Split Text into Semantic Paragraphs
+description: >
+  Split a longer narrative text into <= max_segments semantic paragraphs.
+  Output strict JSON-only with a "segments" array.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Narrative text to split.
+
+  - name: min_length
+    type: number
+    required: true
+    description: Minimum length (in words) for each complete segment (except the last one).
+
+  - name: max_segments
+    type: number
+    required: true
+    description: Maximum number of segments to split into.
+
+template: |
+  You are a language expert skilled in text structure analysis.
+  Your task is to semantically and logically split a longer narrative text.
+
+  --------------------------------
+  TASK
+  --------------------------------
+  - You will receive a longer text segment.
+  - Identify semantic or plot breakpoints and divide it into no more than {max_segments} natural paragraphs.
+  - The fewer segments the better.
+  - Each paragraph should be as semantically complete as possible, such as:
+    - progression of time
+    - event transitions
+    - changes in character relationships
+    - shifts in narrative focus
+  - The last paragraph can be an incomplete fragment, used for concatenation with subsequent text.
+
+  --------------------------------
+  SEGMENT RULES
+  --------------------------------
+  - For all segments except the last:
+    - each should be at least {min_length} words if possible.
+  - If the text cannot be naturally split:
+    - return a single complete paragraph as the first segment,
+    - and make the last segment an empty string.
+  - All segments must be strings.
+  - Do not add any commentary or extra keys.
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+  Return JSON ONLY:
+
+  {{
+    "segments": [
+      "First semantically complete paragraph",
+      "Optional second paragraph",
+      "Last paragraph (can be a fragment or empty string)"
+    ]
+  }}
+
+  --------------------------------
+  TEXT
+  --------------------------------
+  {text}

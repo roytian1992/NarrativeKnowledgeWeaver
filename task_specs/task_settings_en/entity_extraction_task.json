@@ -1,0 +1,180 @@
+[
+  {
+    "task": "general_entity_extraction",
+    "task_name": "Narrative Entity Extraction",
+    "task_goal": "Extract Characters, Concepts, and Objects that exist in the narrative world and are relevant to the story. Entities must be grounded in the text and usable as structured nodes in a narrative knowledge graph.",
+    "global_constraints": [
+      "Do NOT invent entities that are not explicitly grounded in the text.",
+      "Exclude purely cinematic devices or formatting artifacts.",
+      "Prefer stable, canonical names; avoid duplicate variants unless the text clearly distinguishes them.",
+      "Output JSON only. Do NOT include commentary or extra text."
+    ],
+    "types": [
+      {
+        "type": "Character",
+        "description": "A concrete individual entity that participates in the narrative (human or anthropomorphized agent).",
+        "output_fields": ["type", "name", "description", "scope"],
+        "naming_rules": [
+          "Use a clean, descriptive entity name.",
+          "Avoid verb phrases and full sentences.",
+          "Do NOT output purely generic placeholders as names unless uniquely individuated by context."
+        ],
+        "scope_rules": {
+          "global": "Use global only if the character is a stable, re-identifiable in-world referent that plausibly recurs across scenes or drives ongoing plot developments (named or uniquely identifiable recurring individual).",
+          "local": "Use local if the character is scene-bound, generic, deictic, or not uniquely resolvable beyond the immediate context (e.g., “Narrator”, “someone”, “a man”, “the driver”), unless clearly the same recurring individual. If uncertain, prefer local."
+        },
+        "exclusions": [
+          "Abstract roles without individuality (e.g., “a crowd”, “people in general”)",
+          "Organizations or institutions (these are Concepts)",
+          "Generic references without identity unless clearly individuated by context"
+        ]
+      },
+      {
+        "type": "Concept",
+        "description": "An abstract, collective, or institutional entity such as an organization, faction, ideology, system, or social group that frames or constrains the narrative.",
+        "output_fields": ["type", "name", "description", "scope"],
+        "naming_rules": [
+          "Use a clear noun phrase naming the institution/system/group/idea.",
+          "Do NOT output specific meeting/session instances as Concepts (those are Occasions)."
+        ],
+        "scope_rules": {
+          "global": "Use global if the concept represents a persistent organization, system, faction, ideology, or framework that plausibly persists beyond a single scene.",
+          "local": "Use local if the concept is a one-off, scene-specific abstraction or label not clearly persistent. If uncertain, prefer local."
+        },
+        "exclusions": [
+          "Individual people (Characters)",
+          "Physical locations (Locations)",
+          "Physical objects (Objects)",
+          "Specific instances of meetings/gatherings (Occasions)"
+        ]
+      },
+      {
+        "type": "Object",
+        "description": "A concrete physical item that can be held, used, hidden, damaged, or exchanged, and is narratively relevant.",
+        "output_fields": ["type", "name", "description", "scope"],
+        "naming_rules": [
+          "Use a descriptive noun phrase.",
+          "Avoid overly generic labels when the text provides specificity.",
+          "Do NOT treat places/architectural spaces as objects (those are Locations)."
+        ],
+        "scope_rules": {
+          "global": "Use global if the object is likely to recur across scenes or is clearly a persistent plot-relevant artifact (uniquely identifiable or repeatedly referenced).",
+          "local": "Use local if the object is scene-specific or only relevant within a short context. If uncertain, prefer local."
+        },
+        "exclusions": [
+          "Abstract ideas or institutions (Concept)",
+          "Places or settings (Location)",
+          "Natural substances mentioned only as background unless narratively relevant"
+        ]
+      }
+    ]
+  },
+  {
+    "task": "induced_entity_extraction",
+    "task_name": "Narrative Event and Occasion Extraction",
+    "task_goal": "Extract Events and Occasions from the narrative text. Events are atomic narrative occurrences; Occasions are organized activity containers that may include multiple Events.",
+    "types": [
+      {
+        "type": "Event",
+        "description": "A concrete, atomic occurrence in the narrative world describable as who did what to whom/what, when/where, and with what consequence. Includes actions, meaningful speech acts, decisions, and clear changes of state (including location transitions).",
+        "output_fields": ["type", "name", "description", "scope"],
+        "default_scope": "local",
+        "scope_rules": {
+          "local": "Events are scene-anchored by default. Use local unless explicitly instructed otherwise."
+        },
+        "naming_rules": [
+          "Name must be a descriptive, content-centered natural language phrase.",
+          "Do NOT use a single character name, a single verb, a time point alone, a location alone, or an object alone.",
+          "Avoid overly short or vague phrases."
+        ],
+        "granularity_rules": [
+          "Extract atomic events only; split multiple distinct actions/state changes into separate Events.",
+          "If any character(s) are present, extract at least one Event involving them whenever the text supports it, unless there is insufficient evidence to form a valid Event."
+        ],
+        "exclusions": [
+          "Narrative or cinematic devices (montage, camera movement, scene cuts)",
+          "Pure descriptions without action, state change, or a recognizable organized happening",
+          "Isolated elements such as character names, time expressions, locations, or objects without event context",
+          "Abstract institutions or organizations themselves unless describing a specific meeting/session instance (Occasion)"
+        ]
+      },
+      {
+        "type": "Occasion",
+        "description": "A structured, socially or institutionally recognized activity or gathering that takes place in the narrative. It is an organized event container that can be attended/hosted/participated in, may span a period of time, and may contain multiple atomic Events.",
+        "output_fields": ["type", "name", "description", "scope"],
+        "default_scope": "global",
+        "scope_rules": {
+          "global": "Occasions are treated as globally scoped containers by default.",
+          "local": "Use local only if explicitly instructed otherwise."
+        },
+        "naming_rules": [
+          "Prefer a concrete instance name if available (e.g., 'Alcoholics Anonymous meeting').",
+          "If unnamed, use a grounded descriptive label (e.g., 'local AA meeting', 'emergency briefing').",
+          "Name must not be overly short or vague."
+        ],
+        "granularity_rules": [
+          "Extract Occasions only when the organized gathering/activity itself is narratively relevant.",
+          "Do not replace atomic Events with an Occasion; extract both when appropriate."
+        ],
+        "exclusions": [
+          "Cinematic devices or scene formatting",
+          "Abstract institutions/organizations themselves without a concrete occurrence instance"
+        ]
+      }
+    ]
+  },
+  {
+    "task": "anchor_entity_extraction",
+    "task_name": "Narrative Time and Location Extraction",
+    "task_goal": "Extract time expressions and location mentions that can anchor events in a scene. These anchors should be usable as structured nodes, not as events.",
+    "global_constraints": [
+      "Do NOT invent times or locations not supported by the text.",
+      "Do NOT extract cinematic directions (wide shot, cut to exterior).",
+      "Do NOT extract abstract/metaphorical places (e.g., 'in his mind').",
+      "Do NOT extract deictic-only anchors as names (e.g., 'now', 'here').",
+      "Output JSON only. Do NOT include commentary or extra text."
+    ],
+    "types": [
+      {
+        "type": "TimePoint",
+        "description": "A standalone temporal expression that indicates when something happens, as a time point or short, specific temporal reference (clock time, time of day, date-like reference, or short relative reference).",
+        "output_fields": ["type", "name", "scope", "description"],
+        "naming_rules": [
+          "Extract the smallest time phrase that remains meaningful as an anchor.",
+          "Do NOT output bare deictic tokens as name (e.g., now, right now, currently, at present, these days)."
+        ],
+        "scope_rules": {
+          "global": "Calendar-anchored expressions such as explicit year/month/day/weekday or explicit date-time.",
+          "local": "Relative or scene-dependent anchors (later, that night, moments later). If ambiguous, prefer local."
+        },
+        "exclusions": [
+          "Events phrased as time",
+          "Broad eras or long spans not scene-anchoring (during the war, in his childhood, in the 1990s)",
+          "Purely atmospheric phrases without a temporal anchor",
+          "Deictic-only references without temporal content (now/right now/currently)"
+        ]
+      },
+      {
+        "type": "Location",
+        "description": "A physical setting where events occur, expressed as a noun phrase (named place, specific setting, or interior sub-location).",
+        "output_fields": ["type", "name", "scope", "description"],
+        "naming_rules": [
+          "The name MUST be a clean noun phrase with NO leading prepositions.",
+          "Avoid overly generic labels when the text provides specificity.",
+          "The name MUST NOT be a pure deictic word or placeholder without a concrete place noun (e.g., here, there, somewhere, this place).",
+          "If the text only says here/there but nearby context provides a concrete place noun, extract that noun phrase instead; otherwise skip."
+        ],
+        "scope_rules": {
+          "global": "Named or uniquely identifying places (proper names, specific institutions/buildings/facilities, landmarks).",
+          "local": "Generic or scene-relative settings (hallway, car interior, basement) unless uniquely identified. If ambiguous, prefer local."
+        },
+        "exclusions": [
+          "Cinematic directions or shot labels",
+          "Abstract or metaphorical places",
+          "Fragmentary tokens without narrative meaning",
+          "Deictic-only placeholders as names (here/there/nearby/outside/inside without a noun anchor)"
+        ]
+      }
+    ]
+  }
+]

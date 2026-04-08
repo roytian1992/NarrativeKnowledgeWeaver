@@ -1,0 +1,68 @@
+{
+  "vdb_search_docs": {
+    "name": "vdb_search_docs",
+    "description": "文档级语义检索，适合做粗粒度主题召回。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "语义检索查询。",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "返回条数，默认 5。",
+        "required": false
+      }
+    ]
+  },
+  "vdb_get_docs_by_document_ids": {
+    "name": "vdb_get_docs_by_document_ids",
+    "description": "根据 document_id 从向量库取回对应原文 chunk。",
+    "parameters": [
+      {
+        "name": "document_ids",
+        "type": "array",
+        "description": "document_id 列表。",
+        "required": true
+      }
+    ]
+  },
+  "vdb_search_hierdocs": {
+    "name": "vdb_search_hierdocs",
+    "description": "父子文档语义检索。先召回相关句子，再聚合到段落或文档后重排。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "语义检索查询。",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "返回条数，默认 20。",
+        "required": false
+      }
+    ]
+  },
+  "vdb_search_sentences": {
+    "name": "vdb_search_sentences",
+    "description": "句子级语义检索，适合查找细粒度证据和改写表达。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "语义检索查询。",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "返回条数，默认 5。",
+        "required": false
+      }
+    ]
+  }
+}

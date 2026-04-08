@@ -1,0 +1,108 @@
+id: prune_causal_edges
+category: regular_function
+name: Causal Edge Pruning for Triadic Structures
+description: >
+  Evaluate whether a direct causal edge should be removed in a triadic causal structure
+  by comparing it against an indirect causal path, with the objective of simplifying
+  the graph while preserving semantic integrity.
+
+task_variables:
+  - name: entity_a
+    type: string
+    required: true
+    description: >
+      Information describing entity A, including its identity, role, properties,
+      and relevant contextual details.
+
+  - name: entity_b
+    type: string
+    required: true
+    description: >
+      Information describing entity B, including its identity, role, properties,
+      and relevant contextual details.
+
+  - name: entity_c
+    type: string
+    required: true
+    description: >
+      Information describing entity C, including its identity, role, properties,
+      and relevant contextual details.
+
+  - name: relation_ab
+    type: string
+    required: true
+    description: >
+      Description of the directed causal relationship from A to B, including
+      its semantic meaning and any available strength or confidence signals.
+
+  - name: relation_bc
+    type: string
+    required: true
+    description: >
+      Description of the directed causal relationship from B to C, including
+      its semantic meaning and any available strength or confidence signals.
+
+  - name: relation_ac
+    type: string
+    required: true
+    description: >
+      Description of the direct causal relationship from A to C, including
+      its semantic meaning and any available strength or confidence signals.
+
+template: |
+  You are an expert in causal graph modeling and structure optimization.
+
+  Your task is to decide whether the direct causal edge A -> C should be removed,
+  given the presence of an indirect causal path A -> B -> C.
+
+  A direct edge is considered removable only if its causal meaning is sufficiently
+  and faithfully captured by the indirect path, such that removing it simplifies
+  the graph without losing essential semantic information.
+
+  ------------------
+  Entity A
+  ------------------
+  {entity_a}
+
+  ------------------
+  Entity B
+  ------------------
+  {entity_b}
+
+  ------------------
+  Entity C
+  ------------------
+  {entity_c}
+
+  ------------------
+  Relationship A -> B
+  ------------------
+  {relation_ab}
+
+  ------------------
+  Relationship B -> C
+  ------------------
+  {relation_bc}
+
+  ------------------
+  Relationship A -> C
+  ------------------
+  {relation_ac}
+
+  ------------------
+  Evaluation Guidelines
+  ------------------
+  1. If the meaning of A -> C is effectively equivalent to the composed meaning
+     of A -> B followed by B -> C, the direct edge may be removed.
+  2. If A -> C expresses a distinct causal implication not captured by the
+     indirect path, preserve it.
+  3. If A -> C conveys a substantially stronger, more immediate, or more explicit
+     causal force than the indirect path, preserve it.
+  4. Prioritize semantic completeness over structural simplicity.
+
+  Output format:
+  Return JSON only, with no additional text:
+  {{
+    "remove_edge": true,
+    "reason": "A concise justification grounded in the provided entities and relationships."
+  }}

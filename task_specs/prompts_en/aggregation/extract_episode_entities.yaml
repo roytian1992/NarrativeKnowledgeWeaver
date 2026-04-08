@@ -1,0 +1,140 @@
+id: extract_episodes
+category: aggregation
+name: Extract Episodes from Events
+description: >
+  Group Event entities into goal-driven Episodes based on the given text.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Original narrative text.
+
+  - name: entities
+    type: string
+    required: true
+    description: JSON string of entities (Event/Occasion).
+
+static_variables:
+  - name: entity_definitions_text
+    type: string
+    required: true
+    description: Rendered definitions for Event, Occasion, Episode, and Storyline.
+
+  - name: episode_output_fields_text
+    type: string
+    required: true
+    description: Rendered Episode output field schema.
+
+  - name: episode_construction_constraints_text
+    type: string
+    required: true
+    description: Schema-derived structural constraints for Episode extraction.
+
+  - name: episode_writing_constraints_text
+    type: string
+    required: true
+    description: Schema-derived writing constraints for Episode descriptions.
+
+  - name: episode_sample_json_text
+    type: string
+    required: true
+    description: A compact sample Episode object from schema.
+
+template: |
+  You are an information extraction and narrative structuring assistant.
+  Your task is to group Events into Episodes and output STRICTLY VALID JSON.
+
+  ====================
+  Definitions
+  ====================
+  {entity_definitions_text}
+
+  ====================
+  Task
+  ====================
+  Given a list of entities (Events and Occasions) and the original text, group Events into Episodes.
+
+  ====================
+  Important Clarifications
+  ====================
+  - The notion of “goal-driven” is used ONLY to guide how Events are grouped.
+  - Episode descriptions must NOT explain, summarize, or analyze goals, purposes, or narrative functions.
+  - Episode descriptions must read like neutral narrative prose describing observable actions and outcomes.
+
+  ====================
+  Input
+  ====================
+  1) text: the original narrative text from which the entities are extracted.
+  2) entities: a list of entities. Each entity has:
+     - id: string
+     - name: string
+     - description: string
+     - type: "Event" or "Occasion"
+
+  ====================
+  Grouping Rules
+  ====================
+  {episode_construction_constraints_text}
+  - Prefer grouping Events that are grounded in the same textual segment, situated within the same Occasion,
+    or tightly coupled by short-range temporal or explicitly stated causal relations.
+  - Create a singleton Episode only if an Event cannot be meaningfully grouped.
+  - Episode names should be concise, action-oriented phrases reflecting the main characters and actions.
+  - Do not invent Events, motivations, causal links, intentions, or psychological states.
+
+  ====================
+  Episode Output Fields
+  ====================
+  {episode_output_fields_text}
+
+  Sample Episode object:
+  {episode_sample_json_text}
+
+  ====================
+  Episode Writing Constraints
+  ====================
+  {episode_writing_constraints_text}
+
+  ====================
+  Description Writing Constraints (CRITICAL)
+  ====================
+  - Write the Episode description as plain narrative prose.
+  - Include only concrete characters, actions, and observable outcomes.
+  - The description should read like a paragraph that could appear directly in a novel or screenplay.
+
+  ====================
+  STRICT JSON OUTPUT RULES (MANDATORY)
+  ====================
+  - Output MUST be valid JSON parseable by standard JSON parsers (e.g., json.loads).
+  - Output MUST contain JSON only. Do NOT include explanations, markdown, or code fences.
+  - Every string value MUST be enclosed in double quotes.
+  - Do NOT include any unescaped double quote (") inside a string value.
+    - If dialogue or quoted speech appears in the text, rewrite it as indirect speech
+      OR escape quotes using \".
+  - Use UTF-8 characters directly; do NOT escape normal punctuation.
+  - related_occasions MUST be a list (use [] if none apply).
+
+  ====================
+  Output Schema
+  ====================
+  {{
+    "episodes": [
+      {{
+        "name": "...",
+        "description": "...",
+        "related_events": ["..."],
+        "related_occasions": ["..."]
+      }}
+    ]
+  }}
+
+  ====================
+  Now process the following input.
+  ====================
+
+  Text:
+  {text}
+
+  Entities to process:
+  {entities}

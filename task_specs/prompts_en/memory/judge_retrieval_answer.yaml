@@ -1,0 +1,57 @@
+id: judge_retrieval_answer
+category: memory
+name: Judge Retrieval Answer
+description: >
+  Judge whether a retrieval answer is correct using the reference answer.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are an evaluator for retrieval QA training.
+
+  Question:
+  {question}
+
+  Reference answer:
+  {reference_answer}
+
+  Candidate answer:
+  {candidate_answer}
+
+  Judgment policy:
+  - Treat the reference answer as the minimum core facts that must be covered, not as the only acceptable wording or the only allowed subset.
+  - If the candidate answer covers the core information in the reference answer, it may still be correct even if it adds more compatible details.
+  - If the candidate answer is a semantic superset of the reference answer and does not introduce clear contradictions or clearly harmful hallucinated specifics, prefer judging it as correct.
+  - Do not mark an answer wrong merely because it is more complete, more explicit, or contains a broader but compatible enumeration.
+  - Only penalize strongly or mark false when the candidate answer:
+    1. misses core facts from the reference answer;
+    2. directly contradicts the reference answer;
+    3. adds many specific hallucinations that materially change the conclusion.
+  - For enumeration questions such as scenes, models, or item lists, if the candidate answer covers the reference items, extra non-contradictory items are acceptable.
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "is_correct": true,
+      "score": 0.0,
+      "reason": "string",
+      "matched_points": ["string"],
+      "missing_points": ["string"],
+      "hallucination_points": ["string"]
+    }}
+  - `is_correct` should reflect core-fact coverage, semantic correctness, and whether there are direct contradictions or materially harmful hallucinations.
+  - `score` must be between 0 and 1.
+  - Minor wording differences or reasonable extra details should still be judged as correct when the core meaning is covered.
+  - No markdown. No extra explanation.

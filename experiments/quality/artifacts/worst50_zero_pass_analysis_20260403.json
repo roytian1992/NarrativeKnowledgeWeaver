@@ -1,0 +1,2777 @@
+{
+  "summary": {
+    "worst50_article_count": 50,
+    "zero_pass_question_count": 307,
+    "articles_with_zero_pass": 50,
+    "category_counts": {
+      "causal_intent": 82,
+      "attitude_trait": 16,
+      "event_fact": 9,
+      "other": 151,
+      "entity_relation": 27,
+      "counterfactual_theme": 7,
+      "count_time": 8,
+      "option_discrimination": 7
+    }
+  },
+  "worst_articles_by_zero_pass": [
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "zero_pass_question_count": 11,
+      "question_count": 18,
+      "zero_pass_ratio": 0.6111
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "zero_pass_question_count": 10,
+      "question_count": 16,
+      "zero_pass_ratio": 0.625
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "zero_pass_question_count": 10,
+      "question_count": 18,
+      "zero_pass_ratio": 0.5556
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "zero_pass_question_count": 10,
+      "question_count": 19,
+      "zero_pass_ratio": 0.5263
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "zero_pass_question_count": 9,
+      "question_count": 14,
+      "zero_pass_ratio": 0.6429
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "zero_pass_question_count": 9,
+      "question_count": 19,
+      "zero_pass_ratio": 0.4737
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "zero_pass_question_count": 9,
+      "question_count": 20,
+      "zero_pass_ratio": 0.45
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "zero_pass_question_count": 7,
+      "question_count": 13,
+      "zero_pass_ratio": 0.5385
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "zero_pass_question_count": 7,
+      "question_count": 13,
+      "zero_pass_ratio": 0.5385
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "zero_pass_question_count": 7,
+      "question_count": 15,
+      "zero_pass_ratio": 0.4667
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "zero_pass_question_count": 7,
+      "question_count": 16,
+      "zero_pass_ratio": 0.4375
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "zero_pass_question_count": 7,
+      "question_count": 16,
+      "zero_pass_ratio": 0.4375
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "zero_pass_question_count": 7,
+      "question_count": 17,
+      "zero_pass_ratio": 0.4118
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "zero_pass_question_count": 7,
+      "question_count": 17,
+      "zero_pass_ratio": 0.4118
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "zero_pass_question_count": 7,
+      "question_count": 18,
+      "zero_pass_ratio": 0.3889
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "zero_pass_question_count": 7,
+      "question_count": 18,
+      "zero_pass_ratio": 0.3889
+    },
+    {
+      "article_name": "a_70271b3492f6a4fc",
+      "zero_pass_question_count": 6,
+      "question_count": 12,
+      "zero_pass_ratio": 0.5
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "zero_pass_question_count": 6,
+      "question_count": 15,
+      "zero_pass_ratio": 0.4
+    },
+    {
+      "article_name": "a_3351b158881489c4",
+      "zero_pass_question_count": 6,
+      "question_count": 16,
+      "zero_pass_ratio": 0.375
+    },
+    {
+      "article_name": "a_2123c6de5ce2c54a",
+      "zero_pass_question_count": 6,
+      "question_count": 17,
+      "zero_pass_ratio": 0.3529
+    },
+    {
+      "article_name": "a_4fa9744dd9ad2e77",
+      "zero_pass_question_count": 6,
+      "question_count": 17,
+      "zero_pass_ratio": 0.3529
+    },
+    {
+      "article_name": "a_d9b796565fb9891a",
+      "zero_pass_question_count": 6,
+      "question_count": 17,
+      "zero_pass_ratio": 0.3529
+    },
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "zero_pass_question_count": 6,
+      "question_count": 18,
+      "zero_pass_ratio": 0.3333
+    },
+    {
+      "article_name": "a_50e69ad6c5691741",
+      "zero_pass_question_count": 6,
+      "question_count": 18,
+      "zero_pass_ratio": 0.3333
+    },
+    {
+      "article_name": "a_9073ae21f6069eb1",
+      "zero_pass_question_count": 6,
+      "question_count": 19,
+      "zero_pass_ratio": 0.3158
+    },
+    {
+      "article_name": "a_aa840a6ced2358c4",
+      "zero_pass_question_count": 6,
+      "question_count": 19,
+      "zero_pass_ratio": 0.3158
+    },
+    {
+      "article_name": "a_c2bc895a39ac1a14",
+      "zero_pass_question_count": 6,
+      "question_count": 19,
+      "zero_pass_ratio": 0.3158
+    },
+    {
+      "article_name": "a_da5abd3b2bcb8030",
+      "zero_pass_question_count": 6,
+      "question_count": 19,
+      "zero_pass_ratio": 0.3158
+    },
+    {
+      "article_name": "a_dd4c509ce23ddf54",
+      "zero_pass_question_count": 6,
+      "question_count": 19,
+      "zero_pass_ratio": 0.3158
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "zero_pass_question_count": 6,
+      "question_count": 19,
+      "zero_pass_ratio": 0.3158
+    },
+    {
+      "article_name": "a_3d2b44d920f3e6c6",
+      "zero_pass_question_count": 6,
+      "question_count": 20,
+      "zero_pass_ratio": 0.3
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "zero_pass_question_count": 5,
+      "question_count": 11,
+      "zero_pass_ratio": 0.4545
+    },
+    {
+      "article_name": "a_42c427588d061091",
+      "zero_pass_question_count": 5,
+      "question_count": 14,
+      "zero_pass_ratio": 0.3571
+    },
+    {
+      "article_name": "a_4a661da111f7f2cc",
+      "zero_pass_question_count": 5,
+      "question_count": 14,
+      "zero_pass_ratio": 0.3571
+    },
+    {
+      "article_name": "a_b82b4dabe3645591",
+      "zero_pass_question_count": 5,
+      "question_count": 14,
+      "zero_pass_ratio": 0.3571
+    },
+    {
+      "article_name": "a_dd30a80d5c33d63f",
+      "zero_pass_question_count": 5,
+      "question_count": 14,
+      "zero_pass_ratio": 0.3571
+    },
+    {
+      "article_name": "a_e5bb2f97030dfcaf",
+      "zero_pass_question_count": 5,
+      "question_count": 14,
+      "zero_pass_ratio": 0.3571
+    },
+    {
+      "article_name": "a_0a55479de19616f5",
+      "zero_pass_question_count": 5,
+      "question_count": 15,
+      "zero_pass_ratio": 0.3333
+    },
+    {
+      "article_name": "a_135b29f55cc105fd",
+      "zero_pass_question_count": 5,
+      "question_count": 15,
+      "zero_pass_ratio": 0.3333
+    },
+    {
+      "article_name": "a_9194af8c136f7067",
+      "zero_pass_question_count": 5,
+      "question_count": 15,
+      "zero_pass_ratio": 0.3333
+    },
+    {
+      "article_name": "a_679bb395d67f6d50",
+      "zero_pass_question_count": 5,
+      "question_count": 16,
+      "zero_pass_ratio": 0.3125
+    },
+    {
+      "article_name": "a_9cea01b713db2921",
+      "zero_pass_question_count": 5,
+      "question_count": 16,
+      "zero_pass_ratio": 0.3125
+    },
+    {
+      "article_name": "a_aae1371f48c73e3e",
+      "zero_pass_question_count": 5,
+      "question_count": 16,
+      "zero_pass_ratio": 0.3125
+    },
+    {
+      "article_name": "a_b6a2150f2bd3d5e6",
+      "zero_pass_question_count": 5,
+      "question_count": 16,
+      "zero_pass_ratio": 0.3125
+    },
+    {
+      "article_name": "a_6c12bf8339e5819f",
+      "zero_pass_question_count": 5,
+      "question_count": 17,
+      "zero_pass_ratio": 0.2941
+    },
+    {
+      "article_name": "a_a6e66d2e491dcf04",
+      "zero_pass_question_count": 5,
+      "question_count": 17,
+      "zero_pass_ratio": 0.2941
+    },
+    {
+      "article_name": "a_ab27255903d78f68",
+      "zero_pass_question_count": 4,
+      "question_count": 13,
+      "zero_pass_ratio": 0.3077
+    },
+    {
+      "article_name": "a_c7c925a732844670",
+      "zero_pass_question_count": 4,
+      "question_count": 13,
+      "zero_pass_ratio": 0.3077
+    },
+    {
+      "article_name": "a_fba861f4a1791d74",
+      "zero_pass_question_count": 2,
+      "question_count": 5,
+      "zero_pass_ratio": 0.4
+    },
+    {
+      "article_name": "a_5c44f3c1449daf6f",
+      "zero_pass_question_count": 1,
+      "question_count": 3,
+      "zero_pass_ratio": 0.3333
+    }
+  ],
+  "zero_pass_questions": [
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q0",
+      "question": "Why doesn't Caswell expect the Watashaw sewing club to grow astronomically? (A) Caswell has underestimated the female population of Watashaw. (B) Caswell has underestimated the popularity of sewing. (C) Caswell has underestimated the ingenuity of the club members. (D) Caswell thinks only women enjoy sewing.",
+      "reference_choice": "C",
+      "reference_answer": "Caswell has underestimated the ingenuity of the club members.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q1",
+      "question": "How does the Dean feel about Caswell? (A) The Dean despises Caswell and wants to fire him. (B) The Dean views Caswell as a friend and co-conspirator. (C) The Dean thinks Caswell is a stuck-up intellectual. (D) The Dean is irritated by Caswell's superiority complex.",
+      "reference_choice": "B",
+      "reference_answer": "The Dean views Caswell as a friend and co-conspirator.",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q12",
+      "question": "What was an error in Caswell's theories (in reference to how they were applied)? (A) Their experiment assumed that only men would be interested in the test at hand (B) Their experiment assumed that only women would be interested in the test at hand (C) Their experiment was using too small a sample size (D) Their experiment was using too large an initial sample size",
+      "reference_choice": "B",
+      "reference_answer": "Their experiment assumed that only women would be interested in the test at hand",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q13",
+      "question": "What traits best describe Searles? (A) Empathetic and beautiful (B) Resourceful and dilligent (C) Original and bold (D) Intelligent and original",
+      "reference_choice": "B",
+      "reference_answer": "Resourceful and dilligent",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q2",
+      "question": "What kind of organization are they looking for, for their demonstration? (A) A small group that no one expects to lose members. (B) A large group that no one expects to lose members. (C) A small group that no one expects to grow. (D) A large group that no one expects to grow.",
+      "reference_choice": "C",
+      "reference_answer": "A small group that no one expects to grow.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q3",
+      "question": "Why doesn't the Dean want to be associated with Watashaw? (A) The Dean doesn't want people to think he's a socialist. (B) The Dean doesn't want people to know he's responsible for a total world government that collapsed by design. (C) The Dean doesn't want people to know he's responsible for a total world government. (D) The Dean doesn't want to be responsible for global socialism.",
+      "reference_choice": "B",
+      "reference_answer": "The Dean doesn't want people to know he's responsible for a total world government that collapsed by design.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q4",
+      "question": "Why is Caswell so confident that his organizational model will cause the group to grow? (A) Because he is an expert in pyramid schemes. (B) Because he is an expert in socialism. (C) Because he is an expert in organizational strategies. (D) Because he is an expert in human social behavior.",
+      "reference_choice": "D",
+      "reference_answer": "Because he is an expert in human social behavior.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q6",
+      "question": "What is the relationship between Caswell and the protagonist? (A) They're coworkers (B) One is the other's boss (C) They're old friends (D) They're brothers",
+      "reference_choice": "B",
+      "reference_answer": "One is the other's boss",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "question_id": "q9",
+      "question": "What was the initial goal of the protagonist? (A) To collect more money (B) To increase his personal reputation (C) To improve his institution's reputation (D) To befriend his colleague",
+      "reference_choice": "A",
+      "reference_answer": "To collect more money",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q0",
+      "question": "Why is the lack of hotel space important for Simon's story? (A) It made him cut his trip short without finding any time travelers. (B) Simon would have to learn how to time travel in order to keep his bag from being stolen. (C) It set the stage for him to encounter an alien's home for himself. (D) It meant he would find a number of unsavory characters as he tried to find somewhere to sleep.",
+      "reference_choice": "C",
+      "reference_answer": "It set the stage for him to encounter an alien's home for himself.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q1",
+      "question": "What is the goal of the story that Simon tells Mr. Oyster? (A) Simon wanted to show that he had spent a lot of time thinking about encounters with time travelers. (B) He wanted to explain why the trip would not be successful if he went to Germany. (C) He wanted to mock his prospective client for his ideas about time travel. (D) He wanted to prove that Oktoberfest was the wrong place to look for time travelers.",
+      "reference_choice": "B",
+      "reference_answer": "He wanted to explain why the trip would not be successful if he went to Germany.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q11",
+      "question": "Where was Simon before he arrived at work in the beginning of the story? (A) Idlewild (B) Munich (C) Providence (D) New Orleans",
+      "reference_choice": "B",
+      "reference_answer": "Munich",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q13",
+      "question": "In telling the story about potentially traveling to Oktoberfest, what is Simon most skeptical of? (A) How the vendors are able to produce such a large amount of food and beer (B) How the brewers are able to make beer with such a high alcohol by volume percentage (C) How Arf is able to consume that much beer without getting a hangover (D) How the city can accommodate that many locals and tourists",
+      "reference_choice": "D",
+      "reference_answer": "How the city can accommodate that many locals and tourists",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q14",
+      "question": "How has Simon manipulated Mr. Oyster? (A) He has traveled back in time thrice to attempt to bring back a time traveler (B) He has taken over $50,000 of Mr. Oyster's money based on unfulfilled investigations (C) He has discovered that Mr. Oyster is actually Arth from several decades ago (D) He has used the opportunity to travel to Oktoberfest on vacation, and never intended to grant Mr. Oyster's request",
+      "reference_choice": "A",
+      "reference_answer": "He has traveled back in time thrice to attempt to bring back a time traveler",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q2",
+      "question": "What does Simon think about the possibility of time travel? (A) He thinks it's possible, but finds it ridiculous that Oktoberfest would be the place to find it. (B) He hopes that it's real, and spends a lot of time thinking about how to avoid a paradox. (C) He knows that it's real, but thinks that its secret will be kept in the future. (D) He thinks it's incredibly stupid and not worth considering.",
+      "reference_choice": "C",
+      "reference_answer": "He knows that it's real, but thinks that its secret will be kept in the future.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q4",
+      "question": "Why is Simon so unenthusiastic when the client shows up at the beginning of the story? (A) He knows Mr. Oyster's reputation, and does not want to get involved in his affairs. (B) He knows he cannot accomplish what Mr. Oyster is asking, and knows he will have to turn him away. (C) He only takes on easy cases that he knows will pay the bills. (D) He has too much of a headache to deal with the new client.",
+      "reference_choice": "B",
+      "reference_answer": "He knows he cannot accomplish what Mr. Oyster is asking, and knows he will have to turn him away.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q5",
+      "question": "What is Simon referring to when he says \"now it comes\" to Betty during their discussion at the beginning of the story? (A) He knows his headache is about to get worse. (B) The client he is expecting is about to show up. (C) He is used to complaints about Betty's salary. (D) He is expecting the usual argument with Betty about her job.",
+      "reference_choice": "B",
+      "reference_answer": "The client he is expecting is about to show up.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q6",
+      "question": "Why does Simon look for aspirin as soon as he gets to his office? (A) He is experiencing caffeine withdrawal and did not have time to stop for coffee. (B) We never learn the cause of the headache, we only know that it is severe. (C) He has a hangover from attending a festival. (D) He was out drinking with some friends the night before, and has a hangover.",
+      "reference_choice": "C",
+      "reference_answer": "He has a hangover from attending a festival.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "question_id": "q7",
+      "question": "What would've happened if Simon had said yes to the job at the end of the story? (A) He would have returned right back to the office soon after he left for the airport, but with a worse hangover. (B) He would have stayed at home and pretended to travel to Germany for the sake of his client. (C) He would have gone to Germany for the 16-day festival and looked for time travelers. (D) He would have brought Betty with him to Germany to help him find time travelers.",
+      "reference_choice": "A",
+      "reference_answer": "He would have returned right back to the office soon after he left for the airport, but with a worse hangover.",
+      "category": "counterfactual_theme"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q1",
+      "question": "Which is not a reason the captain does not want to create a police force? (A) He doesn't want to violate the trust of the crew (B) He does not have people to spare (C) He doesn't think it's part of his job (D) He figures passengers will eventually be blamed",
+      "reference_choice": "D",
+      "reference_answer": "He figures passengers will eventually be blamed",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q12",
+      "question": "When did the Nilly first strike? (A) One month after leaving Earth (B) Two weeks after leaving Earth (C) Two months after leaving Earth (D) Seven weeks after leaving Earth",
+      "reference_choice": "A",
+      "reference_answer": "One month after leaving Earth",
+      "category": "count_time"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q13",
+      "question": "What happened to Mrs. Failright? (A) She was startled. (B) She was raped. (C) She was attacked. (D) She was robbed.",
+      "reference_choice": "A",
+      "reference_answer": "She was startled.",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q14",
+      "question": "What happened to Mr. Palugger? (A) He was pushed out of the airlock. (B) He was beaten to death. (C) The man in the red mask shot him. (D) He died of his illness.",
+      "reference_choice": "D",
+      "reference_answer": "He died of his illness.",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q15",
+      "question": "How long did it take for the passengers to form a council? (A) One month (B) Two weeks (C) Two months (D) Ten days",
+      "reference_choice": "C",
+      "reference_answer": "Two months",
+      "category": "count_time"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q17",
+      "question": "How many times has Critten been a Nilly? (A) 8 (B) 5 (C) 7 (D) 6",
+      "reference_choice": "C",
+      "reference_answer": "7",
+      "category": "count_time"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q3",
+      "question": "Which of these is true about the Red Mask? (A) He is entirely harmless and it just looks like he's trouble (B) He is a passenger looking for some entertainment (C) He throws the passengers' belongings overboard (D) He does not hesitate to use physical violence",
+      "reference_choice": "A",
+      "reference_answer": "He is entirely harmless and it just looks like he's trouble",
+      "category": "option_discrimination"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q4",
+      "question": "Why does Captain Branson warn Ellason that he won't be able to publish his observations? (A) He knows there are secrets too gruesome for public consumption (B) He is going to ask Ellason to sign a Non-Disclosure Agreement (C) He does not think they will make it back to Earth alive (D) He will be observing an inside job meant to protect the crew",
+      "reference_choice": "D",
+      "reference_answer": "He will be observing an inside job meant to protect the crew",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q5",
+      "question": "Which is true about the role of Interstellar in this story? (A) They hire Ellason so that memories of the journey can be documented for the families who are traveling (B) They hire the Red Mask so that they can make back some of the costs of running the mission (C) They hire the Red Mask as well as a reporter to make it look like they have nothing to hide (D) They are the company who hired Ellason in order to get to the bottom of why the missions are going awry",
+      "reference_choice": "C",
+      "reference_answer": "They hire the Red Mask as well as a reporter to make it look like they have nothing to hide",
+      "category": "option_discrimination"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q6",
+      "question": "Which of these is not true about Harrel Critten? (A) He was in cahoots with the captain all along (B) He is a member of the crew (C) He was hired by the same people as the reporter was (D) He is killed in order to protect the secret of the Red Mask",
+      "reference_choice": "D",
+      "reference_answer": "He is killed in order to protect the secret of the Red Mask",
+      "category": "option_discrimination"
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "question_id": "q7",
+      "question": "Which of these was not an effect of giving the police force half-powered staters? (A) It caused some issues while the police force got trigger-happy, adding to the paranoia (B) It made the ship's environment safer now that the police were armed (C) The passenger police force felt they had some power (D) It was what allowed the Red Mask to finally acquire a weapon",
+      "reference_choice": "B",
+      "reference_answer": "It made the ship's environment safer now that the police were armed",
+      "category": "other"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q11",
+      "question": "What didn't surprise Matilda about Haron's house? (A) the outside was poorly kept up (B) she was fed exactly what she wanted (C) it had space for six women to stay (D) she was locked in her room",
+      "reference_choice": "C",
+      "reference_answer": "it had space for six women to stay",
+      "category": "other"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q12",
+      "question": "Why did Mr. Gorka let these women stay in his house? (A) he wanted to find a suitable wife (B) he wanted to find a woman that would enjoy listening to him speak (C) he planned to capture these women and keep them (D) he wanted to use telepathy on them",
+      "reference_choice": "B",
+      "reference_answer": "he wanted to find a woman that would enjoy listening to him speak",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q13",
+      "question": "What is not a reason for Matilda to tell the librarian what happened? (A) she had been asked to relay a message to his wife (B) she wanted to tell someone her crazy story (C) she wanted to make sure the librarian stayed away from him (D) she had made a promise to return",
+      "reference_choice": "C",
+      "reference_answer": "she wanted to make sure the librarian stayed away from him",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q14",
+      "question": "How didn't Matilda feel when Haron was talking? (A) enlightened (B) frustrated (C) surprised (D) confused",
+      "reference_choice": "A",
+      "reference_answer": "enlightened",
+      "category": "other"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q15",
+      "question": "Why did the librarian really give every woman Mr. Gorka's address? (A) to find a woman that would really listen to him (B) she wanted to hear their stories (C) to prove him wrong (D) to help him find a suitable companion",
+      "reference_choice": "C",
+      "reference_answer": "to prove him wrong",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q4",
+      "question": "Why does Matilda feel she was being made fun of? (A) She though t Gorka was making up stories to appeal to her childish nature. (B) She thought Gorka was playing with her trusting nature by telling her lies. (C) She thought Gorka didn’t respe ct her enough, (D) She thought Gorka was trying to make her feel stupid by saying things she couldn’t disprove.",
+      "reference_choice": "B",
+      "reference_answer": "She thought Gorka was playing with her trusting nature by telling her lies.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q5",
+      "question": "Has Matilda changed the end of the story? (A) No. She still hasn’t found a husband, and will likely be Pen Pals again. (B) No. She’s still looking for fantasies, as evidence by her looking up at the shooting star. (C) Yes. She is like Mrs. Gorky no3, chasing after impossible theories. (D) Yes. She’s more grounded now, and less naive.",
+      "reference_choice": "D",
+      "reference_answer": "Yes. She’s more grounded now, and less naive.",
+      "category": "counterfactual_theme"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q6",
+      "question": "Is Haron’s story true? (A) No. Haron only tells her the story in the hopes of getting his wife to come home, (B) Yes. Matilda confirms when she sees the “shooting star.” (C) Yes, though only his wife is aware of that. (D) No. Both he and his wife are truly delusional.",
+      "reference_choice": "B",
+      "reference_answer": "Yes. Matilda confirms when she sees the “shooting star.”",
+      "category": "other"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q7",
+      "question": "What is significant about the meal Matilda is served? (A) It lends credence to Gorka’s otherworldly claims. How else could it have happened? (B) She’d been starving, and it was enough to distract her from the reality of what happened to her. (C) It’s exactly what she wanted to eat, and she didn’t have to ask for it. , (D) It means Gorka’s paranoid servant had been observing her, and determined her favorite foods.",
+      "reference_choice": "A",
+      "reference_answer": "It lends credence to Gorka’s otherworldly claims. How else could it have happened?",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "question_id": "q9",
+      "question": "How did Matilda's mother feel about Matilda? (A) she wanted Matilda to get married and finally move out (B) she loves her daughter but wishes she'd settle with a man (C) she was jealous of how her daughter handled the men she met (D) she thinks Matilda is very wise in the decisions she makes",
+      "reference_choice": "B",
+      "reference_answer": "she loves her daughter but wishes she'd settle with a man",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "question_id": "q0",
+      "question": "What is the unspoken warning of the psychologist? (A) Even good jobs get boring on Terra. (B) Private citizens do not enjoy the same rights as spacemen. (C) The culture on Terra is radically different from the culture in space. (D) The gravity on Terra could make a spaceman feel sick all the time.",
+      "reference_choice": "C",
+      "reference_answer": "The culture on Terra is radically different from the culture in space.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "question_id": "q10",
+      "question": "Upon landing, Craig is greeted by whom? (A) A reporter and his cameraman (B) Two members of Terra's welcoming committee (C) Two screening technicians (D) A psychologist and his assistant",
+      "reference_choice": "C",
+      "reference_answer": "Two screening technicians",
+      "category": "other"
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "question_id": "q12",
+      "question": "Sensatia most likely refers to ________. (A) illicit drugs (B) microphone shorters (C) pornography (D) virtual reality equipment",
+      "reference_choice": "C",
+      "reference_answer": "pornography",
+      "category": "other"
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "question_id": "q2",
+      "question": "What is the Terran opinion of spacemen? (A) Spacemen are more like aliens than humans. (B) Spacemen are like sailors. (C) Spacemen are hicks. (D) Spacemen are of lower intelligence.",
+      "reference_choice": "A",
+      "reference_answer": "Spacemen are more like aliens than humans.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "question_id": "q4",
+      "question": "Why is Wyandotte didactic? (A) He is likely being monitored by the Terrans and cannot speak freely. (B) He thinks Craig is an uneducated hick. (C) He knows that gravity conditioning is horrible. He is trying to change Craig's mind about going to Terra. (D) He thinks Craig will be a fish out of water in Terran society.",
+      "reference_choice": "D",
+      "reference_answer": "He thinks Craig will be a fish out of water in Terran society.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "question_id": "q7",
+      "question": "Which activity is part of the psychometric evaluation? (A) A trial period of exposure to gravity conditions on Terra (B) Role playing worst case scenarios on Terra (C) Exposure to video and audio footage from Terra (D) Lengthy interviews with multiple officials who have been to Terra",
+      "reference_choice": "A",
+      "reference_answer": "A trial period of exposure to gravity conditions on Terra",
+      "category": "other"
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "question_id": "q9",
+      "question": "Why is it important to watch the ones who don't become physically ill during the conditioning process? (A) They could be tapped as leaders for Freedomite missions (B) It is a sign that they are deviant extraterrestrials (C) Their bodies' familiarity with gravity naturally makes them suspicious (D) Their bodies may naturally produce paraoxynebutal",
+      "reference_choice": "C",
+      "reference_answer": "Their bodies' familiarity with gravity naturally makes them suspicious",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "question_id": "q0",
+      "question": "Why didn't Moran kill Harper? (A) Moran is not a murderer at heart. He only killed the other man to save a life. (B) Moran would rather kill Burleigh. He is waiting for the right moment. (C) Moran is not a killer. (D) Moran likes Harper. Harper is a decent guy.",
+      "reference_choice": "A",
+      "reference_answer": "Moran is not a murderer at heart. He only killed the other man to save a life.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "question_id": "q1",
+      "question": "What is the mission of the crew? (A) The mission is to answer a distress signal. (B) The mission is to maroon Moran as punishment for murder. (C) They are rebels, regrouping to fight their government another day. (D) They are rebels, fleeing a collapsed revolt.",
+      "reference_choice": "C",
+      "reference_answer": "They are rebels, regrouping to fight their government another day.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "question_id": "q10",
+      "question": "What is hiding underneath the gigantic mound on the alien planet? (A) A pulsing, reeking object egg casing that contains countless unhatched beetle eggs (B) An empty spacecraft where a crew member had survived long enough to set up a marker (C) A 'yard-worm,' which is an uncontrolled type of an 'inch-worm' (D) The remains of a crew that had landed on the alien planet a century earlier",
+      "reference_choice": "B",
+      "reference_answer": "An empty spacecraft where a crew member had survived long enough to set up a marker",
+      "category": "other"
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "question_id": "q11",
+      "question": "Why does Moran think it could be beneficial if one of the crew members was killed on the alien planet? (A) He would be more likely to survive an attack from the Nadine crew if they ambushed him. (B) He could convert their body to nutrients, which he could use to survive longer on the alien planet. (C) He and the remaining crew members could pass security clearance with only five members on board. (D) He could steal the deceased crew member's identity and use it to start a new life on a new planet.",
+      "reference_choice": "C",
+      "reference_answer": "He and the remaining crew members could pass security clearance with only five members on board.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "question_id": "q2",
+      "question": "Why doesn't the crew throw Moran out of the airlock? (A) They are not murderers. (B) They do not want to be accused of aiding and abetting. (C) The crew will alert the authorities when they reach Loris. Moran will be brought to justice for his crime. (D) They are marooning him as punishment for murder.",
+      "reference_choice": "A",
+      "reference_answer": "They are not murderers.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "question_id": "q6",
+      "question": "Why is the crew of the Nadine not more upset that Moran stole their spacecraft? (A) They view Moran as a potential sacrifice to any predators or officials they may discover upon the alien planet. (B) They are fugitives just like Moran, and don't believe he has a motive to thwart their mission. (C) They have no space navigation experience, while Moran does, and view him as potentially useful. (D) They are not threatened by Moran because he does not have any weapons on his person.",
+      "reference_choice": "B",
+      "reference_answer": "They are fugitives just like Moran, and don't believe he has a motive to thwart their mission.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "question_id": "q8",
+      "question": "If, after being marooned on the alien planet, Moran does not discover any edible vegetation, how would he be expected to survive? (A) His space-suit is equipped with a nozzle through which he can absorb nutrients in gas form. (B) His only option would be to prey on animals, bacteria, fungi, or other living creatures. (C) He could use limited, fast-growing seed packets provided by the crew members of the Nadine. (D) He would not have any viable chance of survival without non-toxic vegetation.",
+      "reference_choice": "C",
+      "reference_answer": "He could use limited, fast-growing seed packets provided by the crew members of the Nadine.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q0",
+      "question": "Why are they hunting the farn beast? (A) This is a vacation hunting trip for Extrone. (B) They are hunting the farn beasts because farn beasts are dangerous. (C) Farn beasts are dangerous creatures that must be eliminated. (D) Farn beasts are delicious.",
+      "reference_choice": "A",
+      "reference_answer": "This is a vacation hunting trip for Extrone.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q10",
+      "question": "Which doesn't describe Extrone? (A) excitable (B) generous (C) wealthy (D) powerful",
+      "reference_choice": "B",
+      "reference_answer": "generous",
+      "category": "option_discrimination"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q12",
+      "question": "Why is Mia most afraid of Extrone? (A) he has the military behind him (B) they know too much about him now (C) he knows too many of their secrets (D) he's the only one with a weapon",
+      "reference_choice": "B",
+      "reference_answer": "they know too much about him now",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q13",
+      "question": "How is their world different from ours? (A) there is distrust among the citizens (B) the government is run the same (C) they both have powerful armies (D) powerful people control what happens next",
+      "reference_choice": "B",
+      "reference_answer": "the government is run the same",
+      "category": "other"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q16",
+      "question": "What may have gone differently if Ri had listened to Mia? (A) they could have shared the truth with the galaxy (B) they could have killed Extrone (C) they both could have escaped Extrone (D) they could have discovered the farn beasts without bait",
+      "reference_choice": "B",
+      "reference_answer": "they could have killed Extrone",
+      "category": "counterfactual_theme"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q17",
+      "question": "What doesn't a farn beast have according to the story? (A) a strong sense of smell (B) a tail (C) mates (D) sharp fangs",
+      "reference_choice": "A",
+      "reference_answer": "a strong sense of smell",
+      "category": "other"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q18",
+      "question": "Which isn't a reason that Extrone chose Ri as bait? (A) he's upset that Ri killed a farn beast first (B) he's the best suited to be bait (C) he never planned to let Ri live (D) he doesn't trust Ri",
+      "reference_choice": "B",
+      "reference_answer": "he's the best suited to be bait",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q4",
+      "question": "How does Lin feel about Extrone? (A) Mia is frightened of Extrone, but he doesn't think Extrone will kill him. (B) Lin hates Extrone and is planning on killing him at the first opportunity. (C) Lin thinks Extrone is the kind of ruler the system needs. (D) Lin is frightened that Extrone is going to kill him.",
+      "reference_choice": "C",
+      "reference_answer": "Lin thinks Extrone is the kind of ruler the system needs.",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q6",
+      "question": "Who is Extrone? (A) Extrone is the leader of the Ninth Fleet. (B) Extrone is an evil warlord. (C) Extrone is the ruler of this system. (D) Extrone is the leader of the rebellion.",
+      "reference_choice": "C",
+      "reference_answer": "Extrone is the ruler of this system.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "question_id": "q9",
+      "question": "What don't Mia and Ri have in common? (A) they both think Extrone is going to kill them (B) they've killed farn beasts (C) they're businessmen (D) they both dislike Extrone",
+      "reference_choice": "A",
+      "reference_answer": "they both think Extrone is going to kill them",
+      "category": "other"
+    },
+    {
+      "article_name": "a_70271b3492f6a4fc",
+      "question_id": "q1",
+      "question": "What is ironic about \"Unmade Beds\" rejection from larger US distributors? (A) Larger theaters won't show \"Unmade Beds\" despite the fact that they show many similar films with less public contention (B) In overcoming criticism from larger US distributors, the four main characters of the film finally receive the redemption they've been seeking (C) Smaller theaters will likely feature \"Unmade Beds\" merely for its controversial nature (D) Its rejection from US distributors is a reflection of how American society spurns the film's four main characters",
+      "reference_choice": "C",
+      "reference_answer": "Smaller theaters will likely feature \"Unmade Beds\" merely for its controversial nature",
+      "category": "count_time"
+    },
+    {
+      "article_name": "a_70271b3492f6a4fc",
+      "question_id": "q2",
+      "question": "The author believes that a/an ________ audience will enjoy the film \"Unmade Beds.\" (A) voyeuristic (B) insensitive (C) crude (D) empathetic",
+      "reference_choice": "A",
+      "reference_answer": "voyeuristic",
+      "category": "other"
+    },
+    {
+      "article_name": "a_70271b3492f6a4fc",
+      "question_id": "q4",
+      "question": "What is the author's strongest critique of Barker's directorial style? (A) The drafted nature of Barker's characters' speech is inconsistent with his claims of the film being categorized as a documentary (B) The film does not include enough monologues from each of the four characters to be considered a documentary, and instead relies predominantly on voice-over narration (C) Barker attempts to capitalize on western society's simultaneous intrigue and revulsion with vile characters who live at the margins (D) Barker's juxtaposition of the sympathetic with the distasteful does not match up with the actual lived realities of the four main characters featured in the film",
+      "reference_choice": "A",
+      "reference_answer": "The drafted nature of Barker's characters' speech is inconsistent with his claims of the film being categorized as a documentary",
+      "category": "other"
+    },
+    {
+      "article_name": "a_70271b3492f6a4fc",
+      "question_id": "q6",
+      "question": "Of the films reviewed, which one received the most positive criticism? (A) There's Something About Mary (B) Unmade Beds (C) The Slums of Beverly Hills (D) The Avengers (new version)",
+      "reference_choice": "C",
+      "reference_answer": "The Slums of Beverly Hills",
+      "category": "other"
+    },
+    {
+      "article_name": "a_70271b3492f6a4fc",
+      "question_id": "q7",
+      "question": "What isn't something Unmade Beds showed its audience? (A) how desperate people are in Manhattan (B) a person's size can sometimes affect their happiness (C) people are all inherently judging others (D) the reality of dating in New York",
+      "reference_choice": "D",
+      "reference_answer": "the reality of dating in New York",
+      "category": "other"
+    },
+    {
+      "article_name": "a_70271b3492f6a4fc",
+      "question_id": "q9",
+      "question": "What does the author think would have improved The Slums of Beverly Hills? (A) a more realistic plot (B) more episodes to explain the situation (C) a more experienced director (D) more attractive actors",
+      "reference_choice": "C",
+      "reference_answer": "a more experienced director",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q0",
+      "question": "What is the significance of the story's title? (A) It hints at the extra costs for less natural things (B) It marks the setting for the story (C) It hints at Linton's constant desire for sweet things (D) It shows Linton's goal for the story",
+      "reference_choice": "A",
+      "reference_answer": "It hints at the extra costs for less natural things",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q11",
+      "question": "Howell offers all of the following reasons why resurrection is problematic EXCEPT: (A) It is illegal (B) It conflicts with many people's religious beliefs (C) It compromises the death industry (D) It is extremely costly",
+      "reference_choice": "D",
+      "reference_answer": "It is extremely costly",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q13",
+      "question": "Why did Linton spend time in an asylum? (A) he invested in bad stocks (B) he committed murder (C) suffers from delusions and hallucinations (D) his wife died from cancer",
+      "reference_choice": "B",
+      "reference_answer": "he committed murder",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q14",
+      "question": "Which of the following risks are explicitly associated with bringing someone back to life? (A) They may desire to seek revenge on the person who killed them (B) They may not recognize the person who resurrected them (C) The person who received their insurance settlement will have to return it (D) They may suffer from cell deterioration",
+      "reference_choice": "A",
+      "reference_answer": "They may desire to seek revenge on the person who killed them",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q17",
+      "question": "What is the most likely identity of the man Linton believes to be Mr. Snead? (A) Snead's twin brother (B) A complete stranger (C) Snead (who never died) (D) A resurrected Snead",
+      "reference_choice": "D",
+      "reference_answer": "A resurrected Snead",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q18",
+      "question": "Why does Linton initially believe that Greta attempted to murder him after he resurrected her? (A) She wants the rest of his fortune (B) She had a brain malfunction (C) She is suffering from hallucinations (D) She is part of an android cult",
+      "reference_choice": "B",
+      "reference_answer": "She had a brain malfunction",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q4",
+      "question": "Which is the best description of Linton? (A) He is a heartbroken man wanting to find new goals for his life (B) He is trying to recover from his past in the Mafia and wants to find legal ways to accomplish his goals (C) He is a gullible person determined to follow his instinct (D) He is a risk-taker who prefers to experience the more illegal things society has to offer",
+      "reference_choice": "C",
+      "reference_answer": "He is a gullible person determined to follow his instinct",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q6",
+      "question": "Which best describes the role of the Mafia in this story? (A) Their involvement shows public perception on the procedure that Linton pays for (B) They are the ones responsible for the technology that Linton pays for (C) They were Linton's previous employers and the source of the money he uses to pay for the operation (D) They show how violence-stricken the society is",
+      "reference_choice": "A",
+      "reference_answer": "Their involvement shows public perception on the procedure that Linton pays for",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "question_id": "q8",
+      "question": "Which of these is not a likely consequence of the end of the story? (A) Howell will be hesitant to help Linton again (B) The doctor continues taking advantage of people (C) Linton goes through treatment, eventually repeating the same events (D) Greta finds her own way to establish herself and find the money she wants",
+      "reference_choice": "D",
+      "reference_answer": "Greta finds her own way to establish herself and find the money she wants",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "question_id": "q0",
+      "question": "What is the relationship between Meyerhoff and Zeckler? (A) Meyerhoff is Zeckler's employee. (B) Meyerhoff is Zeckler's employer. (C) Meyerhoff is Zeckler's lawyer. (D) Meyerhoff is Zeckler's Consulate representative.",
+      "reference_choice": "D",
+      "reference_answer": "Meyerhoff is Zeckler's Consulate representative.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "question_id": "q10",
+      "question": "What motivates people like Zeckler to commit such crimes as he committed? (A) New interplanetary laws created more incentive to commit crimes in vulnerable areas than they offered protection from such crimes. (B) Representatives from the Trading Commission set up an operation to hire and arrest con men in order to secure resources without being indicted. (C) The interplanetary laws made it easy for wealthy corporations and entities to prey upon those they considered less civilized and intelligent. (D) The Trading Commission offered monetary compensation for whoever was willing to secure unexploited trading ground on neighboring planets.",
+      "reference_choice": "A",
+      "reference_answer": "New interplanetary laws created more incentive to commit crimes in vulnerable areas than they offered protection from such crimes.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "question_id": "q14",
+      "question": "What does the outcome of Zeckler's trial suggest about the modern legal system? (A) The legal system is set up to benefit those with more power and wealth. (B) For a defendant in the legal system, there is no desirable outcome. (C) The better lawyer a defendant has, the more likely they are to clear their names. (D) Sometimes it is more optimal to lie and make a guilty plea, than to tell the truth and be found guilty.",
+      "reference_choice": "C",
+      "reference_answer": "The better lawyer a defendant has, the more likely they are to clear their names.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "question_id": "q2",
+      "question": "Why do the Altairians let Zeckler go? (A) They let Zeckler go because he did not murder any Altairians. (B) They let Zeckler go because he is the best liar. (C) They let Zeckler go because Altairian law doesn't apply to Earthmen. (D) They let Zeckler go because he converted to the religion of the Altairian Goddess.",
+      "reference_choice": "B",
+      "reference_answer": "They let Zeckler go because he is the best liar.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "question_id": "q4",
+      "question": "How does Meyerhoff feel about Zeckler? (A) Meyerhoff thinks that Zeckler is a fool. (B) Meyerhoff thinks that Zeckler is a skilled con-man. (C) Meyerhoff thinks that Zeckler is misunderstood. (D) Meyerhoff thinks that Zeckler is an idiot.",
+      "reference_choice": "A",
+      "reference_answer": "Meyerhoff thinks that Zeckler is a fool.",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "question_id": "q7",
+      "question": "How do the Altairians treat the biggest liars? (A) The biggest liars are sent to Earth. (B) The biggest liars can do whatever they want and get away with it. (C) The biggest liars are thrown into a pit. There they are eaten by the Goddess. (D) The biggest liars are hanged.",
+      "reference_choice": "B",
+      "reference_answer": "The biggest liars can do whatever they want and get away with it.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "question_id": "q8",
+      "question": "Relationship between Harry Zeckler and Paul Meyeroff? (A) Meyeroff is Zeckler's legal representation (B) Meyeroff is an official sent to extradite Zeckler (C) Zeckler is a con man for Meyeroff (D) Zeckler abetted in a crime that Meyeroff perpetrated",
+      "reference_choice": "B",
+      "reference_answer": "Meyeroff is an official sent to extradite Zeckler",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "question_id": "q1",
+      "question": "What was the overall structure of the article? (A) Describing the progress of a few candidates during the primaries (B) Describing a few major candidates and their core beliefs during and at the end of the primaries (C) Describing George W. Bush's decisions over the course of the presidential primaries (D) Describing every candidate's major decisions over the course of the presidential primaries",
+      "reference_choice": "A",
+      "reference_answer": "Describing the progress of a few candidates during the primaries",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "question_id": "q3",
+      "question": "What was something that Dole, Bauer, and McCain all have in common? (A) They were all trying to justify their position in the primaries (B) They were all trying to secure financial backing (C) They all had very small odds of winning overall (D) They all had things that were actively going against their personal record",
+      "reference_choice": "A",
+      "reference_answer": "They were all trying to justify their position in the primaries",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "question_id": "q4",
+      "question": "What makes Buchanan different from the other candidates? (A) He had less financial backing than most of them (he had almost no financial backing at all) (B) He had different politics than the others (C) He was more moderate than the others (D) He cared about meeting with Americans in person during his campaigning more than the rest of them did",
+      "reference_choice": "B",
+      "reference_answer": "He had different politics than the others",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "question_id": "q8",
+      "question": "What doesn't the author believe about John McCain? (A) he was trying to send a message about Ames being unimportant (B) he had a lot of courage and cunning to skip over Ames (C) he's the only experienced political candidate in the running (D) McCain could afford to miss Ames because of his support in other states",
+      "reference_choice": "C",
+      "reference_answer": "he's the only experienced political candidate in the running",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "question_id": "q9",
+      "question": "How does the author seem to feel about the upcoming presidential race? (A) surprised by the atypical political happenings (B) excited to see how the contestants \"battle\" (C) confident that it will be a close race between the four (D) convinced that he already knows how the race will end",
+      "reference_choice": "B",
+      "reference_answer": "excited to see how the contestants \"battle\"",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q12",
+      "question": "What best describes Eddie's character? (A) He has a deep appreciation for nuclear science. (B) He is boy who often gets into trouble. (C) He tries to act older and more intelligent than he is. (D) He tries to copy everything his father says, does, and feels.",
+      "reference_choice": "A",
+      "reference_answer": "He has a deep appreciation for nuclear science.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q14",
+      "question": "What is Eddie's response to Teena's mother's concern over the missing isotope? (A) He only causes more concern for her after explaining isotopes. (B) He acts equally as concerned as her. (C) He tries to comfort her by explaining isotopes. (D) He tries to demonstrate his knowledge of radioactivity to her.",
+      "reference_choice": "C",
+      "reference_answer": "He tries to comfort her by explaining isotopes.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q15",
+      "question": "Out of the choices below, predict which future career Eddie would most likely pick given his interests present in the article. (A) A nuclear scientist because he is always curious. (B) A college professor as inspired by his father. (C) An nuclear engineer because he enjoys inventing. (D) A spy because they are intriguing.",
+      "reference_choice": "A",
+      "reference_answer": "A nuclear scientist because he is always curious.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q17",
+      "question": "How would Eddie's reaction to the missing isotope been different if he had not been so knowledgeable about radioactivity? (A) He would have been very worried due to the severity of the situation. (B) He would not have cared because he would be disinterested in the situation. (C) He would have been extremely curious about the situation. (D) He would have found a way to be more helpful for his father's situation.",
+      "reference_choice": "B",
+      "reference_answer": "He would not have cared because he would be disinterested in the situation.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q18",
+      "question": "What can you conclude about Eddie's attitude towards his father? (A) Eddie academically challenges his father. (B) Eddie annoys his father. (C) Eddie looks up to his father. (D) Eddie tries to relate to his father.",
+      "reference_choice": "C",
+      "reference_answer": "Eddie looks up to his father.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q19",
+      "question": "What is one likely difference between Eddie and Teena? (A) Teena is more inspired by her parent(s) than Eddie. (B) Teena is less intelligent than Eddie. (C) Teena is not as knowledgeable in science as Eddie. (D) Teena dislikes science, unlike Eddie.",
+      "reference_choice": "C",
+      "reference_answer": "Teena is not as knowledgeable in science as Eddie.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q3",
+      "question": "What dream does Eddie have and why is it significant? (A) Eddie has a dream about prospecting with his father at Cedar point. This dream is what inspires him to find out what happened to the missing isotope by searching the hills behind the college. (B) Eddie has a dream about prospecting with his father’s Geiger counter. The dream is what inspires his hike to Cedar Point. (C) Eddie has a dream about prospecting with his father’s Geiger counter. The dream is what inspires Eddie to go over to Teena’s house and teach her about isotopes. (D) Eddie has a dream about prospecting with his father’s Geiger counter. The dream is what inspires the hike he has with Teena.",
+      "reference_choice": "D",
+      "reference_answer": "Eddie has a dream about prospecting with his father’s Geiger counter. The dream is what inspires the hike he has with Teena.",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q8",
+      "question": "How many times does Eddie go over to Teena’s house? What is the common thread, or reason, for Eddie going over there? (A) Three times. Each time concern Eddie’s infatuation with Teena, which is why he makes up excuses like going prospecting at Cedar point. (B) Twice. Both times concern Eddie’s infatuation with Teena, which is why he makes up excuses like going prospecting for uranium. (C) Twice. Both times concern something to do with Eddie’s interest in radioactivity. (D) Three times. Each time concern something to do with Eddie’s interest in radioactivity.",
+      "reference_choice": "C",
+      "reference_answer": "Twice. Both times concern something to do with Eddie’s interest in radioactivity.",
+      "category": "count_time"
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "question_id": "q9",
+      "question": "How does Teena find out about radioactivity? (A) Eddie teaches her about radioactivity during their hike to Cedar Point. (B) Eddie teaches her about radioactivity while he helps her finish doing the dishes. (C) Eddie teaches her about radioactivity when he is explaining the dream he had about Cedar Point. (D) Eddie teaches Teena and her mother about about radioactivity after the news gets out about Mr. Taylor’s isotope being stolen.",
+      "reference_choice": "D",
+      "reference_answer": "Eddie teaches Teena and her mother about about radioactivity after the news gets out about Mr. Taylor’s isotope being stolen.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "question_id": "q10",
+      "question": "Which mystical element didn't Judy claim to encounter? (A) gnomes (B) ghosts (C) a magic carpet (D) a talking fountain",
+      "reference_choice": "C",
+      "reference_answer": "a magic carpet",
+      "category": "other"
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "question_id": "q11",
+      "question": "What was Lorraine the least secretive about? (A) her knowledge of the fountain (B) her jealousy of Judy (C) her relationship with her husband (D) why she didn't want to go to the Brandt estate",
+      "reference_choice": "B",
+      "reference_answer": "her jealousy of Judy",
+      "category": "other"
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "question_id": "q13",
+      "question": "Who is Honey? (A) Judy's sister-in-law (B) Judy's younger sister (C) their mutual friend (D) Judy's grandmother",
+      "reference_choice": "A",
+      "reference_answer": "Judy's sister-in-law",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "question_id": "q14",
+      "question": "What did Lorraine likely learn by the end of this text? (A) be loyal to your friends (B) honesty can keep you out of trouble (C) be skeptical of stories (D) jealousy can get you in trouble",
+      "reference_choice": "B",
+      "reference_answer": "honesty can keep you out of trouble",
+      "category": "other"
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "question_id": "q15",
+      "question": "What is likely to happen next? (A) the girls will be arrested (B) the girls will get back in their car and drive to Judy's house (C) the girls will locate the fountain and make wishes (D) the girls will meet the people living in the Brandt estate",
+      "reference_choice": "D",
+      "reference_answer": "the girls will meet the people living in the Brandt estate",
+      "category": "other"
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "question_id": "q8",
+      "question": "What do Lois and Lorraine have in common? (A) they both care deeply about Judy (B) they both have a curious nature (C) they got married on the same day (D) they're both unhappy in their marriages",
+      "reference_choice": "C",
+      "reference_answer": "they got married on the same day",
+      "category": "other"
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "question_id": "q9",
+      "question": "Which word least describes Judy? (A) humble (B) secretive (C) inquisitive (D) polite",
+      "reference_choice": "B",
+      "reference_answer": "secretive",
+      "category": "other"
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "question_id": "q0",
+      "question": "What is the significance of Lovenbroy’s seasons? (A) Each season’s weather brings a new set of cultural recreation and work. (B) Each season calls for a new way to tend the Bacchus vine. (C) Each season requires a new cultural shift in line with the needs of the young people. (D) Each season’s weather brings a new approach to how the community thinks about its relationship to wine.",
+      "reference_choice": "A",
+      "reference_answer": "Each season’s weather brings a new set of cultural recreation and work.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "question_id": "q1",
+      "question": "How often do Bachus vines mature and what is the significance of that timeline? (A) Every 18 years a vintage is held, which is a kind of celebration of art. (B) Every 12 years a vintage is held, which also serves as a cultural festival that encourage young people to procreate. (C) Every 18 years a vintage is held, which serves as a kind of celebration of life for both young and old people. (D) Every 12 years a vintage is held, wherein the young people are made to harvest all the grapes.",
+      "reference_choice": "B",
+      "reference_answer": "Every 12 years a vintage is held, which also serves as a cultural festival that encourage young people to procreate.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "question_id": "q12",
+      "question": "What can you conclude about Retief's character? (A) He is gullible and easily tricked. (B) He is firm but can be harsh. (C) He has a soft spot for few in his life. (D) He can greedy and demanding.",
+      "reference_choice": "B",
+      "reference_answer": "He is firm but can be harsh.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "question_id": "q13",
+      "question": "Why is Retief so concerned about the tractor order? (A) Because he knows whoever ordered the tractors has bad intentions. (B) Because he knows the order is a mistake. (C) Because the order of tractors is unusually large. (D) Because no one else appears to be concerned about the tractors.",
+      "reference_choice": "C",
+      "reference_answer": "Because the order of tractors is unusually large.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "question_id": "q15",
+      "question": "What is one common theme in this article? (A) Money buys happiness. (B) Suspicion indicates deception. (C) Education does not always lead to success. (D) Wit and charm are the keys for negotiation.",
+      "reference_choice": "B",
+      "reference_answer": "Suspicion indicates deception.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "question_id": "q4",
+      "question": "How is Croanie going to affect Lovenbroy? (A) They are going to steal its students. (B) They are going to help Lovenbroy pick it’s crop. (C) They are going to steal all its wine. (D) They are going to invade it.",
+      "reference_choice": "D",
+      "reference_answer": "They are going to invade it.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "question_id": "q7",
+      "question": "Who wanted to mine Lovenbroy’s minerals? (A) Croanie (B) MUDDEL (C) Boge (D) Lovenbroy neighbors",
+      "reference_choice": "C",
+      "reference_answer": "Boge",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "question_id": "q0",
+      "question": "What will happen if Anne becomes pregnant? (A) Anne and Terry will be arrested and sterilized. (B) Anne and Terry will be executed. (C) Anne and Terry will be arrested, and Anne will be forced to abort the pregnancy. (D) Anne and Terry will be forced to divorce, and they will be given a hysterectomy and a vasectomy, respectively.",
+      "reference_choice": "D",
+      "reference_answer": "Anne and Terry will be forced to divorce, and they will be given a hysterectomy and a vasectomy, respectively.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "question_id": "q10",
+      "question": "Which of the following is NOT true of Class C citizens? (A) They are not legally permitted to reproduce and bear human children. (B) They are not legally permitted to go against the results of their aptitude tests. (C) There is a 100% chance that they will develop and/or die from a significant physical or mental illness. (D) It is difficult for them to access news and information, such as a viral outbreak.",
+      "reference_choice": "D",
+      "reference_answer": "It is difficult for them to access news and information, such as a viral outbreak.",
+      "category": "option_discrimination"
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "question_id": "q11",
+      "question": "What act suggests that Terry empathizes with the owners of the neutroids he confiscates as part of his job? (A) He returns lost neutroids to their owners instead of taking them to the pound and incinerating them. (B) He drops charges after they assault him if they agree to cooperate with authorities. (C) He ignores discrepancies in serial number checks even though it could cost him his job. (D) He thinks about stealing a neutroid for his wife, but ultimately feels bad and returns it to its owner.",
+      "reference_choice": "B",
+      "reference_answer": "He drops charges after they assault him if they agree to cooperate with authorities.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "question_id": "q2",
+      "question": "Why does Mrs. Glubbes shoot the doctor? (A) He substituted her nuetroid for an identical model. (B) She thinks he let her baby die. (C) The doctor will not take her baby to the hospital. (D) Mrs. Glubbes is mentally ill.",
+      "reference_choice": "A",
+      "reference_answer": "He substituted her nuetroid for an identical model.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "question_id": "q5",
+      "question": "Why shouldn't Anne feed the neutroids? (A) Neutroids can only form attachments with a limited number of people. The neutroids at the kennel belong to other people. (B) Neutroids are supposed to eat a nutritional paste from a mechanical feeder. (C) Neutroids have a special diet to limit their physical and mental development. (D) Neutroids could become excitable and bite someone who is not their owner.",
+      "reference_choice": "A",
+      "reference_answer": "Neutroids can only form attachments with a limited number of people. The neutroids at the kennel belong to other people.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "question_id": "q7",
+      "question": "What kind of trouble could unauthorized neutroids mean for Norris? (A) Unauthorized neutroid animals could be used as an alternate food source for the skyrocketing population. (B) Unauthorized neutroids could cause food scarcity. (C) Unauthorized neutroids would mean more taking \"babies\" away from their mothers and more killing. (D) A black market for nuetroids could result in neutroid slavery.",
+      "reference_choice": "C",
+      "reference_answer": "Unauthorized neutroids would mean more taking \"babies\" away from their mothers and more killing.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "question_id": "q8",
+      "question": "What is the most dangerous aspect of the neutroids and other mutant animals? (A) Because they are grouped together in isolated areas, it is possible that they could use their adorable appearance and innocent demeanor to hide the fact that they are conspiring to overthrow the society. (B) Because they only live up until a certain age, they often act with a level of invincibility that is threatening to society and its systems of social stratification. (C) Their cute appearance causes others to underestimate their high predatory instincts and behaviors, and many injuries and deaths result because of this incongruency. (D) Their cute appearance makes it easy for humans to get attached to them, and mass levels of attachment could potentially thwart current methods of classifying members of society.",
+      "reference_choice": "D",
+      "reference_answer": "Their cute appearance makes it easy for humans to get attached to them, and mass levels of attachment could potentially thwart current methods of classifying members of society.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "question_id": "q0",
+      "question": "How is the book \"Living a Normal Sex Life\" seen by these people? (A) It is frightening in an exciting way, for the people to learn something new (B) They respect its truths but are nervous about its implications (C) It is an important historical text appreciated from a research perspective (D) It is a rare artefact of a less-understood time",
+      "reference_choice": "B",
+      "reference_answer": "They respect its truths but are nervous about its implications",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "question_id": "q1",
+      "question": "What does this society think about breasts? (A) They are appreciated from an aesthetic standpoint but not a sexual one (B) They are considered to be milk-producing devices but nothing else (C) They are seen as vistigial structures (D) They are well-regarded because they are so rare",
+      "reference_choice": "C",
+      "reference_answer": "They are seen as vistigial structures",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "question_id": "q11",
+      "question": "All of the following terms describe the people's reaction to the destruction of the Maternite EXCEPT for: (A) perplexed (B) panicked (C) obtuse (D) accusatory",
+      "reference_choice": "D",
+      "reference_answer": "accusatory",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "question_id": "q14",
+      "question": "In describing the Conclave's reaction to the Maternite emergency, the author is making a comparison to: (A) how authoritarian governments, though less humane, are often more effective in executing policies (B) how modern leaders revert to ceremony and argument instead of problem-solving (C) how the filibuster prevents governments from making real progress for its people (D) how young members and elder members of governments typically reach an impasse",
+      "reference_choice": "B",
+      "reference_answer": "how modern leaders revert to ceremony and argument instead of problem-solving",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "question_id": "q3",
+      "question": "Which is least likely contributing to Xeon's request to move to the fields before the Oracle of Delni? (A) The urge to make the event less of a spectacle (B) The general desire to maintain some control in the situation (C) The general level of comfort of lying on marble (D) The pressure from Sias to keep the situation private",
+      "reference_choice": "D",
+      "reference_answer": "The pressure from Sias to keep the situation private",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "question_id": "q6",
+      "question": "Which is most true about how the volunteers are seen by the rest of their society? (A) They are appreciated for their level of discretion (B) They are respected for their dedication to each other above anything else (C) They are considered brave for undertaking such a disapproved task (D) They are disgraced for their choice to participate in such vile acts",
+      "reference_choice": "C",
+      "reference_answer": "They are considered brave for undertaking such a disapproved task",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "question_id": "q7",
+      "question": "Why are Melia and Xeon considered noble by the end of the story? (A) Because they discovered the truth about reproduction and brought it to the society (B) Because they did not tell others in the society what happened in detail, protecting them from the truth (C) Because they were willing to continue learning about this ill-understood act (D) Because they want to increase the efforts towards learning more about these historical acts",
+      "reference_choice": "C",
+      "reference_answer": "Because they were willing to continue learning about this ill-understood act",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_fba861f4a1791d74",
+      "question_id": "q2",
+      "question": "What wouldn't the author say about Unmade Beds? (A) it is a new genre of film (B) the film is dishonest and scripted (C) the characters aren't likable (D) this film will inspire many more like it to be created",
+      "reference_choice": "D",
+      "reference_answer": "this film will inspire many more like it to be created",
+      "category": "counterfactual_theme"
+    },
+    {
+      "article_name": "a_fba861f4a1791d74",
+      "question_id": "q3",
+      "question": "What is the author's purpose for writing this? (A) to inform people that documentaries aren't always accurate (B) to persuade people to be critical of movies they watch (C) to explain different films he's seen recently (D) to inform the audience of the changes in cinema",
+      "reference_choice": "C",
+      "reference_answer": "to explain different films he's seen recently",
+      "category": "other"
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "question_id": "q0",
+      "question": "What characteristic of Zotul does he believe he shares with the Earthmen? (A) cunning (B) integrity (C) creativity (D) impartiality",
+      "reference_choice": "B",
+      "reference_answer": "integrity",
+      "category": "other"
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "question_id": "q1",
+      "question": "What changes Koltan's mind about Earthmen, and ultimately condemns the Masur House to ruin? (A) He sees potential for the House of Masur to profit off of the Earthmen's inventions (B) He predicts that the Earthmen will not be able to withstand Zurian conditions for long, and that they will soon depart (C) He believes he can feign sincerity in order to steal their metal and other goods (D) He thinks that Earthmen are intellectually inferior and that he can manipulate them to do his bidding",
+      "reference_choice": "A",
+      "reference_answer": "He sees potential for the House of Masur to profit off of the Earthmen's inventions",
+      "category": "other"
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "question_id": "q10",
+      "question": "What word doesn't describe Broderick? (A) manipulative (B) patient (C) intelligent (D) selfish",
+      "reference_choice": "D",
+      "reference_answer": "selfish",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "question_id": "q2",
+      "question": "what is the 'gift from Earth'? (A) capitalism (B) the printing press (C) metal, copper wire, and other goods (D) destruction of the caste system",
+      "reference_choice": "A",
+      "reference_answer": "capitalism",
+      "category": "other"
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "question_id": "q7",
+      "question": "Who was the only one to listen and agree with Zotul? (A) Koltan (B) Zotul's wife (C) Kalrab (D) Broderick",
+      "reference_choice": "C",
+      "reference_answer": "Kalrab",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "question_id": "q8",
+      "question": "What wasn't something unheard of that the Earthmen brought to Zur? (A) the idea of credit (B) new roads (C) government (D) metal pots",
+      "reference_choice": "C",
+      "reference_answer": "government",
+      "category": "other"
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "question_id": "q12",
+      "question": "What is the tone like throughout the story? (A) Happy throughout (B) Calm to intense (C) Sad throughout (D) Joyous to sad",
+      "reference_choice": "D",
+      "reference_answer": "Joyous to sad",
+      "category": "other"
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "question_id": "q13",
+      "question": "What is the relationship like between Purnie and his new friends? (A) They don't get along at all (B) Purnie likes his new friends more than they like him (C) His new friends like Purnie more than Purnie likes them (D) They all get along well",
+      "reference_choice": "B",
+      "reference_answer": "Purnie likes his new friends more than they like him",
+      "category": "other"
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "question_id": "q14",
+      "question": "Why is the first part of the story so important? (A) It lets the reader know that it's Purnie's birthday (which becomes important later) (B) It lets the reader see how Purnie interacts with his family (C) It shows the reader a skill that Purnie's been practicing (D) It give great detail of the setting (which Purnie has to use later in the story to his advantage)",
+      "reference_choice": "C",
+      "reference_answer": "It shows the reader a skill that Purnie's been practicing",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "question_id": "q15",
+      "question": "What were Purnie's friends like in this story? (A) Self-interested and ignorant (B) Intelligent and caring (C) Malicious and blunt (D) Sweet and charming",
+      "reference_choice": "A",
+      "reference_answer": "Self-interested and ignorant",
+      "category": "other"
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "question_id": "q6",
+      "question": "Who are the animals that Purnie plays with? (A) They are three-legged ostriches. (B) They are a flock of spora. (C) They are mannikins. (D) They are humans.",
+      "reference_choice": "D",
+      "reference_answer": "They are humans.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "question_id": "q7",
+      "question": "Why does the Captain go looking for Purnie? (A) The Captain knows that an animal with Purnie's strength is worth a fortune. (B) The Captian knows an animal that can stop time is worth a fortune. (C) The Captain knows a radioactive animal is worth a fortune. (D) The Captain knows Purnie saved the crew.",
+      "reference_choice": "D",
+      "reference_answer": "The Captain knows Purnie saved the crew.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "question_id": "q8",
+      "question": "Why can't the Captain find Purnie? (A) Purnie lost consciousness outside of time. (B) Purnie drowned in the ocean. (C) Purnie is covered by the petrified logs and too weak to call out for help. (D) Purnie lost consciousness and is now invisible.",
+      "reference_choice": "A",
+      "reference_answer": "Purnie lost consciousness outside of time.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "question_id": "q1",
+      "question": "Why have so many people resorted to pick-pocketing? (A) Resources are scarce in the Dome, so people have to resort to desperate measures (B) The pickpocketers are trying to acquire information about Fownes (C) All possessions are shared in the Dome under a new form of communism (D) There are no laws in the Dome, and people do whatever they please",
+      "reference_choice": "B",
+      "reference_answer": "The pickpocketers are trying to acquire information about Fownes",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "question_id": "q11",
+      "question": "What is the relationship between Lanfierre and MacBride? (A) Lanfierre is training in MacBride (B) MacBride is Lanfierre's superior (C) they are partners working on the case (D) Lanfierre is the aberration expert, and MacBride is a cop",
+      "reference_choice": "D",
+      "reference_answer": "Lanfierre is the aberration expert, and MacBride is a cop",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "question_id": "q5",
+      "question": "Lanfierre has all of the following beliefs about humanity EXCEPT: (A) They are oblivious (B) They are self-absorbed (C) They are untrustworthy (D) They are vapid",
+      "reference_choice": "C",
+      "reference_answer": "They are untrustworthy",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "question_id": "q6",
+      "question": "The Movement believes all of the following EXCEPT: Questioning the failings of the old society, failings have put them in the dome; failure of foreign policy (self-containment) (A) The 'old society' failed in major ways (B) The 'old society's' failings led to the creation of the Dome (C) The best way to fight those controlling the Dome is collectively, versus individually (D) They cannot escape the dome without a strong foreign policy",
+      "reference_choice": "C",
+      "reference_answer": "The best way to fight those controlling the Dome is collectively, versus individually",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "question_id": "q7",
+      "question": "What is ironic about the Movement's refusal to attempt to escape the Dome? (A) They are actually content living inside the Dome and are part of a group designed to frame Fownes (B) They fear they will not survive the elements outside of the Dome, but outside of the Dome is a peaceful place (C) They like to think of themselves as being valiant and insubordinate, but they are actually afraid and conformist (D) They claim that they are waiting for a sound foreign policy, but they are already living within the government's choice for one",
+      "reference_choice": "D",
+      "reference_answer": "They claim that they are waiting for a sound foreign policy, but they are already living within the government's choice for one",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "question_id": "q8",
+      "question": "What theme can be understood from the behaviors of members of the Movement? (A) Too many group members vying for power often sabotages the group's progress (B) People who say they want progress are mostly virtue signaling, and their actual behaviors contradict their stated beliefs (C) People are too easily convinced by media propaganda (D) Social activism generally fails because it is all talk and no action",
+      "reference_choice": "D",
+      "reference_answer": "Social activism generally fails because it is all talk and no action",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "question_id": "q9",
+      "question": "Why was Humphrey being pick-pocketed so much? (A) to plant information necessary to arrest him (B) it's a typical behavior in this city (C) people typically pick-pocket him because he's distracted (D) for Lanfierre to get to know Humphrey's personality better",
+      "reference_choice": "D",
+      "reference_answer": "for Lanfierre to get to know Humphrey's personality better",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_3351b158881489c4",
+      "question_id": "q10",
+      "question": "Which word best describes Nat? (A) dishonest (B) respectable (C) enthusiastic (D) partier",
+      "reference_choice": "B",
+      "reference_answer": "respectable",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3351b158881489c4",
+      "question_id": "q14",
+      "question": "Which good thing didn't come because of Mr. Graham's strange luck? (A) Nat got a lead on an exciting new story (B) Mr. Graham found inspiration for his book (C) his wife came home (D) Mr. Graham's neighbor won his poker game",
+      "reference_choice": "B",
+      "reference_answer": "Mr. Graham found inspiration for his book",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3351b158881489c4",
+      "question_id": "q3",
+      "question": "Who is the nucleus? (A) Alec (B) Mrs. Graham (C) A character never mentioned by name (D) McGill",
+      "reference_choice": "A",
+      "reference_answer": "Alec",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_3351b158881489c4",
+      "question_id": "q5",
+      "question": "Why are Danny and the deli owner aghast? (A) Alec drops his belongings from a tall height without breaking them (B) Alec breaks the top of a glass bottle and continues to drink the contents (C) Nat continues to win significant poker hands in the deli (D) Alec has the nerve to try and steal items from the deli",
+      "reference_choice": "A",
+      "reference_answer": "Alec drops his belongings from a tall height without breaking them",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_3351b158881489c4",
+      "question_id": "q7",
+      "question": "What does McGill offer as a hypothesis for the odd events occurring within the story? (A) He believes that some form of life is causing the events (B) He believes that they events are merely coincidental (C) He believes that Alec has somehow defied principles of randomness and design (D) He believes that Alec is playing a deceitful trick in order to come up with an idea for his novel",
+      "reference_choice": "C",
+      "reference_answer": "He believes that Alec has somehow defied principles of randomness and design",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3351b158881489c4",
+      "question_id": "q8",
+      "question": "What wouldn't Mr. Graham likely wish for at the beginning of the story? (A) better weather (B) kinder neighbors (C) his wife to come home (D) a better job",
+      "reference_choice": "B",
+      "reference_answer": "kinder neighbors",
+      "category": "counterfactual_theme"
+    },
+    {
+      "article_name": "a_e5bb2f97030dfcaf",
+      "question_id": "q0",
+      "question": "Why do they want Macklin specifically to be the test subject? (A) As a fellow scientist, he'd understand and appreciate what they're doing. (B) He's in relatively good health, meaning he'd survive the experiment and yield resutls. (C) He is a man of great importance, and people will believe him if it works. (D) He has chronic migraines, making him a good candidate.",
+      "reference_choice": "C",
+      "reference_answer": "He is a man of great importance, and people will believe him if it works.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_e5bb2f97030dfcaf",
+      "question_id": "q1",
+      "question": "How would the shot theoretically cure headaches? (A) It would address the root problem of every headache. By focusing on the core behind a headache, it can be used in any circumstance. (B) It would separately address any problem that could cause a headache, from tumors to fatigue. It's built to be an answer to everything. (C) It constricts the blood vessels with an artificial virus. (D) It's not a cure at all, it's a virus.",
+      "reference_choice": "A",
+      "reference_answer": "It would address the root problem of every headache. By focusing on the core behind a headache, it can be used in any circumstance.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_e5bb2f97030dfcaf",
+      "question_id": "q13",
+      "question": "Why was Macklin against having an antitoxin to combat the virus? (A) He feared the additional side-effects of the antitoxin. (B) He didn't want the headaches to return. (C) He enjoyed the attention he was receiving. (D) He enjoyed the newly found free time he had.",
+      "reference_choice": "B",
+      "reference_answer": "He didn't want the headaches to return.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_e5bb2f97030dfcaf",
+      "question_id": "q2",
+      "question": "Why is Macklin's reaction to the shot alarming? (A) He's acting as if he took a narcotic, enough that Mrs. Macklin suspects that they gave him heroin? (B) He's much too happy, as observed by Sidney. He's inexplicably healthy and too adjusted. (C) He seems unbothered by it, despite the fact that it should have changed his life. (D) The shot has somehow removed his intelligence.",
+      "reference_choice": "D",
+      "reference_answer": "The shot has somehow removed his intelligence.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_e5bb2f97030dfcaf",
+      "question_id": "q4",
+      "question": "Why does Macklin have objections to going back? (A) He doesn't want to have to undergo another experiment. (B) He doesn't want to go back. He'd rather be \"stupid\" than having headaches and always worrying. (C) It's too risky to try the experiment again. He'd rather take his chances the way he is now. (D) He doesn't want to go back. In the state he's in, he's too \"stupid\" to realize the ramifications of what happened to him.",
+      "reference_choice": "B",
+      "reference_answer": "He doesn't want to go back. He'd rather be \"stupid\" than having headaches and always worrying.",
+      "category": "event_fact"
+    },
+    {
+      "article_name": "a_4a661da111f7f2cc",
+      "question_id": "q1",
+      "question": "What is NOT a recommendation they make in future experiments? (A) If you're going to test a certain type of beer, they recommended specific brands to try and one to avoid (B) Give the test subjects a palette cleanser (they didn't and it would make the data a lot cleaner in future studies) (C) Provide the test subjects with different information (D) If you're running the experiment, you can't participate as well",
+      "reference_choice": "B",
+      "reference_answer": "Give the test subjects a palette cleanser (they didn't and it would make the data a lot cleaner in future studies)",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4a661da111f7f2cc",
+      "question_id": "q12",
+      "question": "What isn't true of Sam Adams? (A) it is a lager the testers liked (B) it scored the highest on the previous test (C) people scored it differently on the second test (D) it was still considered one of the Bests",
+      "reference_choice": "D",
+      "reference_answer": "it was still considered one of the Bests",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4a661da111f7f2cc",
+      "question_id": "q13",
+      "question": "What isn't a conclusion drawn? (A) Michelob Hefeweizen is a great beer for the cost (B) Anheuser-Busch lived up to its popularity (C) Sam Adams was easily identifiable (D) Pyramid Hefeweizen is not worth the money",
+      "reference_choice": "C",
+      "reference_answer": "Sam Adams was easily identifiable",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4a661da111f7f2cc",
+      "question_id": "q2",
+      "question": "What was the difference between the first and second test? (A) Beer type and expense (B) Beer type only (C) The types of beer in both stages of the test were the same, but the presentation method differed significantly (D) Expense only",
+      "reference_choice": "A",
+      "reference_answer": "Beer type and expense",
+      "category": "counterfactual_theme"
+    },
+    {
+      "article_name": "a_4a661da111f7f2cc",
+      "question_id": "q6",
+      "question": "What was NOT a metric test subjects were asked to use in these experiments? (A) Choosing their favorite of the samples (B) Guessing the most expensive of the samples (C) Personal opinion of the sample (D) Choosing their least favorite of the samples",
+      "reference_choice": "B",
+      "reference_answer": "Guessing the most expensive of the samples",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b82b4dabe3645591",
+      "question_id": "q12",
+      "question": "What is the main theme of this story? (A) Fear and exploitation of the mentally ill (B) The perilous impact of government secrets (C) The damaging impact of mental illness on perception (D) Society's rejection of divergent thought",
+      "reference_choice": "D",
+      "reference_answer": "Society's rejection of divergent thought",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b82b4dabe3645591",
+      "question_id": "q13",
+      "question": "What is the significance of the lifting-off of the Washington Monument at the story's conclusion? (A) Mental 'illness' could and should, in many cases, be viewed as an asset, rather than a deficit (B) Society is too quick to dismiss the thoughts and behaviors of people living with mental illness as irrational or absurd (C) People living with mental illness pose risks and/or threats to society and should be entrusted to government care (D) People living with mental illness(es) may possess abilities not understood by humans living without mental illness",
+      "reference_choice": "B",
+      "reference_answer": "Society is too quick to dismiss the thoughts and behaviors of people living with mental illness as irrational or absurd",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b82b4dabe3645591",
+      "question_id": "q3",
+      "question": "What likely happens to Thaddeus after the story ends? (A) He uses the Washington Monument to travel to space (B) Various government agencies continue to study him to find out his secrets (C) He is locked in the Pentagon forever so he cannot create any more devices (D) He is sent back to the mental institution to continue his care",
+      "reference_choice": "B",
+      "reference_answer": "Various government agencies continue to study him to find out his secrets",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b82b4dabe3645591",
+      "question_id": "q5",
+      "question": "What kind of person is Miss Abercrombie? Choose the best option (A) Cautious and discouraging (B) Impatient but well-meaning (C) Encouraging and strict (D) Patient but sometimes easily shaken",
+      "reference_choice": "D",
+      "reference_answer": "Patient but sometimes easily shaken",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b82b4dabe3645591",
+      "question_id": "q7",
+      "question": "Who is Miss Abercrombie (A) An art teacher brought in to supervise activity time at the institution (B) A government agent keeping tabs on the people at the mental institution under the guise of a therapist (C) A therapist who specializes in hand- and joint-related activities (D) One of the therapists personally appointed to keep an eye on Thaddeus",
+      "reference_choice": "C",
+      "reference_answer": "A therapist who specializes in hand- and joint-related activities",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_42c427588d061091",
+      "question_id": "q0",
+      "question": "In the context of the article, who is Si and what does he do? (A) Si, or The Si, is the person responsible for covering the absurd costs of of the New York Editor lifestyle. (B) Si, or The Si, is the person responsible for covering the absurd expenditure of New York parties. (C) Si, or The Si, is the person responsible for the culture that has developed around the writer/editor lifestyle. (D) Si, or The Si, is the person responsible for covering the absurd expenditure of the Condé Nast magazines.",
+      "reference_choice": "D",
+      "reference_answer": "Si, or The Si, is the person responsible for covering the absurd expenditure of the Condé Nast magazines.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_42c427588d061091",
+      "question_id": "q10",
+      "question": "What is the significance of including all the costs and price tags in the article? (A) To show the carelessness for money demonstrated by the New York elite. (B) To eventually calculate and justify the net worth of people like Si. (C) To demonstrate how such large sums of money are spent so generously. (D) To show how people like Si keep track of their budget.",
+      "reference_choice": "A",
+      "reference_answer": "To show the carelessness for money demonstrated by the New York elite.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_42c427588d061091",
+      "question_id": "q11",
+      "question": "What is a main message conveyed in the article? (A) Respecting worker's rights. (B) Fame and fortune. (C) Carelessness leads to demise. (D) Hard work pays off.",
+      "reference_choice": "B",
+      "reference_answer": "Fame and fortune.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_42c427588d061091",
+      "question_id": "q12",
+      "question": "What general structure does the article follow? (A) Topic sentence and details. (B) Persuasive hook and explanation. (C) Argument and supportive details. (D) Problem and solution.",
+      "reference_choice": "B",
+      "reference_answer": "Persuasive hook and explanation.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_42c427588d061091",
+      "question_id": "q6",
+      "question": "According to the article, what is Condé Nast? (A) Magazines of the corporate elite (B) 15 magazines of “fabulousness” (C) 15 New York magazines of “fantasy” (D) 15 magazines of the New York “elite”",
+      "reference_choice": "B",
+      "reference_answer": "15 magazines of “fabulousness”",
+      "category": "other"
+    },
+    {
+      "article_name": "a_dd30a80d5c33d63f",
+      "question_id": "q1",
+      "question": "What is the relationship between the priest and the captain, in terms of their jobs? (A) The priest is held in higher esteem and has the nicest living arrangements (B) The captain is in charge of the ship, but he allows the priest to make cultural decisions (C) The priest is very bitter at the captain's control and is always very cautious around him (D) They don't respect each other, but thankfully do not need to interact much as they oversee separate operations",
+      "reference_choice": "A",
+      "reference_answer": "The priest is held in higher esteem and has the nicest living arrangements",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_dd30a80d5c33d63f",
+      "question_id": "q10",
+      "question": "What will happen during the Changing of Wives? (A) Jane will be paired with Nestir. (B) All participants will be in an arena. (C) Crewman and officers will not mingle. (D) Wanda will be paired with the Captain.",
+      "reference_choice": "A",
+      "reference_answer": "Jane will be paired with Nestir.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_dd30a80d5c33d63f",
+      "question_id": "q13",
+      "question": "Why does the Captain resist marrying Wanda? (A) Because she is sixteen. (B) Because she carries a doll around with her. (C) Because she is the daughter of a crewman. (D) Because she is dim-witted.",
+      "reference_choice": "C",
+      "reference_answer": "Because she is the daughter of a crewman.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_dd30a80d5c33d63f",
+      "question_id": "q3",
+      "question": "Why does everyone seem interested in Jane? (A) The crew is always interested in what Harry has, and he is married to her (B) There is not enough information to say for certain (C) She is known as the most attractive woman on the ship (D) She is the best at doing her duty, so she is sought after as a wife",
+      "reference_choice": "B",
+      "reference_answer": "There is not enough information to say for certain",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_dd30a80d5c33d63f",
+      "question_id": "q4",
+      "question": "What is the first mate trying to express when he says \"You all want me ta die uv old age\"? (A) He's grumbling because he hates his job and knows he doesn't want to do it forever (B) Only the most important members of the society die of old age and he does not want that responsibility (C) If he dies of old age, that means he will not be rewarded when he passes (D) If he dies of old age, that means he'll be around without a lot of his friends, and he doesn't want that",
+      "reference_choice": "C",
+      "reference_answer": "If he dies of old age, that means he will not be rewarded when he passes",
+      "category": "other"
+    },
+    {
+      "article_name": "a_2123c6de5ce2c54a",
+      "question_id": "q1",
+      "question": "Which is not a reason the narrator did not tell anyone about the bomb when he discovered it? (A) He did not want to have to explain how he knew it was there (B) He figured it was futile, if there were no specialists to disarm it on board (C) He thought he might be able to keep it from becoming dangerous if he tried hard enough (D) He did not want to be asked to diffuse it because he did not know how",
+      "reference_choice": "D",
+      "reference_answer": "He did not want to be asked to diffuse it because he did not know how",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_2123c6de5ce2c54a",
+      "question_id": "q13",
+      "question": "Why didn't Julia pick up her suitcase with the other passengers? (A) Julia was detained by customs before she could get to the baggage claim. (B) Julia went to call her sister before collecting her suitcase. (C) Julia was told that her suitcase didn't make the flight when they were mid-air. (D) Julia didn't want to be near the suitcase when the bomb went off.",
+      "reference_choice": "B",
+      "reference_answer": "Julia went to call her sister before collecting her suitcase.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_2123c6de5ce2c54a",
+      "question_id": "q16",
+      "question": "Why doesn't Julia tell the policeman about the bomb? (A) This is her chance to disappear and start a new life. (B) She doesn't think the police will believe her husband tried to kill her. (C) She does not want to be blamed for the thief's death. (D) She doesn't want the narrator to have to explain his gifts.",
+      "reference_choice": "C",
+      "reference_answer": "She does not want to be blamed for the thief's death.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_2123c6de5ce2c54a",
+      "question_id": "q6",
+      "question": "Which is likely true about Julia's sister given the information in the story? (A) She and Julia have a very close bond (B) She has enough money that she is comfortable calling taxis instead of driving with visitors are in town (C) She was in on the plan with Julia's husband (D) She is flaky and can't be trusted when it comes to travel plans",
+      "reference_choice": "C",
+      "reference_answer": "She was in on the plan with Julia's husband",
+      "category": "other"
+    },
+    {
+      "article_name": "a_2123c6de5ce2c54a",
+      "question_id": "q7",
+      "question": "What likely happens to the narrator after the story ends? (A) He eventually makes his meeting but is too shaken up to successfully close the sale (B) He and Julia get together after Julia's divorce (C) The narrator stays with Julia's sister on his trip and misses his meeting (D) He probably returns to his unsatisfying life negotiating printing orders",
+      "reference_choice": "B",
+      "reference_answer": "He and Julia get together after Julia's divorce",
+      "category": "other"
+    },
+    {
+      "article_name": "a_2123c6de5ce2c54a",
+      "question_id": "q8",
+      "question": "Why did the dumpy man not start running when he picked up the suitcases? (A) He knew there was a bomb and didn't want to jostle it before he retrieved the other contents (B) He didn't know there was a bomb so he had no reason to rush (C) He didn't want to arouse suspicion unless he was spotted (D) He was too big to be able to move quickly",
+      "reference_choice": "C",
+      "reference_answer": "He didn't want to arouse suspicion unless he was spotted",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_4fa9744dd9ad2e77",
+      "question_id": "q0",
+      "question": "What is the significance of the title of the story to the context? (A) It’s a reference to the dangers contained within the package. (B) It’s a reference to the delay of the package being received. (C) It’s a reference for the postman to know the package wasn’t broken in shipment (D) It’s a reference to there being a baby toy rattle inside the box.",
+      "reference_choice": "C",
+      "reference_answer": "It’s a reference for the postman to know the package wasn’t broken in shipment",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4fa9744dd9ad2e77",
+      "question_id": "q1",
+      "question": "Based on the context of the story, on which day was the package received to the home? (A) Monday (B) Tuesday (C) Wednesday (D) Thursday",
+      "reference_choice": "B",
+      "reference_answer": "Tuesday",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4fa9744dd9ad2e77",
+      "question_id": "q12",
+      "question": "What wasn't strange about the dress purchased? (A) it spoke to Sally (B) it wouldn't come off (C) it made Sally levitate (D) it changed colors",
+      "reference_choice": "A",
+      "reference_answer": "it spoke to Sally",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4fa9744dd9ad2e77",
+      "question_id": "q14",
+      "question": "What wasn't abnormal in the detective kit? (A) the white powder (B) the toy gun (C) the Detectolite (D) the flashlight",
+      "reference_choice": "D",
+      "reference_answer": "the flashlight",
+      "category": "other"
+    },
+    {
+      "article_name": "a_4fa9744dd9ad2e77",
+      "question_id": "q2",
+      "question": "Who was Sally in relation to Milly in the story? (A) Her great-grandmother (B) Her grandmother (C) Her mother (D) Herself in a past life.",
+      "reference_choice": "B",
+      "reference_answer": "Her grandmother",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_4fa9744dd9ad2e77",
+      "question_id": "q5",
+      "question": "Why did the staff at Hartshorne-Logan have to substitute some of the items in the package? (A) They were sold out of because of the holiday sales. (B) They had recalled most of the items because they were dangerous. (C) They were outdated by many years. (D) They were too drunk to read the catalog numbers correctly.",
+      "reference_choice": "C",
+      "reference_answer": "They were outdated by many years.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_d9b796565fb9891a",
+      "question_id": "q1",
+      "question": "What is implied when the narrator describes Nelson’s light colored hair? (A) Nelson is German by ancestry, raised sympathetic to Germany’s cause. (B) Nelson is German by ancestry, but was raised on the side of the American effort. (C) Curtis is prejudiced against people with light hair. (D) Nelson is Czech",
+      "reference_choice": "A",
+      "reference_answer": "Nelson is German by ancestry, raised sympathetic to Germany’s cause.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d9b796565fb9891a",
+      "question_id": "q10",
+      "question": "What would the main characters of the article all most likely agree with about Androka? (A) Androka is arrogant. (B) Androka can be noncompliant. (C) Androka is often clueless. (D) Androka can be mysterious.",
+      "reference_choice": "B",
+      "reference_answer": "Androka can be noncompliant.",
+      "category": "counterfactual_theme"
+    },
+    {
+      "article_name": "a_d9b796565fb9891a",
+      "question_id": "q14",
+      "question": "Why are many of the main characters so suspicious of each other? (A) Because many of the characters are making ignorant mistakes. (B) Because many of the characters have reason from prior experiences to not trust each other. (C) Because many of characters are of different nationalities in the midst of a World War. (D) Because many of the characters are in a state of confusion and fear after the gas incident.",
+      "reference_choice": "C",
+      "reference_answer": "Because many of characters are of different nationalities in the midst of a World War.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_d9b796565fb9891a",
+      "question_id": "q3",
+      "question": "Where do the creatures from another world come from? (A) The Carethusia (B) The Sea (C) Germany (D) An alien world",
+      "reference_choice": "C",
+      "reference_answer": "Germany",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d9b796565fb9891a",
+      "question_id": "q4",
+      "question": "What is the significance of the evidence of human lodging on the islet? (A) Nazis were hiding out there. (B) It will give Curtis and his crew mates shelter while they a stranded. (C) The Americans have outposts everywhere. (D) The Islet is where the zone of silence is to be built.",
+      "reference_choice": "A",
+      "reference_answer": "Nazis were hiding out there.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_d9b796565fb9891a",
+      "question_id": "q6",
+      "question": "To what is the title of the story, “Silence is—Deadly” referring? (A) Androka’s zone of silence is used as a deadly tool against the Nazi war effort. (B) Androka’s zone of silence is used as a deadly tool against the Comerford’s crew. (C) Androka’s zone of silence is used as a deadly tool, made in the name of revenging the Czech war effort. (D) Androka’s zone of silence is used as a deadly tool, helping the Americans sneak up on a Nazi Islet.",
+      "reference_choice": "B",
+      "reference_answer": "Androka’s zone of silence is used as a deadly tool against the Comerford’s crew.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_0a55479de19616f5",
+      "question_id": "q0",
+      "question": "What is the origin of the name Joe on Venus? (A) The Venusians use “Joe” as an idiom, referring to friends and family as Joe, even though that is not their given Venusian name. (B) Terrans use the term “Joe” to refer to each other. The Venusians took the idiom literally and adopted it in earnest as the global name. (C) There is a Venusian hero named Joe, prompting all Venusians to take the name. (D) Venusians are required by Terrans to use the name as a sign of enslavement.",
+      "reference_choice": "B",
+      "reference_answer": "Terrans use the term “Joe” to refer to each other. The Venusians took the idiom literally and adopted it in earnest as the global name.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_0a55479de19616f5",
+      "question_id": "q1",
+      "question": "Who is Joe? (A) The Major’s senior officer (B) A Venusian who doesn’t like cigarettes (C) The entire population of Venus (D) A Venusian Trader",
+      "reference_choice": "C",
+      "reference_answer": "The entire population of Venus",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_0a55479de19616f5",
+      "question_id": "q12",
+      "question": "Who was the mission intended to benefit? (A) Captain Walsh, because they desperately needed to find the right Joe. (B) Major Polk, because he wanted to force Captain Walsh out of office. (C) Major Polk, because he wanted to prove himself better than Major Walsh. (D) Captain Walsh, because he wanted to see Major Polk suffer.",
+      "reference_choice": "D",
+      "reference_answer": "Captain Walsh, because he wanted to see Major Polk suffer.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_0a55479de19616f5",
+      "question_id": "q14",
+      "question": "What was Captain Walsh's main motive behind putting the narrator on the mission? (A) Walsh sought revenge against the narrator. (B) Walsh wanted to test the narrator's intelligence. (C) Walsh wanted the narrator fired from his position. (D) Walsh wanted to test the narrator's competency.",
+      "reference_choice": "A",
+      "reference_answer": "Walsh sought revenge against the narrator.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_0a55479de19616f5",
+      "question_id": "q6",
+      "question": "What is the significance of the mission Colonel Walsh gives Major Polk? (A) Walsh sends Polk on a fools errand in order to trick him into time away from Earth so that Walsh can botch the occupation on Mars once and for all. (B) Walsh sends Major Polk on a fools errand so that he can trick Polk into the Venusian jungle and kill him, serving as revenge for the embarrassment Polk caused him years ago. (C) Walsh sends Polk on a fools errands in order to trick him into a full time job on Venus. (D) Walsh sends Polk on a fools errand in order to trick him into finding trader Joe, who is responsible for some of Walsh’s recent military problems.",
+      "reference_choice": "B",
+      "reference_answer": "Walsh sends Major Polk on a fools errand so that he can trick Polk into the Venusian jungle and kill him, serving as revenge for the embarrassment Polk caused him years ago.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_9194af8c136f7067",
+      "question_id": "q0",
+      "question": "Why does Joseph lie about the water supply? (A) There isn't a lot of water there, and he needs to be able to ration it out. (B) He wants people to believe they need to pay for it. (C) He wants to keep the fresh water for himself. (D) He thinks that people would prefer to buy filtered water.",
+      "reference_choice": "B",
+      "reference_answer": "He wants people to believe they need to pay for it.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9194af8c136f7067",
+      "question_id": "q14",
+      "question": "Why did Harvey agree to pay the absurd price for the water that he and Joe consumed at the bar? (A) The sheriff had threated them with his holstered weapon. (B) He knew they would be able to con Johnson right back. (C) They were thirsty and too delirious to argue (D) He didn't want to risk being arrested and trapped on Planetoid 42",
+      "reference_choice": "B",
+      "reference_answer": "He knew they would be able to con Johnson right back.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9194af8c136f7067",
+      "question_id": "q2",
+      "question": "What is \"La-anago Yergis\"? (A) It's a panacea that can cure any ailment. (B) It's medicine. It's a cure for \"asteroid fever.\" (C) It's purified water. (D) It's a placebo. It's not real medicine.",
+      "reference_choice": "D",
+      "reference_answer": "It's a placebo. It's not real medicine.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_9194af8c136f7067",
+      "question_id": "q3",
+      "question": "Why does Johnson stay on the asteroid, even though few people come by? (A) Here he's able to meet traders like Harvey and Joe and barter with them. (B) He's able to run business even with few customers. (C) Here he's able to take advantage of travelers who are lost or in need of supplies. (D) He doesn't want to give up the spring of water.",
+      "reference_choice": "C",
+      "reference_answer": "Here he's able to take advantage of travelers who are lost or in need of supplies.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9194af8c136f7067",
+      "question_id": "q4",
+      "question": "How is Joe's asteroid fever cured? (A) The La-anago Yergis cures him. (B) Nothing does - his sickness was a ruse. (C) The bitter water that Harvey switched in cures him. (D) The fresh water from the planet cures him.",
+      "reference_choice": "B",
+      "reference_answer": "Nothing does - his sickness was a ruse.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_135b29f55cc105fd",
+      "question_id": "q1",
+      "question": "Why does Jig bluff to Beamish initially? (A) He knows he can get away with it - Beamish has the money to match what they ask. (B) He doesn't trust Shannon to close a good deal. (C) He doesn't trust Beamish, and wants to see if he's committed to the idea. (D) For them to start a new tour would be costly for them, and Jig wants to get the maximum price.",
+      "reference_choice": "A",
+      "reference_answer": "He knows he can get away with it - Beamish has the money to match what they ask.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_135b29f55cc105fd",
+      "question_id": "q13",
+      "question": "Why did Jig and Bucky rarely come in through the front door? (A) They wanted to avoid the screams of Gertrude (B) They wanted to avoid the debt collectors (C) They preferred the back entrance as to be closer to the action (D) They wanted to avoid the Vapor snakes",
+      "reference_choice": "B",
+      "reference_answer": "They wanted to avoid the debt collectors",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_135b29f55cc105fd",
+      "question_id": "q6",
+      "question": "What was special or impressive about Gertrude? (A) Her outrageous temperment (B) She was an extreme rarity. (C) Her extraordinary size and young age (D) She was exceptionally talented",
+      "reference_choice": "B",
+      "reference_answer": "She was an extreme rarity.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_135b29f55cc105fd",
+      "question_id": "q7",
+      "question": "Why was Gertrude continuously screaming? (A) She was cramped in a much too small space. (B) She missed her family. (C) She was near starving. (D) She was desperate for a mate",
+      "reference_choice": "D",
+      "reference_answer": "She was desperate for a mate",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_135b29f55cc105fd",
+      "question_id": "q9",
+      "question": "Why was Kapper in such a state of disbelief when Bucky and Jig found him? (A) He was frantically searching for the male Cansin he had found (B) He had lost all his animals and was desperate to find them (C) He had been attacked by the Vapor snakes (D) He was being poisoned.",
+      "reference_choice": "D",
+      "reference_answer": "He was being poisoned.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "question_id": "q10",
+      "question": "Why was Bradley in the Jug? (A) she didn't understand the people she was supposed to be working with (B) she wanted to be part of the Civil Service group instead of the laborer group (C) she caused a fight in the lunch room (D) she believed people should be able to choose their path in life",
+      "reference_choice": "D",
+      "reference_answer": "she believed people should be able to choose their path in life",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "question_id": "q12",
+      "question": "What seems to be a reason for many being sent to prison? (A) petty theft and small crimes (B) rioting over the rules imposed by the government (C) conspiracy theorizing (D) people resenting the jobs they're assigned",
+      "reference_choice": "D",
+      "reference_answer": "people resenting the jobs they're assigned",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "question_id": "q15",
+      "question": "Why did Sauer and Flock yell so much? (A) to scare the new Block O prisoners (B) they were angry at the system they were a part of (C) they were trying to distract the guards (D) they wanted to make Bradley cry",
+      "reference_choice": "C",
+      "reference_answer": "they were trying to distract the guards",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "question_id": "q2",
+      "question": "What seems to be the core idea behind the specialist segregation? (A) To create a class system and with it a hierarchy. (B) To make humanity work at it's prime, with everyone working at maximum capacity. (C) To provide a means where people are at their happiest, working where they \"should.\" (D) People are uncappable of carrying out more than one job, and the specialist segregation allows them to focus on just one.",
+      "reference_choice": "B",
+      "reference_answer": "To make humanity work at it's prime, with everyone working at maximum capacity.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "question_id": "q5",
+      "question": "Why is O'Leary and the Warden at odds? (A) The Warden doesn't want to be aware of any problems, and so dismisses O'Leary's worries. (B) The Warden knows that O'Leary has thoughts of switching jobs. (C) O'Leary knows that something is wrong, but can't push the matter because it would go against their specializations. (D) The Warden is taking pills, and it's warping his judgement. O'Leary knows this.",
+      "reference_choice": "C",
+      "reference_answer": "O'Leary knows that something is wrong, but can't push the matter because it would go against their specializations.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "question_id": "q8",
+      "question": "In the end, what was it that O'Leary smelled throughout the story? (A) Burning flesh, from Bradley sitting on the bench and hurting herself. (B) The riot. He picked up on the growing unrest, and it came to him as a smell. (C) The blue pills the Warden was taking, that were warping his perception and ultimately kept him from realizing the riot was brewing. (D) Burning flesh, from the shive being formed. It's the \"trouble\" he was detecting.",
+      "reference_choice": "B",
+      "reference_answer": "The riot. He picked up on the growing unrest, and it came to him as a smell.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_50e69ad6c5691741",
+      "question_id": "q0",
+      "question": "Where did Mia grow up? (A) Earth (B) a space ship (C) Tintera (D) The Third Level",
+      "reference_choice": "B",
+      "reference_answer": "a space ship",
+      "category": "other"
+    },
+    {
+      "article_name": "a_50e69ad6c5691741",
+      "question_id": "q10",
+      "question": "It is suggested that which of the following happens to Jimmy D? (A) Jimmy D is killed by the bandits. (B) Jimmy D refuses to help Mia, even though she wishes for him. (C) Jimmy D ends up in jail. (D) Jimmy D finds Mia and helps her.",
+      "reference_choice": "C",
+      "reference_answer": "Jimmy D ends up in jail.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_50e69ad6c5691741",
+      "question_id": "q15",
+      "question": "How many years has it been since Mia’s people had contact with Tintera? (A) 50 (B) 200 (C) 1000 (D) 150",
+      "reference_choice": "D",
+      "reference_answer": "150",
+      "category": "count_time"
+    },
+    {
+      "article_name": "a_50e69ad6c5691741",
+      "question_id": "q2",
+      "question": "What is the name of the first person to talk to Mia on Tintera? (A) Jimmy (B) Ninc (C) Horst (D) Losel",
+      "reference_choice": "C",
+      "reference_answer": "Horst",
+      "category": "other"
+    },
+    {
+      "article_name": "a_50e69ad6c5691741",
+      "question_id": "q5",
+      "question": "What is NOT a reason that Mia pulled out her pistol the first time? (A) She felt threatened by the group of men (B) They made her feel uncomfortable (C) She couldn't see all of the men at the same time (D) Someone was about to pull a gun on her",
+      "reference_choice": "C",
+      "reference_answer": "She couldn't see all of the men at the same time",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_50e69ad6c5691741",
+      "question_id": "q6",
+      "question": "What DIDN'T Mia learn at the campsite she located? (A) Why the ship flew over her head (B) People grow old and gray on this planet (C) The Trial kids weren't welcome on Tintera (D) Horst keeps his animals in the pen",
+      "reference_choice": "A",
+      "reference_answer": "Why the ship flew over her head",
+      "category": "other"
+    },
+    {
+      "article_name": "a_5c44f3c1449daf6f",
+      "question_id": "q2",
+      "question": "Which word least describes Baron? (A) confident (B) realistic (C) enthusiastic (D) curious",
+      "reference_choice": "B",
+      "reference_answer": "realistic",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c2bc895a39ac1a14",
+      "question_id": "q1",
+      "question": "Which of these is true about the importance of alge to the Martians? (A) It is the only thing they can eat (B) All of the spaceships are named after different species of alge (C) Most of the economy is geared around growing and collecting alge (D) The nickname for their species is inspired by the reliance on alge",
+      "reference_choice": "D",
+      "reference_answer": "The nickname for their species is inspired by the reliance on alge",
+      "category": "option_discrimination"
+    },
+    {
+      "article_name": "a_c2bc895a39ac1a14",
+      "question_id": "q11",
+      "question": "What is the narrator's profession? (A) astronaut (B) doctor (C) sailor (D) cook",
+      "reference_choice": "B",
+      "reference_answer": "doctor",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c2bc895a39ac1a14",
+      "question_id": "q15",
+      "question": "How do the crewmen view the tension between Winkelmann and Bailey? (A) They are repulsed by the Captain's condescending remarks (B) They are thankful that the Captain's cruelty influences Bailey to create more palatable food (C) They are determined to stay out of the conflict, for fear of being punished by the Captain (D) They are concerned that Bailey will mutiny by refusing to fulfill his job responsibilities",
+      "reference_choice": "B",
+      "reference_answer": "They are thankful that the Captain's cruelty influences Bailey to create more palatable food",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c2bc895a39ac1a14",
+      "question_id": "q17",
+      "question": "How does Winkelmann justify his critical stance towards Bailey's cooking? (A) It motivates Bailey to seek the approval of his shipmates (B) It prevents Bailey from becoming apathetic in the kitchen (C) It compels Bailey to be more creative with his resources (D) It builds Bailey's character and makes him more resilient",
+      "reference_choice": "C",
+      "reference_answer": "It compels Bailey to be more creative with his resources",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c2bc895a39ac1a14",
+      "question_id": "q18",
+      "question": "How did Bailey achieve the meal that tasted like barbeque? (A) He added the Captain's entrails (B) He allowed the chlorella to ferment longer (C) He used actual pork products (D) He added his own refuse",
+      "reference_choice": "A",
+      "reference_answer": "He added the Captain's entrails",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c2bc895a39ac1a14",
+      "question_id": "q2",
+      "question": "What is not true about the surgeon's job? (A) He takes care of the mental health and morale of the crew (B) He has to know when to offer alcohol as the appropriate remedy for a situation (C) He is a sounding-board for those who need to complain (D) He's the person to file grievances with when there are interpersonal issues",
+      "reference_choice": "D",
+      "reference_answer": "He's the person to file grievances with when there are interpersonal issues",
+      "category": "option_discrimination"
+    },
+    {
+      "article_name": "a_9073ae21f6069eb1",
+      "question_id": "q1",
+      "question": "Why did nobody react when Henry's mother started crying at the table? (A) They didn't understand what was wrong and felt too awkward to say anything. (B) They were too busy taking care of other details surrounding the meal. (C) They felt for her in all of the uncertainty and tension. (D) They were used to her tears and knew it was better not to say anything.",
+      "reference_choice": "C",
+      "reference_answer": "They felt for her in all of the uncertainty and tension.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9073ae21f6069eb1",
+      "question_id": "q11",
+      "question": "How did Hank die? (A) Hank's spacecraft exploded when it hit Earth's atmosphere on the way home from Mars. (B) Hank's experimental continent-to-continent flight vessel exploded. (C) Hank died when he crashed his car on the way to the mission launch. (D) Hank's spacecraft exploded when it hit Earth's atmosphere on the way home from the moon.",
+      "reference_choice": "B",
+      "reference_answer": "Hank's experimental continent-to-continent flight vessel exploded.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_9073ae21f6069eb1",
+      "question_id": "q2",
+      "question": "Why was the cemetery joke a faux pas? (A) Henry had watched many people die recently, including his own commanding officer. (B) Henry himself had almost died and did not want to be reminded of the trauma. (C) The joke was so old that made everyone uncomfortable to hear again. (D) Henry had died, but nobody was comfortable enough to talk about it.",
+      "reference_choice": "D",
+      "reference_answer": "Henry had died, but nobody was comfortable enough to talk about it.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9073ae21f6069eb1",
+      "question_id": "q3",
+      "question": "Why is it ironic that Henry was uncomfortable to see his house rebuilt? (A) He used to like change, and always encouraged remodeling projects (B) It used to be his wife that hated change, not Henry. (C) He himself was rebuilt, in some sense. (D) He had said he would do the remodeling himself when he got back, but it was done when he arrived.",
+      "reference_choice": "C",
+      "reference_answer": "He himself was rebuilt, in some sense.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9073ae21f6069eb1",
+      "question_id": "q8",
+      "question": "Why is Henry referred to as the First One (A) He was the first man to make it back from a Mars mission. (B) Was the first person pieced back together after death. (C) He was the first American to walk on the surface of Mars. (D) He was the first one to make it back alive from the type of trip that he went on.",
+      "reference_choice": "B",
+      "reference_answer": "Was the first person pieced back together after death.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9073ae21f6069eb1",
+      "question_id": "q9",
+      "question": "Why are they throwing a parade for Hank? (A) Hank is back from a mission to Mars. (B) Hank is back from an experimental continent-to-continent flight. (C) Hank is back from the dead. (D) Hank is back from beyond the Great Frontier.",
+      "reference_choice": "C",
+      "reference_answer": "Hank is back from the dead.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_da5abd3b2bcb8030",
+      "question_id": "q1",
+      "question": "Who is the Watcher? (A) Someone who has been granted the honor of watching over the mountain region (B) A man who was exiled from society because of violent tendencies (C) An old man who has retracted from society (D) An alien in charge of protecting the planet",
+      "reference_choice": "A",
+      "reference_answer": "Someone who has been granted the honor of watching over the mountain region",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_da5abd3b2bcb8030",
+      "question_id": "q13",
+      "question": "What message for humanity does the author wish to communicate, regarding the fate of the Ryzgas? (A) While social stratification may benefit one group temporarily, eventually it will shatter social institutions (B) Humans are doomed to repeat history until they wipe out their entire race (C) We should be grateful for natural gifts bestowed by the Earth, and not try to seek more beyond life's simple pleasures (D) Actions and decisions made in the name of love can breed destructive hatred",
+      "reference_choice": "C",
+      "reference_answer": "We should be grateful for natural gifts bestowed by the Earth, and not try to seek more beyond life's simple pleasures",
+      "category": "other"
+    },
+    {
+      "article_name": "a_da5abd3b2bcb8030",
+      "question_id": "q14",
+      "question": "What is the Watcher's purpose in spinning the vision of when the Ryzgas fell? (A) To tell a story of human selfishness and evil in order to arm Var and Neena against the Ryzgas (B) To instill a sensible amount of fear in Var and Neena before they sacrifice the world for their romance (C) To persuade Var and Neena not to go further in their journey without understanding the potential consequences (D) To convey a neutral account of history in order to inform Var and Neena of what they're up against",
+      "reference_choice": "C",
+      "reference_answer": "To persuade Var and Neena not to go further in their journey without understanding the potential consequences",
+      "category": "other"
+    },
+    {
+      "article_name": "a_da5abd3b2bcb8030",
+      "question_id": "q2",
+      "question": "How does the Watcher feel about Neena and Var's arrival? (A) He is thankful to have company to pass his wisdom to (B) He is a little disappointed to not have time to himself (C) He is suspicious of any people who would enter where he lives (D) He is thankful to have any interaction with other humans",
+      "reference_choice": "A",
+      "reference_answer": "He is thankful to have company to pass his wisdom to",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_da5abd3b2bcb8030",
+      "question_id": "q6",
+      "question": "Why does the story take place somewhere cold? (A) The history of the area is such that warmth and resources have been taken from the land (B) A volcano has blocked light from the region making everything cold (C) The mountains are the only place Var and Neena can hide (D) It isn't actually cold, because of the lava",
+      "reference_choice": "A",
+      "reference_answer": "The history of the area is such that warmth and resources have been taken from the land",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_da5abd3b2bcb8030",
+      "question_id": "q8",
+      "question": "What is the significance of the title of the story? (A) It references the old technology that is disturbed (B) It is an image of the chase that Var and Neena are running from (C) It hints to the great power of the Watcher (D) It points to Var and Neena disrupting an area that is usually quiet",
+      "reference_choice": "A",
+      "reference_answer": "It references the old technology that is disturbed",
+      "category": "other"
+    },
+    {
+      "article_name": "a_dd4c509ce23ddf54",
+      "question_id": "q11",
+      "question": "Which item doesn't get mentioned while they're in the year 2150? (A) flying vehicles (B) diamond makers (C) an elevator that you can't feel move (D) a modified English language",
+      "reference_choice": "A",
+      "reference_answer": "flying vehicles",
+      "category": "other"
+    },
+    {
+      "article_name": "a_dd4c509ce23ddf54",
+      "question_id": "q16",
+      "question": "Which word doesn't describe the people of this futuristic city? (A) helpful (B) oblivious (C) happy (D) busy",
+      "reference_choice": "D",
+      "reference_answer": "busy",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_dd4c509ce23ddf54",
+      "question_id": "q3",
+      "question": "What can be determined about the language used in the futuristic civilization that Jerome visits? (A) They are lazy, based on the slurring and laws against physical exertion. (B) They are all drunks, based on the slurring. (C) They are all moving at a snail pace, based on the slurring and relaxed tempers. (D) They are all in a hurry, based on the slurring.",
+      "reference_choice": "A",
+      "reference_answer": "They are lazy, based on the slurring and laws against physical exertion.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_dd4c509ce23ddf54",
+      "question_id": "q7",
+      "question": "Why did Jerome not stop when he was being shouted at when leaving the futuristic civilization? (A) He was unsure what they wanted and didn't want to wait and find out. (B) He knew they had caught on to his actions. (C) He was fearing being held there for theft. (D) He knew they were going to switch the generator with another",
+      "reference_choice": "A",
+      "reference_answer": "He was unsure what they wanted and didn't want to wait and find out.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_dd4c509ce23ddf54",
+      "question_id": "q8",
+      "question": "Why is Jerome in search of the museum in the futuristic civilization? (A) That's where the guard who has information on the generator is located. (B) That's where the generator is held. (C) That's where the information for the real inventor is located. (D) That's where the guard who has information on the real inventory of the generator is located.",
+      "reference_choice": "B",
+      "reference_answer": "That's where the generator is held.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_dd4c509ce23ddf54",
+      "question_id": "q9",
+      "question": "What isn't something the guest expects the younger man to do? (A) steal something from a museum (B) take credit for an invention from the future (C) run the time machine (D) listen to his directions very carefully",
+      "reference_choice": "D",
+      "reference_answer": "listen to his directions very carefully",
+      "category": "other"
+    },
+    {
+      "article_name": "a_aa840a6ced2358c4",
+      "question_id": "q1",
+      "question": "Why doesn't Laura want to marry Ben? (A) She does want to marry Ben. However, spacemen are gone all the time. She needs a partner who is going to be there for her. (B) She does want to marry Ben, but spacemen can't have children. (C) She doesn't want to marry Ben because they've only known each other for six weeks. (D) She doesn't want to marry Ben because of the possibility of birth defects caused by space travel.",
+      "reference_choice": "A",
+      "reference_answer": "She does want to marry Ben. However, spacemen are gone all the time. She needs a partner who is going to be there for her.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_aa840a6ced2358c4",
+      "question_id": "q10",
+      "question": "Who is most likely to end up going to Jupiter? (A) Mickey (B) Dean Dawson (C) Ben (D) Charlie",
+      "reference_choice": "C",
+      "reference_answer": "Ben",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_aa840a6ced2358c4",
+      "question_id": "q12",
+      "question": "What isn't a reason for Ben to want to be a rocketman? (A) he wanted to be the best for Laura (B) he wants to travel to unexplored places (C) he didn't have family to come home to (D) he wanted to be like Stardust Charlie",
+      "reference_choice": "A",
+      "reference_answer": "he wanted to be the best for Laura",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_aa840a6ced2358c4",
+      "question_id": "q13",
+      "question": "What isn't a reason that Charlie came to visit? (A) he wanted to convince him to stay on Earth (B) he cared for him like a father (C) he wanted to celebrate Ben's graduation (D) he wanted to say goodbye",
+      "reference_choice": "A",
+      "reference_answer": "he wanted to convince him to stay on Earth",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_aa840a6ced2358c4",
+      "question_id": "q15",
+      "question": "Why didn't Laura say yes? (A) she isn't interested in marrying Ben (B) Mickey wouldn't want that (C) she was jealous of Ben's future plans (D) she knows he wants to go to space",
+      "reference_choice": "D",
+      "reference_answer": "she knows he wants to go to space",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_aa840a6ced2358c4",
+      "question_id": "q2",
+      "question": "How does Ben feel about Mickey? (A) Ben thinks Mickey is a great guy, just not a great co-worker. (B) Ben likes Mickey, they work well together. (C) Ben does not like Mickey. He is relieved Mickey is not headed to space with him. (D) Ben thinks of Mickey as his own brother.",
+      "reference_choice": "B",
+      "reference_answer": "Ben likes Mickey, they work well together.",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "question_id": "q0",
+      "question": "How does the author feel about Princess Mononoke? (A) It is wonderfully strange. (B) It is a world that draws you in and takes your breath away. The only distraction is poor voice casting. (C) It is a powerful vision of the apocalypse. (D) It is technically dazzling.",
+      "reference_choice": "B",
+      "reference_answer": "It is a world that draws you in and takes your breath away. The only distraction is poor voice casting.",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "question_id": "q1",
+      "question": "How does the animal kingdom feel about Ashitaka? (A) They too want to live together in harmony. (B) They look upon him with feral hatred. (C) They don't like him, some tolerate him. (D) They are enemies.",
+      "reference_choice": "C",
+      "reference_answer": "They don't like him, some tolerate him.",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "question_id": "q10",
+      "question": "In reviewing \"Princess Mononoke,\" which of Miyazaki's techniques does the reviewer appreciate the least? (A) His awareness of his audience (B) His digitally dazzling cinematography (C) His attention to detail (D) His sublime proportionality",
+      "reference_choice": "B",
+      "reference_answer": "His digitally dazzling cinematography",
+      "category": "other"
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "question_id": "q13",
+      "question": "According to the reviewer, what is one of the disappointing aspects of the film \"Princess Mononoke\"? (A) Industry ultimately triumphs over nature (B) Princess Mononoke is too fixated on Ashitaka (C) The director Miyazaki gets too lost in unimportant details (D) The actors' overfamiliar voices distract from the seriousness of the plot",
+      "reference_choice": "D",
+      "reference_answer": "The actors' overfamiliar voices distract from the seriousness of the plot",
+      "category": "other"
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "question_id": "q17",
+      "question": "The film reviewer is generally _____ the actors in \"Princess Mononoke,\" and ______ the actors in \"The Limey,\" respectively: (A) irritated by // impressed by (B) skeptical of // convinced by (C) bored of // enraptured by (D) critical of // overpraising of",
+      "reference_choice": "A",
+      "reference_answer": "irritated by // impressed by",
+      "category": "other"
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "question_id": "q5",
+      "question": "How does Princess Mononoke differ from Disney animation? (A) It is homiletic and solipsistic. (B) It is full of splattery carnage. (C) There is no pop surrealism like American cartoons. (D) It has a pantheistic worldview.",
+      "reference_choice": "C",
+      "reference_answer": "There is no pop surrealism like American cartoons.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_679bb395d67f6d50",
+      "question_id": "q1",
+      "question": "Why does modern UFC not have stories to follow? (A) It is televised less often, and the more popular components of the sport are no longer around (B) The rules constantly change, so the story starts over every new season (C) It was a more compelling story without the new gloves and ropes instead of chains--it's too flashy now, and the fans like the raw people (D) The fighters who were around when UFC first became popular were dedicated to their characters, but the contemporary fighters didn't care about this aspect of the sport",
+      "reference_choice": "A",
+      "reference_answer": "It is televised less often, and the more popular components of the sport are no longer around",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_679bb395d67f6d50",
+      "question_id": "q10",
+      "question": "What point is being made by comparing Fight Club to the UFC? (A) While Fight Club glorifies the emasculated American male, the UFC tells a cautionary tale of prudishness, heavy-handed politics, and cultural myopia. (B) The UFC now actually thrives in a context similar to that of the fictional organization. (C) Both organizations share the same rules, but neither can talk about it. (D) Both organizations consist of men who strp down and beat each other to the pulp.",
+      "reference_choice": "B",
+      "reference_answer": "The UFC now actually thrives in a context similar to that of the fictional organization.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_679bb395d67f6d50",
+      "question_id": "q12",
+      "question": "According to the writer, precisely why is it preferable not to wear boxing gloves in the UFC? (A) Because boxing has shown that wearing boxing gloves encourages head injury and leads to death, UFC fighters do not wear them. (B) Wearing boxing gloves makes it easier to throw repeated head punches. (C) Ultimate fighters don't wear boxing gloves so that they don't break their hands. (D) UFC fighters need to use their hands in different modes of combat in which boxing gloves would be a hidnerment.",
+      "reference_choice": "B",
+      "reference_answer": "Wearing boxing gloves makes it easier to throw repeated head punches.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_679bb395d67f6d50",
+      "question_id": "q15",
+      "question": "When you compare UFC now to what it was, what distinct differences emerge? (A) The current UFC is more similar to Fight Club. (B) Before, there was a clear national vision for UFC; currently, fans lack a definitive notion of the nature of the UFC as an American sport since it has been condemned to an underground existence. (C) The early UFC was more similar to Fight Club. (D) There are different fighters but the same lack of rules.",
+      "reference_choice": "A",
+      "reference_answer": "The current UFC is more similar to Fight Club.",
+      "category": "count_time"
+    },
+    {
+      "article_name": "a_679bb395d67f6d50",
+      "question_id": "q6",
+      "question": "What could have spurred the American Medical Association recommending a ban against UFC? (A) There was general political pressure to disfavor the sport, independent of its safety (B) The \"up close and personal\" style of fighting meant that fighters were much more prone to catching sickness from each other, compared to boxing and other sports (C) Private money that could have been going to scientific research was being moved to UFC advertisements, and they wanted to change the discussion (D) Too many people had been seriously injured, so once someone was killed, something had to be done",
+      "reference_choice": "A",
+      "reference_answer": "There was general political pressure to disfavor the sport, independent of its safety",
+      "category": "other"
+    },
+    {
+      "article_name": "a_9cea01b713db2921",
+      "question_id": "q1",
+      "question": "Which best describes the relationship between Lane and Colonel Klett? (A) Lane relies on Klett when he can't make his own decisions independently (B) Lane despises Klett for working as a cog in the government's machine (C) They are friends and colleagues (D) Lane follows all of Klett's commands blindly",
+      "reference_choice": "A",
+      "reference_answer": "Lane relies on Klett when he can't make his own decisions independently",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_9cea01b713db2921",
+      "question_id": "q11",
+      "question": "Why is Lane so child-like? (A) All men are child-like. (B) Lane was never given a proper education, only fighting instruction. (C) Lane is controlled by the Cybrain. His own brain never had the chance to develop properly. (D) Lane has been a Trooper since he was seven years old.",
+      "reference_choice": "B",
+      "reference_answer": "Lane was never given a proper education, only fighting instruction.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9cea01b713db2921",
+      "question_id": "q14",
+      "question": "Why does Gerri kiss Lane? (A) She pities him. (B) She is terrified he'll kill her if she doesn't. (C) She likes Lane. (D) He is trying to save her life.",
+      "reference_choice": "A",
+      "reference_answer": "She pities him.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9cea01b713db2921",
+      "question_id": "q15",
+      "question": "Why do the police believe the analogue computer can defeat Lane? (A) The police are fooling themselves. The analogue computer cannot hope to compete with the cybrain. (B) The analogue computer is much larger and more powerful than the cybrain. (C) The cybrains are an extension of the analogue computer. (D) The cybrains do not have the advanced processor the analogue computer does.",
+      "reference_choice": "B",
+      "reference_answer": "The analogue computer is much larger and more powerful than the cybrain.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_9cea01b713db2921",
+      "question_id": "q6",
+      "question": "How did Lane eventually find the Mayor? (A) Gerri helped him plan his route (B) He had some clues from Gerri and the rest was instinct (C) The cybrain knew exactly where to go after he jumped (D) The Mayor had a flag indicating his room",
+      "reference_choice": "B",
+      "reference_answer": "He had some clues from Gerri and the rest was instinct",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b6a2150f2bd3d5e6",
+      "question_id": "q13",
+      "question": "What motivated the leprechauns to build a spaceship? (A) They desire to seek and add more riches to their already expansive collection (B) They believe that humans' obsession with technology will make the world inhabitable (C) They fear that their race will soon become extinct due to population decline (D) They wish to transport their riches to another location where humans will never steal it",
+      "reference_choice": "B",
+      "reference_answer": "They believe that humans' obsession with technology will make the world inhabitable",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b6a2150f2bd3d5e6",
+      "question_id": "q2",
+      "question": "Which of these is the best description of why the narrator strikes the spaceship? (A) He is convinced there's nothing there and his hand will pass right through (B) He wants to test what it's made out of to see if it would make a good model for his own project (C) He wants to show he means business and call to their attention (D) He is upset that the people ran away and wants to harm something they care about",
+      "reference_choice": "C",
+      "reference_answer": "He wants to show he means business and call to their attention",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b6a2150f2bd3d5e6",
+      "question_id": "q5",
+      "question": "Why did Houlihan consider his work to the advantage of humankind? (A) He has furthered the goals of the little people, and not just the humans, making Earth a better place (B) He thought taking advantage of the little people's project to further his own goals was in line with human ideals (C) He thinks that sabatoging the little people will be better for the goals of humans (D) He thought human goals of scientific advancement could not be completed without his work",
+      "reference_choice": "C",
+      "reference_answer": "He thinks that sabatoging the little people will be better for the goals of humans",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_b6a2150f2bd3d5e6",
+      "question_id": "q6",
+      "question": "Which of these is most true about why the little people are building what they are where they are? (A) They were kicked out of their own home for trying to leave the planet and had to find a new place to set up shop (B) It was the only think they knew would help them gain access to knowledge necessary for the project (C) They wanted to work close enough to the lab to be able to steal supplies (D) They wanted to be far away from people who believed in them so that their plans would not be discovered",
+      "reference_choice": "B",
+      "reference_answer": "It was the only think they knew would help them gain access to knowledge necessary for the project",
+      "category": "other"
+    },
+    {
+      "article_name": "a_b6a2150f2bd3d5e6",
+      "question_id": "q7",
+      "question": "Why of these is not a reason Houlihan agreed to help the little people? (A) He saw it as an opportunity to clear his head about his own work (B) He figured their ship could act as a test case for his work (C) He felt a kinship with them because of his family's history (D) He figured he was the only one with knowledge to help them solve their problem",
+      "reference_choice": "D",
+      "reference_answer": "He figured he was the only one with knowledge to help them solve their problem",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_aae1371f48c73e3e",
+      "question_id": "q12",
+      "question": "What caused Judy's yelling to be ignored by the gangs in the schoolyard? (A) The surprise of the kids who showed up in costumes trying to return home. (B) They were already fighting and failed to hear her over the shouting. (C) They couldn't hear her over their own hollering because of the intense cold weapons and jackets. (D) They were too distracted by the approaching police lights.",
+      "reference_choice": "C",
+      "reference_answer": "They couldn't hear her over their own hollering because of the intense cold weapons and jackets.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_aae1371f48c73e3e",
+      "question_id": "q4",
+      "question": "Why does the Scorpion leave their signature at each crime? (A) To show that they \"took care\" of each criminal. (B) To scare off other potential criminals. (C) To show that they were present at the crime. (D) To help lead the police in connecting the crimes.",
+      "reference_choice": "A",
+      "reference_answer": "To show that they \"took care\" of each criminal.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_aae1371f48c73e3e",
+      "question_id": "q5",
+      "question": "What do all 3 crimes have in common? (A) They were ended by unexplained phenomena and marked by the Scorpion. (B) They were carried out by The Scorpions, a new gang. (C) They were ended by the criminals being apprehended by the police. (D) In all 3 cases, something either melted or got too hot to handle.",
+      "reference_choice": "A",
+      "reference_answer": "They were ended by unexplained phenomena and marked by the Scorpion.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_aae1371f48c73e3e",
+      "question_id": "q6",
+      "question": "What seems to be the Scorpion's motivation? (A) They want people to know their name and fear them, hence leaving their mark at every crime. (B) They are indiscriminately attacking people in various situations. (C) They hate criminals and work as a vigilante, punishing people as they see fit. (D) They want to cause trouble because they are actually The Scorpions, a group of juvenile delinquents.",
+      "reference_choice": "C",
+      "reference_answer": "They hate criminals and work as a vigilante, punishing people as they see fit.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_aae1371f48c73e3e",
+      "question_id": "q8",
+      "question": "If the newspapers and the police choose to continue ignoring the letters from The Scorpion, what will likely happen? (A) The Scorpion will likely retaliate against the newspapers in his own dangerous stunt. (B) The Scorpion will step in again, leaving his signature, and likely send another letter to the newspaper as a warning to criminals. (C) The Scorpion will likely turn evil himself and start antagonizing attacks. (D) Hanks will be proven right and show that there is no such person who is fighting crime and leaving a signature.",
+      "reference_choice": "B",
+      "reference_answer": "The Scorpion will step in again, leaving his signature, and likely send another letter to the newspaper as a warning to criminals.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_c7c925a732844670",
+      "question_id": "q11",
+      "question": "Who would the author most agree with about swearing? (A) Mussolini (B) Ashley Montagu (C) Robert Graves (D) Michael Irvin",
+      "reference_choice": "C",
+      "reference_answer": "Robert Graves",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_c7c925a732844670",
+      "question_id": "q4",
+      "question": "Which of the following statements most accurately describes the author's predictions regarding profanity? (A) Soon, the majority of idioms and colloquialisms will include language once considered to be profane (B) The more society accepts use of expletives, the more we will need to use it to function in conversation (C) In a matter of decades, it will be acceptable for children in primary school to use expletives (D) Governments will eventually have no choice but to create laws forbidding the use of profanity",
+      "reference_choice": "B",
+      "reference_answer": "The more society accepts use of expletives, the more we will need to use it to function in conversation",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c7c925a732844670",
+      "question_id": "q5",
+      "question": "What is the author's central point about the increased frequency of expletive use in western society? (A) It represents mass disillusionment in ideals that were once central to a well-functioning society (B) It will inevitably result in an increase in crime and socially unacceptable behaviors (C) It has no correlation with crime but a positive correlation with acceptance of the taboo (D) It will bring about a new era of creativity and innovation in the years to come",
+      "reference_choice": "C",
+      "reference_answer": "It has no correlation with crime but a positive correlation with acceptance of the taboo",
+      "category": "other"
+    },
+    {
+      "article_name": "a_c7c925a732844670",
+      "question_id": "q6",
+      "question": "Who was stigmatized the most over swearing publicly? (A) Kenneth Tynan (B) Robert Graves (C) Michael Irvin (D) Greg Lloyd",
+      "reference_choice": "A",
+      "reference_answer": "Kenneth Tynan",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_ab27255903d78f68",
+      "question_id": "q2",
+      "question": "What is the main purpose of a “galley proof”? (A) To give editors a final version to proofread. (B) To give readers a chance to pre-order the book. (C) To offer experts an opportunity to critique the book. (D) To generate buzz about a book before its publication.",
+      "reference_choice": "D",
+      "reference_answer": "To generate buzz about a book before its publication.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ab27255903d78f68",
+      "question_id": "q3",
+      "question": "According to Murray and Herrnstein: (A) Poor black people are unintelligent. (B) Poor people are able to work hard and get ahead. (C) There are different types of intelligence. (D) Successful people are clustered among the unintelligent.",
+      "reference_choice": "A",
+      "reference_answer": "Poor black people are unintelligent.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ab27255903d78f68",
+      "question_id": "q7",
+      "question": "Murray and Herrstein believe that _____ is not important to an individual’s success. (A) Education (B) IQ (C) Parents' status (D) Ability",
+      "reference_choice": "A",
+      "reference_answer": "Education",
+      "category": "other"
+    },
+    {
+      "article_name": "a_ab27255903d78f68",
+      "question_id": "q9",
+      "question": "Which is the least likely reason for not circulating The Bell Curve in galleys? (A) by the time people could intelligently criticize it, it was nearly too late (B) it made people more excited to read it when it did come out (C) it gave little time for people to check the facts (D) there wasn't enough time between the galley publication and the official publication",
+      "reference_choice": "D",
+      "reference_answer": "there wasn't enough time between the galley publication and the official publication",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_3d2b44d920f3e6c6",
+      "question_id": "q0",
+      "question": "Why do Arvid 6 and Tendal 13 want to take Nancy's baby? (A) They took the baby because it is not human. (B) They took the baby to correct a mistake that Arvid 6 made. (C) They took the baby to rescue Kanad. (D) They took the baby for ransom.",
+      "reference_choice": "B",
+      "reference_answer": "They took the baby to correct a mistake that Arvid 6 made.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_3d2b44d920f3e6c6",
+      "question_id": "q14",
+      "question": "Why did the driver who killed Nancy and Reggie Laughton pretend to be drunk? (A) The driver did not have enough time to make up a more convincing story (B) To confuse the authorities so it would take longer for them to figure out his identity (C) To get a manslaughter charge instead of a murder charge (D) The driver was not pretending -- he was actually intoxicated",
+      "reference_choice": "A",
+      "reference_answer": "The driver did not have enough time to make up a more convincing story",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_3d2b44d920f3e6c6",
+      "question_id": "q15",
+      "question": "Where will Arvid 6 and Tendal 13 go after the end of the text? (A) To go back 6,000 years to re-attempt a Kanad recovery mission (B) To return to the Laughton's home in order to alter the crime scene (C) To travel to the Ultroom for Arvid 6 to face his consequences (D) To steal Phullam from his parents and get closer to recovering Kanad.",
+      "reference_choice": "D",
+      "reference_answer": "To steal Phullam from his parents and get closer to recovering Kanad.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3d2b44d920f3e6c6",
+      "question_id": "q16",
+      "question": "Which term best describes the relationship between Arvid 6 and Tendal 13? (A) compulsory (B) symbiotic (C) complicated (D) predatory",
+      "reference_choice": "A",
+      "reference_answer": "compulsory",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_3d2b44d920f3e6c6",
+      "question_id": "q19",
+      "question": "Arvid 6 and Tendal 13 can perform all of the following abilities EXCEPT: (A) hypnosis (B) dematerialization (C) time travel (D) mind-reading",
+      "reference_choice": "D",
+      "reference_answer": "mind-reading",
+      "category": "other"
+    },
+    {
+      "article_name": "a_3d2b44d920f3e6c6",
+      "question_id": "q5",
+      "question": "How many times did Tendal 13 and Arvid 6 go to the Laughton's home? (A) One (B) Four (C) Three (D) Two",
+      "reference_choice": "C",
+      "reference_answer": "Three",
+      "category": "count_time"
+    },
+    {
+      "article_name": "a_6c12bf8339e5819f",
+      "question_id": "q10",
+      "question": "Why does Ethaniel think the humans look defenseless? (A) Without space travel, the humans seem defenseless against an alien attack. (B) Without wings, the humans look small and defenseless. (C) Without wings, the humans look like children. (D) Without space weapon technology, the humans seem defenseless against an alien attack.",
+      "reference_choice": "B",
+      "reference_answer": "Without wings, the humans look small and defenseless.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_6c12bf8339e5819f",
+      "question_id": "q13",
+      "question": "How do Bal and Ethaniel feel about the humans? (A) Bal and Ethaniel think humans are very similar beings to themselves. (B) Bal and Ethaniel think humans are crude, rough, and desperate. (C) Bal and Ethaniel think humans are not very intelligent and superstitious. (D) Bal and Ethaniel are scared of the humans because humans seem to be trigger-happy.",
+      "reference_choice": "A",
+      "reference_answer": "Bal and Ethaniel think humans are very similar beings to themselves.",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_6c12bf8339e5819f",
+      "question_id": "q2",
+      "question": "What is the relationship between the two aliens? (A) The very strict power structure means that the second alien never has a say in the decisions that are made. (B) They are equal rank and similar opinions means decisions are made quickly. (C) They are nervous about overstepping the other's authority, meaning nothing ever gets done. (D) They are curious about different aspects of the culture and are hesitant for different reasons, but both want to help the humans.",
+      "reference_choice": "B",
+      "reference_answer": "They are equal rank and similar opinions means decisions are made quickly.",
+      "category": "entity_relation"
+    },
+    {
+      "article_name": "a_6c12bf8339e5819f",
+      "question_id": "q6",
+      "question": "How did the climate affect the humans' perception of the aliens? (A) The cold pushed the aliens to fly a bit, exposing their wings. (B) The aliens seemed extra out of place in the cold. (C) The cold was what allowed their ships to glow and look powerful. (D) The cold made it harder for the aliens to travel on the surface.",
+      "reference_choice": "A",
+      "reference_answer": "The cold pushed the aliens to fly a bit, exposing their wings.",
+      "category": "other"
+    },
+    {
+      "article_name": "a_6c12bf8339e5819f",
+      "question_id": "q7",
+      "question": "Why does it take the aliens so long to make a decision about what to do? (A) They do not know if it is worth the time to learn a human language to try to convince the humans to maintain peace. (B) They are cautious because they do not want to get hit by a missile or bomb. (C) The aliens do not actually want to help, but are required to, so they are hesitant to make a move. (D) They cannot decide if they have time to make a difference before they have to be somewhere else.",
+      "reference_choice": "D",
+      "reference_answer": "They cannot decide if they have time to make a difference before they have to be somewhere else.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_a6e66d2e491dcf04",
+      "question_id": "q0",
+      "question": "Why is Conners upset with Bridges? (A) Conners was chewed out by a Senator because Bridges was trying to get information, (B) Conners has a deal with the State Department that the paper won't print certain stories. (C) Conners received a report that Bridges was behaving unprofessionally. (D) Conners has a deal with the White House that the paper won't print certain stories.",
+      "reference_choice": "C",
+      "reference_answer": "Conners received a report that Bridges was behaving unprofessionally.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_a6e66d2e491dcf04",
+      "question_id": "q5",
+      "question": "Why didn't the Delegate have a robotic voice? (A) The robot was programmed by the Venusians to speak the many languages of Earth. (B) The robot was programmed by Professor Coltz and the group that helped him to speak eight languages. (C) The robot was voiced by Professor Coltz remotely. (D) The advanced Venusian technology allows for a natural-sounding voice.",
+      "reference_choice": "C",
+      "reference_answer": "The robot was voiced by Professor Coltz remotely.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_a6e66d2e491dcf04",
+      "question_id": "q6",
+      "question": "Why doesn't the robot arrive already put together? (A) The spaceship is only 15 feet in total circumference. If the robot was already put together it wouldn't fit inside. (B) The Venusians think the task of building the robot will unite the people of Earth. (C) Professor Coltz's team thinks the task of building the robot will unite the people of Earth. (D) The robot is sent in pieces packed in a special material to protect it from the landing impact.",
+      "reference_choice": "A",
+      "reference_answer": "The spaceship is only 15 feet in total circumference. If the robot was already put together it wouldn't fit inside.",
+      "category": "causal_intent"
+    },
+    {
+      "article_name": "a_a6e66d2e491dcf04",
+      "question_id": "q7",
+      "question": "Which two terms best describe Jerry's tone toward Greta? (A) misogynistic and dismissive (B) lustful and manipulative (C) rueful and vexed (D) condescending and harsh",
+      "reference_choice": "B",
+      "reference_answer": "lustful and manipulative",
+      "category": "attitude_trait"
+    },
+    {
+      "article_name": "a_a6e66d2e491dcf04",
+      "question_id": "q9",
+      "question": "What is the most surprising detail about the Venusian delegate? (A) She is very tall for a female (B) It must be assembled according to instructions (C) He was once an inhabitant of Earth (D) It self-destructs after a certain time period has passed",
+      "reference_choice": "B",
+      "reference_answer": "It must be assembled according to instructions",
+      "category": "other"
+    }
+  ]
+}

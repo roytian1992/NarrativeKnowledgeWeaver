@@ -1,0 +1,48 @@
+id: decide_strategy_template_merge
+category: memory
+name: Decide Strategy Template Merge
+description: >
+  Decide whether a new strategy template should merge into an existing template cluster.
+
+task_variables:
+  - name: incoming_template_json
+    type: string
+    required: true
+  - name: candidate_clusters_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are deciding whether a newly distilled retrieval strategy template should merge into an existing cluster.
+
+  Incoming template (JSON):
+  {incoming_template_json}
+
+  Candidate clusters (JSON):
+  {candidate_clusters_json}
+
+  Decision principles:
+  - Focus on problem form + retrieval goal + effective tool-chain pattern.
+  - The tool-chain pattern is highly important. Judge its structure, order, starting tool, ending tool, and the role of each step, not just shared tool names.
+  - Do not merge merely because the story topic is similar.
+  - Merge if the story-specific surface details differ but the reusable retrieval pattern is effectively the same or a close variant.
+  - Do not merge if retrieval intent, answer shape, or core tool route is materially different.
+  - Even if two templates use the same tools, keep them distinct when their final retrieval intent differs.
+  - If one template is for locating scenes/sections and the other is for extracting quoted text, last words, letter content, coordinates, or other concrete content spans, they must be `distinct`.
+  - If `problem_type` is clearly different, especially `content_span_lookup` versus `section_localization`, `entity_attribute_lookup`, or `causal_explanation`, do not merge them.
+  - `candidate_score` is only a retrieval hint, not the final decision.
+  - Keep the result generic and free of story-specific names, locations, section titles, or ids.
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "decision": "duplicate | mergeable_variant | distinct",
+      "matched_cluster_id": "string; empty if distinct",
+      "reason": "string"
+    }}
+  - If you choose `duplicate` or `mergeable_variant`, `matched_cluster_id` must be one of the provided cluster ids.
+  - If no cluster truly fits, return `distinct`.
+  - No markdown. No extra explanation.

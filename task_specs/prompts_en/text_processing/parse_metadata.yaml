@@ -1,0 +1,96 @@
+id: parse_metadata
+category: text_processing
+name: Parse Document Metadata
+description: >
+  Parse structured metadata for a document unit based on doc_type.
+  Task details (fields to extract) are provided via static task_spec.
+  Strict JSON-only output.
+
+task_variables:
+  - name: doc_type
+    type: string
+    required: true
+    description: Document type key used to select metadata parsing task.
+
+  - name: title
+    type: string
+    required: true
+    description: Unit title (chapter title / scene title).
+
+  - name: subtitle
+    type: string
+    required: false
+    description: Optional subtitle.
+
+  - name: text
+    type: string
+    required: false
+    description: Optional content text of the unit.
+
+static_variables:
+  - name: task_spec
+    type: string
+    required: true
+    description: Rendered metadata extraction task description for the given doc_type.
+
+template: |
+  You are performing metadata extraction for a single document unit.
+
+  --------------------------------
+  INPUTS
+  --------------------------------
+
+  [Document Type]
+  {doc_type}
+
+  [Title]
+  {title}
+  {subtitle}
+
+  [Text]
+  {text}
+
+  --------------------------------
+  TASK DESCRIPTION
+  --------------------------------
+  The following describes which metadata fields to extract and what each field represents:
+
+  {task_spec}
+
+  --------------------------------
+  GLOBAL RULES
+  --------------------------------
+  - Output JSON only.
+  - Do NOT fabricate information.
+  - If a value is not explicitly supported, use null.
+  - Do NOT output empty strings.
+  - Do NOT add keys beyond those defined in the task description.
+
+  --------------------------------
+  MULTI-VALUE RULE (IMPORTANT)
+  --------------------------------
+  - Some metadata fields may have multiple distinct values.
+  - If multiple values apply to a field, combine them into a single string
+    using "; " (semicolon + space) as the separator.
+  - Do NOT output lists or arrays.
+  - Preserve the natural order of appearance when possible.
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+  Return JSON ONLY:
+
+  {{
+    "metadata": {{
+      "field_name_1": "value or null",
+      "field_name_2": "value or null",
+      "field_name_3": "value or null"
+    }}
+  }}
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+  - Follow the task description exactly.
+  - Keep values concise and canonical.
+  - No explanations, no markdown, JSON only.

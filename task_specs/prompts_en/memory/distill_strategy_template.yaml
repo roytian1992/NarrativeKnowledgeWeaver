@@ -1,0 +1,69 @@
+id: distill_strategy_template
+category: memory
+name: Distill Strategy Template
+description: >
+  Distill a reusable generic strategy template from the best successful attempt of one question.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: query_pattern_json
+    type: string
+    required: true
+  - name: best_attempt_json
+    type: string
+    required: true
+  - name: failed_attempts_json
+    type: string
+    required: false
+  - name: retry_instruction
+    type: string
+    required: false
+
+static_variables: []
+
+template: |
+  You are distilling a generic retrieval strategy template from a successful QA trace.
+
+  Question:
+  {question}
+
+  Query pattern (JSON):
+  {query_pattern_json}
+
+  Best successful attempt (JSON):
+  {best_attempt_json}
+
+  Failed attempt summaries (JSON, if any):
+  {failed_attempts_json}
+
+  Retry hint if any:
+  {retry_instruction}
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "pattern_name": "string",
+      "pattern_description": "string",
+      "recommended_chain": ["tool_name_1", "tool_name_2"],
+      "anti_patterns": ["string", "string"],
+      "chain_rationale": "string",
+      "chain_constraints": ["string", "string"]
+    }}
+  - The template must be generic and must not include story-specific names, locations, section titles, or ids.
+  - `pattern_description` must describe problem type + recommended retrieval route.
+  - If the success came after a corrective retry, you may absorb the corrected routing lesson into `pattern_description` or `anti_patterns`, but keep it generic.
+  - `anti_patterns` must be concrete. Prefer real failure modes seen in the failed attempts, such as:
+    1. missing a key constraint;
+    2. concluding directly from entity retrieval without evidence verification;
+    3. listing sections without reading the source text;
+    4. relying on timeline or age inference instead of explicit evidence.
+  - If failed attempts show a recurring hallucination pattern, include it in `anti_patterns`.
+  - If there is no strong failure pattern, still output brief but specific `anti_patterns`; do not invent story-specific details.
+  - `recommended_chain` must be the minimal necessary chain. Do not keep routine exploratory steps just because they appeared in the successful trace.
+  - Prefer the shorter chain when two chains can solve the same pattern.
+  - `chain_rationale` should explain why this chain is sufficient.
+  - `chain_constraints` should capture when this chain is appropriate or what evidence requirement it assumes.
+  - No markdown. No extra explanation.

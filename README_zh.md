@@ -1,337 +1,369 @@
-# Narrative Knowledge Weaver: A Multi-Agent Framework for Knowledge Graph Construction and Narrative Analysis
+# NarrativeKnowledgeWeaver
 
-**Narrative Knowledge Weaver**是一个基于大语言模型的智能知识图谱构建与叙事分析系统。该系统能够从非结构化的叙事文本（如小说、剧本）中自动抽取实体、关系和属性，构建结构化的知识图谱，并进一步分析事件因果关系和情节结构，生成事件因果图谱和情节单元图谱。我们在系统中设计了一个 问答智能体，其核心能力是能够根据用户问题的语义特征，自动选择并调用合适的工具（图数据库、向量数据库或关系数据库），并在必要时进行多源结果融合。该机制使系统能够在结构化推理、语义证据回链与属性型查询之间实现灵活切换，从而生成既逻辑严谨又具备原文支撑的回答。
+NarrativeKnowledgeWeaver 是一个面向叙事文本的知识抽取、聚合建模与检索问答框架。当前代码库以 JSON-first 的知识图谱构建流程为核心，结合本地 NetworkX 运行时图、Chroma 向量库、SQLite 交互数据库，以及一个基于工具调用的检索型 Agent。
 
-此外，系统还集成了一个 **面向叙事文本的问答模块**。该模块通过统一调度 **图数据库（Neo4j）**、**向量数据库（ChromaDB）** 与 **关系数据库（SQL｜服化道）**，实现对复杂问题的多模态解答。其核心机制是以 **混合模式（Hybrid）** 为默认策略：
+当前仓库已经支持：
+- 从 screenplay / novel / general 文档构建基础知识图谱
+- 基于 refined graph 的属性抽取
+- 交互信息抽取到 JSON，并可选择导入 SQLite
+- 两类聚合建模：
+  - `narrative`：`Event -> Episode -> Storyline`
+  - `community`：Leiden 社区划分 + GraphRAG 风格社区摘要
+  - `full`：两者都构建
+- 一个按 aggregation mode 加载工具的检索型 QA Agent
+- 两套彼此独立的 memory：
+  - 知识抽取记忆
+  - 检索策略记忆
 
-* **图数据库** 提供事件因果链、人物关系和情节结构的推理；
-* **向量数据库** 提供对白与叙事描写的语义检索与原文证据回链；
-* **关系数据库** 提供服饰、造型与道具等属性信息的规范化查询。
+这份 README 以当前仓库真实实现为准，旧版文档中的部分架构描述已经过时。
 
-问答代理能够根据用户问题自动组合这些工具，给出既有 **结构化结论** 又有 **原文证据** 的答案。
+## 当前功能概览
 
+### 1. 基础知识图谱构建
+基础流水线由 [`core/builder/graph_builder.py`](core/builder/graph_builder.py) 实现。
 
-## 核心特性
+当前流程如下：
+1. 文本切块
+2. 实体与关系抽取
+3. 图谱结果 refinement / merge
+4. 生成 entity / relation basic info
+5. 在 refinement 之后进行属性抽取
+6. 在属性抽取之后进行 interaction 抽取
+7. interaction 结果落盘到 `data/narrative_interactions`
+8. 可选地导入 SQLite
+9. 构建文档节点并加载到本地运行时图
 
-- **智能知识抽取**：基于大语言模型自动抽取实体、关系和属性
-- **多层次图谱构建**：构建知识图谱、事件因果图谱和情节单元图谱
-- **多智能体协作**：采用多智能体系统，各司其职，协同工作
-- **反思优化机制**：内置质量评估和反思机制，迭代优化抽取结果
-- **多模型支持**：支持OpenAI、Qwen等多种大语言模型
-- **高性能处理**：支持多线程并行处理，适合大规模文档
-- **灵活配置**：通过YAML配置文件灵活配置各种参数
-- **多种存储后端**：支持Neo4j图数据库和ChromaDB向量数据库
+### 2. Narrative 聚合
+Narrative 聚合由 [`core/builder/narrative_graph_builder.py`](core/builder/narrative_graph_builder.py) 实现。
 
-## 系统架构
+它会构建：
+- Episode 节点与 `EPISODE_CONTAINS` 支持边
+- Episode 之间的因果 / 语义关系
+- Storyline candidate 与 Storyline 节点
+- Storyline 支持边与 Storyline 关系
 
-系统采用模块化设计，主要包含以下核心模块：
+输出保存在 `data/narrative_graph/`。
 
-<img src="./assets/overall_architecture.png" alt="系统架构" width="600"/>
+### 3. Community 聚合
+Community 聚合由 [`core/builder/community_graph_builder.py`](core/builder/community_graph_builder.py) 实现。
 
-## 多智能体系统
-### Information Extraction Agent
-用于抽取实体和关系
+它会：
+- 在现有运行时图上做本地社区划分
+- 将社区归属写回运行时图
+- 用 LLM 生成社区报告 / 摘要
+- 将社区摘要向量存入 `data/vector_store/community`
 
-<img src="./assets/kg_agent.png" alt="Information Extraction Agent" width="600"/>
+输出保存在 `data/community_graph/`。
 
-**工作流程架构：**
-1. **经验检索** ：调用语义记忆系统，检索历史中与当前输入相似的问题与建议，提升提示上下文的针对性
-2. **实体抽取** ：使用语言模型从文本中抽取结构化实体，支持8种核心实体类型（Character、Event、Action、Location、Object、Concept、Emotion、Goal、TimePoint）
-3. **关系抽取**：基于已有实体与关系类型定义，从文本中识别实体之间的语义关系，支持角色关系、事件动作关系、场景关系等多种关系类型
-4. **反思评估**：结合当前抽取结果与日志生成过程，评估抽取质量，返回评分与反思建议
+### 4. 检索型 Agent
+检索 Agent 由 [`core/agent/retriever_agent.py`](core/agent/retriever_agent.py) 实现。
 
-属性抽取与服化道信息抽取也基于类似的抽取-> 反思 -> 优化的流程。
+它是一个单轮、retrieval-first 的 Agent，可以组合：
+- 本地运行时图工具
+- 向量检索工具
+- BM25 与 document mapping 工具
+- 可选的 SQLite interaction 工具
+- 组合检索工具，例如 narrative hierarchical search 与 community GraphRAG search
 
-### Attribute Extraction Agent
-AttributeExtractionAgent是系统中专门负责实体属性抽取的核心组件。
+它加载哪些工具，取决于 `global.aggregation_mode`：
+- `narrative`：加载 Episode / Storyline 相关工具
+- `community`：加载 Community 相关工具
+- `full`：两类都加载
 
-<img src="./assets/attribute_extraction_process.png" alt="Attribute Extraction Agent" width="600"/>
+### 5. 两类 Memory
+当前仓库里有两套独立的 memory：
 
-### Graph Probing Agent
-主要目标是确保知识图谱的 schema 结构能够与文本内容和用户需求高度契合，从而支撑不同层面的分析与推理任务
+- `extraction_memory`
+  - 用于知识图谱抽取阶段
+  - 保存 raw / distilled / realtime memory
+  - 位于 `data/memory/raw_memory`、`data/memory/distilled_memory`、`data/memory/realtime_memory`
 
-<img src="./assets/probing_agent.png" alt="Graph Probing Agent" width="600"/>
+- `strategy_memory`
+  - 用于检索 Agent 运行时的策略提示
+  - 离线训练，在线读取
+  - 运行时策略库位于 `data/memory/strategy/strategy_library.json`
+  - 训练入口见 [`core/strategy_training/strategy_training_runner.py`](core/strategy_training/strategy_training_runner.py)
 
-**预准备步骤** 在进入 schema 探测之前，系统会先执行一个 **阅读洞见抽取**: **随机抽取约 35% 的文本块**，进行快速阅读与语义分析。
+## 仓库结构
 
-在实际运行中，Graph Probing Agent 采用 **循环式工作流**：
-1. **经验检索**：从记忆库中检索相关案例和洞见，作为 schema 优化的参考。
-2. **背景信息生成/调整**：根据洞见，生成/优化背景信息和术语列表。
-3. **Schema 生成/调整**：结合背景信息与用户 goals，生成新的实体 Schema，然后以此为基础生成新的关系Schema。
-4. **抽取测试**：用已有的背景信息和术语列表构建系统提示词，然后基于候选 schema 在部分文本上进行试验性抽取，验证覆盖度与可行性。
-5. **修剪优化**：根据统计分布与任务目标，删除冗余或低频类型，保持 schema 的精炼性。
-6. **反思迭代**：评估当前 schema 的质量与目标匹配度，若不足则进入下一轮优化。
-
-### 核心目录结构
-
+```text
+NarrativeKnowledgeWeaver/
+├── configs/                     # YAML 配置
+├── core/
+│   ├── agent/                   # 抽取 / 检索 agent
+│   ├── builder/                 # graph builder 与 manager
+│   ├── functions/               # tool calls、memory functions、aggregation functions
+│   ├── memory/                  # extraction memory 与 strategy memory
+│   ├── model_providers/         # LLM / embedding / rerank 封装
+│   ├── storage/                 # 本地图存储、vector store、SQL store
+│   └── utils/                   # config、format、图工具、general utils
+├── data/
+│   ├── knowledge_graph/
+│   ├── narrative_graph/
+│   ├── community_graph/
+│   ├── narrative_interactions/
+│   ├── vector_store/
+│   ├── sql/
+│   └── memory/
+├── examples/
+│   ├── documents/
+│   └── datasets/
+├── reports/                     # tool 测试、烟测、QA 报告
+├── strategy_training/           # 策略记忆训练结果
+├── task_specs/                  # prompts、schemas、task settings、tool metadata
+├── main.py                      # 基础图谱 + aggregation 主入口
+└── test_main.py                 # community-only 测试入口
 ```
-core/
-├── agent/                    # 智能体模块
-│   ├── attribute_extraction_agent.py   # 属性抽取智能体
-│   ├── knowledge_extraction_agent.py          # 知识图谱抽取代理
-│   ├── graph_probing_agent.py           # 探测器智能体
-|   ├── retriever_agent.py              # 信息检索智能体
-│   └── cmp_extraction_agent.py           # 服化道抽取智能体
-├── builder/                  # 构建器模块
-│   ├── manager/                        # 构建管理器
-│   ├── document_processor.py           # 文档处理器
-│   ├── graph_builder.py                # 图谱构建器
-│   ├── database_builder.py             # 关系型数据库构建器
-│   ├── graph_preprocessor.py           # 图预处理器
-│   ├── narrative_graph_builder.py      # 叙事图构建器
-│   └── reflection.py                   # 反思模块
-├── functions/                # 功能函数模块
-├── memory/                   # 记忆模块
-├── model_providers/          # 模型提供者
-├── models/                   # 模型定义
-├── prompts/                  # 提示词模板
-├── schema/                   # 数据模式定义
-├── storage/                  # 存储模块
-└── utils/                    # 工具函数
-```
 
-## 快速开始
+## Prompt / Schema 管理
 
-### 环境要求
+当前 prompts、schemas、task settings 都统一放在 `task_specs/` 下。
 
-- Python 3.10+
-- Neo4j 5.x
-- 足够的内存和计算资源（推荐16GB+内存）
+语言由 [`core/utils/config.py`](core/utils/config.py) 中的 `global.language` 控制：
+- `zh`
+  - `task_specs/prompts`
+  - `task_specs/task_settings`
+  - `task_specs/schema`
+  - `task_specs/tool_metadata/zh`
+- `en`
+  - `task_specs/prompts_en`
+  - `task_specs/task_settings_en`
+  - `task_specs/schema_en`
+  - `task_specs/tool_metadata/en`
 
-### 安装步骤
+这才是当前代码实际使用的路径。旧版文档里 `core/prompts` 那种说法已经不再准确。
 
-1. **克隆项目**
+## 环境要求
+
+- Python 3.12
+- 一个兼容 OpenAI 风格 API 的生成模型服务
+- embedding 服务
+- 如果启用 rerank，需要 reranker 服务
+
+## 安装
+
+### Conda
+
+仓库里的 `environment.yml` 当前环境名为 `screenplay`。
+
 ```bash
-git clone https://github.com/roytian1992/NarrativeKnowledgeWeaver.git
-cd NarrativeKnowledgeWeaver
-```
-
-2. **安装Python依赖**
-```bash
-# 使用pip安装
-pip install -r requirements.txt
-
-# 或使用conda安装
 conda env create -f environment.yml
-conda activate kgag
+conda activate screenplay
 ```
 
-3. **安装和配置Neo4j**
-```bash
-# Ubuntu/Debian系统
-sudo apt update && sudo apt upgrade -y
-sudo apt install wget apt-transport-https gnupg lsb-release -y
-
-# 添加Neo4j官方源
-wget -O - https://debian.neo4j.com/neotechnology.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/neo4j.gpg
-echo "deb [signed-by=/usr/share/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" | sudo tee /etc/apt/sources.list.d/neo4j.list
-
-# 安装Neo4j
-sudo apt update
-sudo apt install neo4j -y
-
-# 安装GDS插件
-cd /var/lib/neo4j/plugins/
-sudo wget https://graphdatascience.ninja/neo4j-graph-data-science-2.20.0.zip
-sudo unzip neo4j-graph-data-science-2.20.0.zip
-
-# 配置Neo4j
-sudo nano /etc/neo4j/neo4j.conf
-# 添加以下配置：
-# dbms.security.procedures.unrestricted=gds.*
-# dbms.security.procedures.allowlist=gds.*
-
-# 启动Neo4j服务
-sudo systemctl enable neo4j
-sudo systemctl start neo4j
-```
-
-### 配置文件设置
-
-基于提供的配置文件模板创建您的配置：
-
-```yaml
-# 知识图谱构建器配置
-knowledge_graph_builder:
-  prompt_dir: ./core/prompts
-  doc_type: "screenplay"  # 或 "novel"
-  max_workers: 32
-
-# 事件情节图构建器配置
-event_plot_graph_builder:
-  max_workers: 32
-  max_depth: 2
-  check_weakly_connected_components: True
-  min_connected_component_size: 10
-  max_num_triangles: 2000
-  max_iterations: 5
-  min_confidence: 0.0
-  event_fallback: [Action, Goal]
-
-# 探测配置
-probing:
-  probing_mode: adjust  # fixed/adjust/from_scratch
-  refine_background: False
-  max_workers: 32
-  max_retries: 2
-  experience_limit: 100
-  relation_prune_threshold: 0.01
-  entity_prune_threshold: 0.02
-
-# 大语言模型配置
-llm:
-  provider: openai
-  model_name: Qwen3-235B-A22B-FP8  # 或其他支持的模型
-  api_key: your-api-key
-  base_url: http://your-api-endpoint/v1
-  temperature: 0.0
-  max_tokens: 8096
-  enable_thinking: True
-  timeout: 60
-
-# 图嵌入配置
-graph_embedding:
-  provider: openai
-  model_name: bge-m3
-  base_url: http://localhost:8080/v1
-  dimensions: 1024
-
-# 向量数据库嵌入配置
-vectordb_embedding:
-  provider: openai
-  model_name: Qwen3-Embedding-8B
-  base_url: http://localhost:8009/v1
-  dimensions: 1024
-
-# 重排序配置
-rerank:
-  provider: cohere
-  model_name: Qwen3-Reranker-8B
-  base_url: http://localhost:8012/v1
-
-# 文档处理配置
-document_processing:
-  chunk_size: 500
-  chunk_overlap: 0
-  max_workers: 32
-  max_segments: 3
-  max_content_size: 2000
-
-# 智能体配置
-agent:
-  max_workers: 32
-  score_threshold: 7
-  max_retries: 2
-  async_timeout: 600
-  async_max_attempts: 3
-  async_backoff_seconds: 60
-
-# 记忆配置
-memory:
-  enabled: true
-  memory_type: vector
-  max_token_limit: 4000
-  memory_path: ./data/memory
-  history_memory_size: 3
-  insight_memory_size: 10
-
-# 存储配置
-storage:
-  neo4j_uri: bolt://localhost:7687
-  neo4j_username: neo4j
-  neo4j_password: your-password
-  vector_store_type: chroma
-  vector_store_path: data/vector_store
-  document_store_path: data/document_store
-  knowledge_graph_path: data/knowledge_graph
-  graph_schema_path: data/graph_schema
-  sql_database_path: data/sql
-```
-
-## 使用方法
-
-### 基本用法
+### Pip
 
 ```bash
-# 处理剧本文档
-python main.py \
-    -c configs/config_openai.yaml \
-    -i examples/documents/流浪地球2剧本.json \
-    -v
-
-# 处理小说文档
-python main.py \
-    -c configs/config_openai.yaml \
-    -i examples/documents/我机器人.json \
-    -v
+pip install -r requirements.txt
 ```
 
-### 命令行参数说明
+## 配置说明
 
-| 参数 | 类型 | 必需 | 说明 |
-|------|------|------|------|
-| `-c, --config` | str | 是 | 主配置文件路径（YAML格式） |
-| `-i, --input` | str | 是 | 输入文档路径（JSON格式） |
-| `-b, --build-settings` | str | 是 | 构建流程设置文件路径 |
-| `-v, --verbose` | flag | 否 | 启用详细日志输出 |
+配置由 [`core/utils/config.py`](core/utils/config.py) 解析。
 
-## 核心工作流程
+当前比较关键的配置段：
+- `global`
+  - `language`: `zh` 或 `en`
+  - `doc_type`: `screenplay`、`novel`、`general`
+  - `aggregation_mode`: `narrative`、`community`、`full`
+- `document_processing`
+  - 控制图谱切块、句子级切块、BM25 子切块
+- `knowledge_graph_builder`
+  - 基础图谱输出路径与抽取并发
+- `storage`
+  - 本地图存储、向量库、SQL 路径
+- `llm`、`embedding`、`rerank`
+  - 模型服务配置
+- `narrative_graph_builder`
+  - Episode / Storyline 构建参数
+- `community_graph_builder`
+  - Leiden / community report 参数
+- `extraction_memory`
+  - 知识抽取记忆
+- `strategy_memory`
+  - 运行时策略记忆
 
-系统的处理流程包括以下主要阶段：
+示例配置：
+- [`configs/config_openai.yaml`](configs/config_openai.yaml)
+- [`configs/config_local.yaml`](configs/config_local.yaml)
 
-1. **配置加载**：加载YAML配置文件，初始化各种组件
-2. **文档预处理**：加载JSON格式的输入文档，进行文本分块和元数据生成
-3. **知识抽取**：
-   - 使用KG抽取代理提取实体和关系
-   - 使用属性抽取代理丰富实体属性
-   - 通过反思机制优化抽取质量
-4. **图预处理**：实体消歧、聚类和合并
-5. **图谱构建**：将抽取结果构建为Neo4j知识图谱
-6. **事件因果分析**：分析事件间的因果关系，构建事件因果图
-7. **情节结构分析**：识别情节单元，构建情节图谱
-8. **向量化存储**：生成向量嵌入，存储到ChromaDB
+## 如何运行
 
-## 输出结果
+### 端到端构建
 
-系统会生成以下类型的输出：
+`main.py` 当前的行为是：先跑基础知识图谱流水线，再根据 `global.aggregation_mode` 跑对应的 aggregation。
 
-- **Neo4j知识图谱**：包含实体、关系和属性的结构化图数据
-- **事件因果图谱**：展示事件间因果关系的有向图
-- **情节单元图谱**：反映叙事结构的高层次图谱
-- **向量索引**：支持语义搜索的向量表示
-- **处理日志**：详细的处理过程和质量评估信息
+```bash
+python main.py \
+  --config configs/config_openai.yaml \
+  --json_file examples/documents/wandering_earth2.json
+```
 
-## 应用场景
+当前 `main.py` 的逻辑：
+- 总是先执行 base graph pipeline
+- 然后：
+  - `narrative` -> 构建 Episode / Storyline
+  - `community` -> 构建 Community aggregation
+  - `full` -> 先 narrative，再 community
 
-- **人文研究**：大规模文学作品分析和模式发现
-- **内容分析**：媒体内容的结构化分析和理解
-- **智能问答**：基于叙事内容的智能问答系统
-- **创作辅助**：为创作者提供故事结构分析和建议
-- **教育工具**：帮助学生理解复杂叙事结构
+### 基于现有图只重建 community
 
-## 技术特点
+如果基础图已经在本地运行时图中，只想重建 community：
 
-- **多智能体架构**：不同代理专门负责不同的抽取任务
-- **反思机制**：通过质量评估和反思提高抽取准确性
-- **并行处理**：支持多线程并行处理，提高处理效率
-- **模块化设计**：易于扩展和维护的模块化架构
-- **多模型支持**：支持多种大语言模型和嵌入模型
+```bash
+python test_main.py \
+  --config configs/config_openai.yaml \
+  --clear_previous_community
+```
 
+可选参数：
+- `--clear_previous_community`
+- `--clear_previous_narrative`
 
-## 许可证
+## Interaction 抽取与 SQL 存储
 
-本项目采用MIT许可证 - 详见[LICENSE](LICENSE)文件
+Interaction 不保存在知识图谱中。
 
-## 贡献
+当前实现方式：
+- 在 property extraction 之后抽取
+- 输入基于 refined extraction 结果 + Character / Object 候选实体
+- 先落盘到 `data/narrative_interactions`
+- SQL 导入是独立步骤
 
-欢迎贡献代码！请查看[贡献指南](CONTRIBUTING.md)了解详细信息。
+相关代码：
+- 抽取：[`KnowledgeGraphBuilder.extract_interactions()`](core/builder/graph_builder.py)
+- 导入 SQL：[`KnowledgeGraphBuilder.store_interactions_to_sql()`](core/builder/graph_builder.py)
+- 通用 SQLite 封装：[`core/storage/sql_store.py`](core/storage/sql_store.py)
 
-## 支持
+当前 interaction 输出文件：
+- `data/narrative_interactions/interaction_results.json`
+- `data/narrative_interactions/interaction_records_list.json`
 
-- **问题反馈**：[GitHub Issues](https://github.com/roytian1992/NarrativeKnowledgeWeaver/issues)
-- **讨论交流**：[GitHub Discussions](https://github.com/roytian1992/NarrativeKnowledgeWeaver/discussions)
+当前 SQL 默认目标：
+- 数据库：`data/sql/Interaction.db`
+- 表：`Interaction_info`
 
-## 致谢
+## Tool 体系
 
-感谢 **《流浪地球3》剧组** 提供算力支持与剧本问答数据标注。
+工具实现位于 [`core/functions/tool_calls/`](core/functions/tool_calls)。
 
+当前分为：
+- `graphdb_tools.py`
+  - 实体查询、Section 查询、邻域查询、Episode / Storyline / Community 查询
+- `vectordb_tools.py`
+  - document、sentence、hierarchical、document_id 定位检索
+- `native_tools.py`
+  - BM25、document_id/title 映射、section 内容过滤
+- `sqldb_tools.py`
+  - 对话与交互信息的 SQLite 查询
+- `composite_tools.py`
+  - `narrative_hierarchical_search`
+  - community GraphRAG 检索
+  - section 级证据检索
+
+Retriever Agent 会根据 aggregation mode 和是否启用 SQL，加载对应子集。
+
+## 以编程方式使用 Retriever Agent
+
+当前仓库没有单独封装一个统一 QA CLI。最直接的方式是通过 Python 调用。
+
+```python
+from core import KAGConfig
+from core.agent.retriever_agent import QuestionAnsweringAgent
+
+config = KAGConfig.from_yaml("configs/config_openai.yaml")
+agent = QuestionAnsweringAgent(
+    config,
+    aggregation_mode="narrative",   # 或 community / full
+    enable_sql_tools=True,
+)
+
+responses = agent.ask("550系列有哪几个型号？分别出现在了哪些场次中？", lang="zh")
+print(agent.extract_final_text(responses))
+agent.close()
+```
+
+## 策略记忆训练
+
+策略记忆是离线训练、在线读取的。
+
+当前实现：
+- 训练器：[`StrategyMemoryTrainingRunner`](core/strategy_training/strategy_training_runner.py)
+- 运行时读取：[`RetrievalStrategyMemory`](core/memory/retrieval_strategy_memory.py)
+
+训练器当前支持：
+- 每题多次 attempt
+- LLM answer judge
+- effective tool chain 抽取
+- 失败反思
+- retry instruction 生成
+- retry attempts
+- 模板聚类与合并去重
+- 运行时策略库导出
+
+示例：
+
+```python
+from core import KAGConfig
+from core.strategy_training.strategy_training_runner import StrategyMemoryTrainingRunner
+
+config = KAGConfig.from_yaml("configs/config_openai.yaml")
+runner = StrategyMemoryTrainingRunner(
+    config=config,
+    csv_path="examples/datasets/we2_qa.csv",
+    dataset_name="we2_training",
+    attempts_per_question=5,
+    output_root="strategy_training",
+)
+
+# 可选：先清空运行时策略库
+runner.clear_runtime_library()
+result = runner.run(reset_runtime_library=True)
+runner.close()
+print(result)
+```
+
+训练结果保存在 `strategy_training/<dataset_name>/`。
+运行时策略库位于 `data/memory/strategy/strategy_library.json`。
+
+## 主要输出目录
+
+- `data/knowledge_graph/`
+  - 文本块、抽取结果、refined entities / relations、basic info
+- `data/narrative_interactions/`
+  - interaction JSON 输出
+- `data/sql/`
+  - SQLite 数据库
+- `data/narrative_graph/`
+  - Episode、Storyline、support edges、relations
+- `data/community_graph/`
+  - community assignments、hierarchy、reports
+- `data/vector_store/document/`
+  - document 级向量库
+- `data/vector_store/sentence/`
+  - sentence 级向量库
+- `data/vector_store/community/`
+  - community summary 向量库
+- `data/memory/`
+  - extraction memory 与 runtime strategy library
+- `reports/`
+  - tool 测试、烟测、QA 报告
+
+## 当前限制与说明
+
+- `main.py` 是当前支持的端到端入口。
+- `test_main.py` 是基于现有图做 community-only 重建的辅助入口。
+- Retriever Agent 当前是单轮的。
+- 策略记忆训练当前在 question / attempt 层面基本是串行的，大规模训练会比较慢。
+- 训练时某些子步骤，例如 effective tool chain 抽取，在极长上下文下仍可能遇到上下文长度限制。
+- SQL tools 默认不加载，只有 `enable_sql_tools=True` 时才启用。
+
+## 相关文件
+
+- [`README.md`](README.md)
+- [`main.py`](main.py)
+- [`test_main.py`](test_main.py)
+- [`core/agent/retriever_agent.py`](core/agent/retriever_agent.py)
+- [`core/builder/graph_builder.py`](core/builder/graph_builder.py)
+- [`core/builder/narrative_graph_builder.py`](core/builder/narrative_graph_builder.py)
+- [`core/builder/community_graph_builder.py`](core/builder/community_graph_builder.py)

@@ -1,0 +1,99 @@
+id: interaction_extraction
+category: knowledge_extraction
+name: Interaction Extraction
+description: >
+  Extract dialogue and interaction records between Character/Object entities with strict JSON output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input text chunk.
+
+  - name: entities
+    type: string
+    required: true
+    description: Extracted entity list. subject/object must use names from this list only.
+
+  - name: interaction_group
+    type: string
+    required: true
+    description: >
+      Interaction group key used to select schema content from default_interaction_schema.json.
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+
+  - name: task_goal
+    type: string
+    required: true
+
+  - name: global_constraints
+    type: string
+    required: true
+
+  - name: output_fields_block
+    type: string
+    required: true
+
+  - name: group_name
+    type: string
+    required: true
+
+  - name: group_constraints_block
+    type: string
+    required: false
+
+  - name: interaction_schema
+    type: string
+    required: true
+
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  You are performing interaction extraction.
+  Task:
+  {task_name}
+
+  Goal:
+  {task_goal}
+
+  Global constraints:
+  {global_constraints}
+
+  Interaction group:
+  {interaction_group}
+  {group_name}
+
+  Group-specific constraints:
+  {group_constraints_block}
+
+  Allowed interaction schema:
+  {interaction_schema}
+
+  Output format:
+  Return a JSON array.
+  Each item must include exactly:
+  {output_fields_block}
+
+  Do NOT include any additional fields.
+  Do NOT include explanations or commentary outside the JSON.
+
+  Examples:
+  {few_shot_samples}
+
+  Object usage rules (strict):
+  - Object targets are allowed only for interactive/agentive objects (e.g., robots, AI assistants, system agents).
+  - If the target is a passive prop or background item (e.g., curtain, door, table, scenery), do NOT use it as object.
+  - For monologue/self-talk, object may be an empty string.
+
+  Input text:
+  {text}
+
+  Extracted entities:
+  subject/object must use names from this list only.
+  {entities}

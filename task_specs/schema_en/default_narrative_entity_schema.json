@@ -1,0 +1,117 @@
+[
+  {
+    "type": "Episode",
+    "description": "A local narrative unit composed of tightly related Events. Episodes are formed from short-range temporal continuity, shared participants, tightly coupled actions, or explicit near-range causal progression. They organize local narrative movement rather than abstract thematic analysis.",
+    "input_types": [
+      "Event",
+      "Occasion"
+    ],
+    "output_fields": [
+      {
+        "name": "name",
+        "type": "string",
+        "description": "A concise, action-oriented Episode name."
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "Neutral narrative prose grounded in the text, describing concrete actions and observable outcomes without thematic or purposive analysis."
+      },
+      {
+        "name": "related_events",
+        "type": "string[]",
+        "description": "List of Event ids that belong to this Episode."
+      },
+      {
+        "name": "related_occasions",
+        "type": "string[]",
+        "description": "List of Occasion ids that contextualize or anchor this Episode."
+      }
+    ],
+    "construction_constraints": [
+      "Only entities of type Event may appear in related_events.",
+      "Each Event must belong to exactly one Episode within a single extraction result.",
+      "Occasion may contextualize multiple Episodes but must never appear in related_events.",
+      "Each Episode should contain 2 to 6 Events whenever possible; create a singleton Episode only when meaningful grouping is not possible.",
+      "Do not invent new Events, Occasions, motivations, causal links, or psychological states."
+    ],
+    "writing_constraints": [
+      "The description must be neutral narrative prose and must not explain the grouping rationale.",
+      "Do not use meta-narrative phrases such as 'this episode shows' or 'this sequence centers on'.",
+      "Do not include thematic analysis, purpose analysis, or structural commentary.",
+      "The Episode name should summarize the main action progression rather than an abstract theme."
+    ],
+    "samples": [
+      {
+        "name": "Guards Detect the Intrusion and Raise the Alarm",
+        "description": "While on patrol, the guards notice signs of an unauthorized entry, alert nearby staff, and trigger the base alarm. The area quickly shifts into a full security response.",
+        "related_events": [
+          "evt_01",
+          "evt_02",
+          "evt_03"
+        ],
+        "related_occasions": []
+      }
+    ]
+  },
+  {
+    "type": "Storyline",
+    "description": "A persistent narrative thread spanning multiple Episodes. A Storyline summarizes a longer-range causal or conflict progression at a higher level for downstream narrative understanding and reasoning.",
+    "input_types": [
+      "Episode"
+    ],
+    "output_fields": [
+      {
+        "name": "name",
+        "type": "string",
+        "description": "A concise title capturing the overall Storyline progression."
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "A coherent synopsis covering the initiating trigger, the progression, and the resulting outcome."
+      },
+      {
+        "name": "impact",
+        "type": "string",
+        "description": "The reusable downstream consequence, constraint, or new state produced by this Storyline."
+      },
+      {
+        "name": "key_characters",
+        "type": "string[]",
+        "description": "Canonical names of key characters that recur prominently in the Storyline."
+      },
+      {
+        "name": "key_locations",
+        "type": "string[]",
+        "description": "Canonical names of key locations that anchor the Storyline."
+      }
+    ],
+    "construction_constraints": [
+      "Build the Storyline only from the provided Episode chain information and do not use external knowledge.",
+      "The Storyline must summarize the whole chain instead of paraphrasing a single Episode.",
+      "Do not add characters, locations, events, or causal links not supported by the input."
+    ],
+    "writing_constraints": [
+      "The description should cover cause, process, and result in one coherent narrative.",
+      "The impact should express a reusable downstream state or constraint for later reasoning.",
+      "Do not reference Episode numbers, scene numbers, or segment numbers.",
+      "Do not output bullet lists or step-by-step enumeration."
+    ],
+    "samples": [
+      {
+        "name": "System Failure Forces a Full Evacuation",
+        "description": "A cascading system failure destabilizes the base and triggers a series of emergency responses. Local containment efforts fail to restore control, and the command staff eventually order a full evacuation as the danger spreads through the facility.",
+        "impact": "The operating order of the base collapses, forcing all subsequent action to unfold under higher risk and tighter resource constraints.",
+        "key_characters": [
+          "Duty Engineer",
+          "Base Commander"
+        ],
+        "key_locations": [
+          "Orbital Base Control Room",
+          "Emergency Evacuation Corridor"
+        ]
+      }
+    ]
+  }
+]

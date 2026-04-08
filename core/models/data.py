@@ -16,10 +16,7 @@ class Entity(BaseModel):
     properties: Dict[str, Any] = Field(default_factory=dict, description="Entity attributes/properties")
     description: Optional[str] = Field(default=None, description="Entity description")
     scope: Optional[str] = Field(default=None, description="Entity scope (e.g., global/local)")
-    version: Optional[str] = Field(default="default", description="Screenplay Version")
-    source_chunks: List[str] = Field(default_factory=list, description="Source text chunk IDs")
-    additional_chunks: List[str] = Field(default_factory=list, description="Additional related text chunk IDs")
-    total_degree: Optional[float] = Field(default=0.0, description="Total degree of the entity")
+    source_documents: List[str] = Field(default_factory=list, description="Source text document IDs")
 
     def __hash__(self):
         return hash(self.id)
@@ -33,11 +30,14 @@ class Entity(BaseModel):
 class Relation(BaseModel):
     id: str = Field(description="Unique identifier of the relation")
     subject_id: str = Field(description="Subject entity ID")
-    predicate: str = Field(description="Relation predicate/type")
     object_id: str = Field(description="Object entity ID")
-    properties: Dict[str, Any] = Field(default_factory=dict, description="Relation attributes/properties")
-    version: Optional[str] = Field(default="default", description="Screenplay Version")
-    source_chunks: List[str] = Field(default_factory=list, description="Source text chunk IDs")
+    predicate: str = Field(description="Relation predicate/type")
+    relation_name: Optional[str] = Field(default=None, description="Natural-language relation name")
+    persistence: Optional[str] = Field(default="momentary", description="Relation persistence level")
+    description: Optional[str] = Field(default=None, description="Relation description")
+    confidence: float = Field(default=1.0, description="Confidence score (0.0 to 1.0)")
+    properties: Dict[str, Any] = Field(default=None, description="Relation attributes/properties")
+    source_documents: List[str] = Field(default_factory=list, description="Source text document IDs")
 
     def __hash__(self):
         return hash(self.id)
@@ -67,9 +67,7 @@ class Document(BaseModel):
 class TextChunk(BaseModel):
     id: str = Field(description="Unique identifier of the text chunk")
     content: str = Field(description="Chunk content")
-    document_id: str = Field(description="Parent document ID")
-    start_pos: int = Field(description="Start position within the document")
-    end_pos: int = Field(description="End position within the document")
+    source_doc_id: str = Field(description="Parent document ID")
     version: Optional[str] = Field(default="default", description="Screenplay Version")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Chunk metadata")
 

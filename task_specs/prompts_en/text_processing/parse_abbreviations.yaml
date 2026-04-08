@@ -1,0 +1,125 @@
+id: parse_abbreviations
+category: text_processing
+name: Extract Document-Specific Abbreviations and Technical Terms
+description: >
+  Extract document-specific English abbreviations/codes/models and technical terms from text.
+  Focus on terms that are meaningful in this document's context (not generic well-known words).
+  Strict JSON-only output. No merging.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The source text to extract terms from.
+
+  - name: current_background
+    type: string
+    required: false
+    description: Optional background/context for disambiguation.
+
+template: |
+  Read the input text and extract document-specific abbreviations/codes/models and technical terms.
+
+  --------------------------------
+  TASK SCOPE
+  --------------------------------
+  Extract both:
+  1) English abbreviations/codes/models:
+     - composed of Latin letters, digits, hyphens, dots, or slashes
+     - length 2–20
+     - preserve original case and symbols exactly as in the text
+  2) Technical terms:
+     - domain-specific concepts related to engineering, technology, military, aerospace,
+       computing/AI, organizations & systems, plans/projects
+     - can be multi-word phrases
+
+  --------------------------------
+  DOCUMENT-SPECIFIC FILTER (VERY IMPORTANT)
+  --------------------------------
+  Only extract terms that are specific and meaningful in THIS document.
+  Exclude generic, widely-known words that do not uniquely identify a concrete concept in context.
+
+  Examples to EXCLUDE (too generic, unless the text clearly defines a specific instance):
+  - "technology", "system", "model", "algorithm", "database", "network", "AI", "machine learning"
+  - "company", "organization", "team", "device" (generic use)
+  - common everyday words or generic job titles
+
+  Include when the term is document-specific, e.g.:
+  - a named system/module/component, a protocol or method name, an internal project name,
+    a specific model/code, a named organization/unit, a unique coined term, or a defined concept.
+
+  --------------------------------
+  FIELDS & CONSTRAINTS (WHITELIST)
+  --------------------------------
+  Each entry must contain:
+  - name: the fragment exactly as in the text (character-for-character, preserve case/punctuation/spaces)
+  - description: 12–30 words in English, objective explanation grounded in the text context
+
+  Optional fields:
+  - abbr: if it is an abbreviation/code/model, fill it (usually same as name)
+  - full: only if the text explicitly provides the full form (use exactly as in the text)
+  - zh: optional Chinese explanation, depends on the input language.
+
+  Strictly forbid outputting any fields other than: name, description, abbr, full, zh.
+
+  --------------------------------
+  SPLITTING & NO-MERGE RULE (CRITICAL)
+  --------------------------------
+  Do not merge multiple entries.
+  If multiple abbreviations/models/codes are connected by "/", ",", "and", "or"
+  (e.g., "550W/550A", "X-15B/C", "AB-1 and AB-2"):
+  - you MUST split them into separate entries
+  - you MUST NOT output a single name that refers to multiple objects
+  - NEVER generate a name that contains a merging pattern like "/" or " and " representing multiple objects
+
+  --------------------------------
+  NAME CONSISTENCY RULE (CRITICAL)
+  --------------------------------
+  name must be a complete, continuous fragment from the original text,
+  identical character-for-character (including case, spaces, hyphens, dots, slashes, etc.).
+  Do not rewrite, correct, normalize, or paraphrase name.
+
+  --------------------------------
+  ABBREVIATION & FULL FORM HANDLING
+  --------------------------------
+  If the text contains “full form (abbr)” or “abbr (full form)”:
+  - use the abbreviation as the main entry (name = abbreviation)
+  - fill full only if the full form is explicitly present in the text
+  - do NOT use "full form (abbr)" as a single name
+
+  --------------------------------
+  FILTERING & LIMITS
+  --------------------------------
+  Exclude:
+  - plain “number+unit” like 10km, 3dB, 9G
+  - personal names (unless clearly an organization/unit name)
+  - items that are too generic and not document-specific (see filter above)
+
+  Total entries must not exceed 15.
+
+  --------------------------------
+  DEDUPLICATION
+  --------------------------------
+  Deduplicate strictly by exact name match (case and punctuation sensitive).
+  If duplicates appear, keep the more informative one.
+
+  --------------------------------
+  CURRENT BACKGROUND (OPTIONAL)
+  --------------------------------
+  {current_background}
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT JSON ONLY)
+  --------------------------------
+  {
+    "abbreviations": [
+      { "name": "...", "description": "...", "abbr": "...", "full": "..."}
+    ]
+  }
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+  - Output JSON only.
+  - No markdown, no commentary.
+  - Do NOT invent facts not supported by the text.

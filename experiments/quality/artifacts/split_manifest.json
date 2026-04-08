@@ -1,0 +1,1468 @@
+{
+  "dataset_root": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed",
+  "train_articles": 10,
+  "eval_articles": 152,
+  "seed": 42,
+  "train": [
+    {
+      "article_name": "a_c14faba2ed717047",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c14faba2ed717047.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c14faba2ed717047.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_c14faba2ed717047.json",
+      "title": "It's Time To Keelhaul U-Haul!",
+      "content_words": 1896,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_37d86534fd8b303f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_37d86534fd8b303f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_37d86534fd8b303f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_37d86534fd8b303f.json",
+      "title": "New money: Do local currencies actually work?",
+      "content_words": 2459,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_d7f80d40f7ede332",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d7f80d40f7ede332.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d7f80d40f7ede332.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_d7f80d40f7ede332.json",
+      "title": "DISTURBING SUN",
+      "content_words": 4080,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_c006b0f0c9f46c5a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c006b0f0c9f46c5a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c006b0f0c9f46c5a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_c006b0f0c9f46c5a.json",
+      "title": "Divided we stand",
+      "content_words": 4174,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_c38cc3c2249e8ba9",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c38cc3c2249e8ba9.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c38cc3c2249e8ba9.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_c38cc3c2249e8ba9.json",
+      "title": "THE AVENGER",
+      "content_words": 4942,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_f1e332c961bdf802",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f1e332c961bdf802.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f1e332c961bdf802.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_f1e332c961bdf802.json",
+      "title": "THE LONG REMEMBERED THUNDER",
+      "content_words": 5022,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_987447476396ab12",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_987447476396ab12.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_987447476396ab12.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_987447476396ab12.json",
+      "title": "A Gleeb for Earth",
+      "content_words": 5053,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_8273044a3aaa7806",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_8273044a3aaa7806.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_8273044a3aaa7806.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_8273044a3aaa7806.json",
+      "title": "JUDAS RAM",
+      "content_words": 5173,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_aa748e60fa14d042",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_aa748e60fa14d042.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_aa748e60fa14d042.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_aa748e60fa14d042.json",
+      "title": "ALL DAY SEPTEMBER",
+      "content_words": 5704,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_bfb79cccb67a6d80",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_bfb79cccb67a6d80.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_bfb79cccb67a6d80.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_bfb79cccb67a6d80.json",
+      "title": "The Dwindling Years",
+      "content_words": 5727,
+      "qa_count": 19
+    }
+  ],
+  "eval": [
+    {
+      "article_name": "a_09e1543478c34e8e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_09e1543478c34e8e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_09e1543478c34e8e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_09e1543478c34e8e.json",
+      "title": "Eleven-Twelfths of 1999 In Review",
+      "content_words": 1728,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_c7c925a732844670",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c7c925a732844670.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c7c925a732844670.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c7c925a732844670.json",
+      "title": "Maledict",
+      "content_words": 1825,
+      "qa_count": 13
+    },
+    {
+      "article_name": "a_ff0c7e5b62c5a37b",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_ff0c7e5b62c5a37b.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_ff0c7e5b62c5a37b.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_ff0c7e5b62c5a37b.json",
+      "title": "STAR MOTHER",
+      "content_words": 1853,
+      "qa_count": 6
+    },
+    {
+      "article_name": "a_033588f6a93c94d1",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_033588f6a93c94d1.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_033588f6a93c94d1.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_033588f6a93c94d1.json",
+      "title": "STAR MOTHER",
+      "content_words": 1865,
+      "qa_count": 12
+    },
+    {
+      "article_name": "a_7055185be5a1e546",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_7055185be5a1e546.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_7055185be5a1e546.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_7055185be5a1e546.json",
+      "title": "More Bang for the Buck",
+      "content_words": 1880,
+      "qa_count": 13
+    },
+    {
+      "article_name": "a_52f0fc0901d8d4c0",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_52f0fc0901d8d4c0.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_52f0fc0901d8d4c0.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_52f0fc0901d8d4c0.json",
+      "title": "A Good Year for the Roses?",
+      "content_words": 1909,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_370f48d773951d4d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_370f48d773951d4d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_370f48d773951d4d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_370f48d773951d4d.json",
+      "title": "Boys Do Bleed",
+      "content_words": 1946,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_42ad3852ad21cdce",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_42ad3852ad21cdce.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_42ad3852ad21cdce.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_42ad3852ad21cdce.json",
+      "title": "Warrior Queens",
+      "content_words": 1960,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_a1dd2626558204aa",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a1dd2626558204aa.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a1dd2626558204aa.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a1dd2626558204aa.json",
+      "title": "Here Myself",
+      "content_words": 1990,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_8969d80a54d0ed74",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_8969d80a54d0ed74.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_8969d80a54d0ed74.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_8969d80a54d0ed74.json",
+      "title": "Eleven-Twelfths of 1999 In Review",
+      "content_words": 2000,
+      "qa_count": 1
+    },
+    {
+      "article_name": "a_cdfeb26b460902f3",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_cdfeb26b460902f3.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_cdfeb26b460902f3.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_cdfeb26b460902f3.json",
+      "title": "What cities in the post-Brexit era could learn from a 14th-century trading bloc",
+      "content_words": 2007,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_679bb395d67f6d50",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_679bb395d67f6d50.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_679bb395d67f6d50.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_679bb395d67f6d50.json",
+      "title": "Fight Clubbed",
+      "content_words": 2018,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f2358a5e91801ffd.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f2358a5e91801ffd.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_f2358a5e91801ffd.json",
+      "title": "Machines in the Garden",
+      "content_words": 2035,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_1f90405ef9acbf93",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1f90405ef9acbf93.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1f90405ef9acbf93.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1f90405ef9acbf93.json",
+      "title": "Dole vs. the Times",
+      "content_words": 2045,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_df0f3b46fa6a5307",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_df0f3b46fa6a5307.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_df0f3b46fa6a5307.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_df0f3b46fa6a5307.json",
+      "title": "Dole vs. the Times",
+      "content_words": 2049,
+      "qa_count": 3
+    },
+    {
+      "article_name": "a_1fa713be6d53fc6a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1fa713be6d53fc6a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1fa713be6d53fc6a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1fa713be6d53fc6a.json",
+      "title": "Shut Up, He Explained",
+      "content_words": 2100,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_5201474ec65670e6",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_5201474ec65670e6.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_5201474ec65670e6.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_5201474ec65670e6.json",
+      "title": "War and Pieces",
+      "content_words": 2103,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_01c24596502e2376",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_01c24596502e2376.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_01c24596502e2376.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_01c24596502e2376.json",
+      "title": "Goings On About Town",
+      "content_words": 2108,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_42c427588d061091",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_42c427588d061091.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_42c427588d061091.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_42c427588d061091.json",
+      "title": "Let Si Get This",
+      "content_words": 2127,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_4e6f78a888d294ee.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_4e6f78a888d294ee.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_4e6f78a888d294ee.json",
+      "title": "Republican Shakeout",
+      "content_words": 2141,
+      "qa_count": 11
+    },
+    {
+      "article_name": "a_70271b3492f6a4fc",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_70271b3492f6a4fc.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_70271b3492f6a4fc.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_70271b3492f6a4fc.json",
+      "title": "Dirty Laundry",
+      "content_words": 2150,
+      "qa_count": 12
+    },
+    {
+      "article_name": "a_fba861f4a1791d74",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_fba861f4a1791d74.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_fba861f4a1791d74.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_fba861f4a1791d74.json",
+      "title": "Dirty Laundry",
+      "content_words": 2155,
+      "qa_count": 5
+    },
+    {
+      "article_name": "a_1c98fcb5a3e9f921",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1c98fcb5a3e9f921.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1c98fcb5a3e9f921.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1c98fcb5a3e9f921.json",
+      "title": "eBabe",
+      "content_words": 2181,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_b502e6b5b48cd2b2",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_b502e6b5b48cd2b2.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_b502e6b5b48cd2b2.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_b502e6b5b48cd2b2.json",
+      "title": "Human Clones: Why Not?",
+      "content_words": 2215,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_1f318a6f235de974",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1f318a6f235de974.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1f318a6f235de974.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1f318a6f235de974.json",
+      "title": "BREAKAWAY",
+      "content_words": 2280,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_2f1cb935acf1fd91",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_2f1cb935acf1fd91.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_2f1cb935acf1fd91.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_2f1cb935acf1fd91.json",
+      "title": "Face value",
+      "content_words": 2327,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_ee2f72c3e494433f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_ee2f72c3e494433f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_ee2f72c3e494433f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_ee2f72c3e494433f.json",
+      "title": "COMPLEXITY AND HUMANITY",
+      "content_words": 2539,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_4a661da111f7f2cc",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_4a661da111f7f2cc.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_4a661da111f7f2cc.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_4a661da111f7f2cc.json",
+      "title": "More Booze You Can Use",
+      "content_words": 2555,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_ef4e65dacb512257",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_ef4e65dacb512257.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_ef4e65dacb512257.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_ef4e65dacb512257.json",
+      "title": "FEBRUARY STRAWBERRIES",
+      "content_words": 2632,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_6c12bf8339e5819f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_6c12bf8339e5819f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_6c12bf8339e5819f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_6c12bf8339e5819f.json",
+      "title": "SECOND LANDING",
+      "content_words": 2639,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_bd41d822fc422047",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_bd41d822fc422047.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_bd41d822fc422047.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_bd41d822fc422047.json",
+      "title": "The Bell Curve Flattened",
+      "content_words": 2676,
+      "qa_count": 1
+    },
+    {
+      "article_name": "a_ab27255903d78f68",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_ab27255903d78f68.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_ab27255903d78f68.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_ab27255903d78f68.json",
+      "title": "The Bell Curve Flattened",
+      "content_words": 2706,
+      "qa_count": 13
+    },
+    {
+      "article_name": "a_77e86082f2caa1b9",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_77e86082f2caa1b9.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_77e86082f2caa1b9.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_77e86082f2caa1b9.json",
+      "title": "Sharism: A Mind Revolution",
+      "content_words": 2737,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_accdbedb711c7bac",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_accdbedb711c7bac.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_accdbedb711c7bac.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_accdbedb711c7bac.json",
+      "title": "",
+      "content_words": 2748,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_7ad276ffe599ac2a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_7ad276ffe599ac2a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_7ad276ffe599ac2a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_7ad276ffe599ac2a.json",
+      "title": "SPATIAL DELIVERY",
+      "content_words": 2934,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_f778fe94ea782765",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f778fe94ea782765.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f778fe94ea782765.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_f778fe94ea782765.json",
+      "title": "",
+      "content_words": 2949,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_b82b4dabe3645591",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_b82b4dabe3645591.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_b82b4dabe3645591.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_b82b4dabe3645591.json",
+      "title": "A FILBERT IS A NUT",
+      "content_words": 2964,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_371670ff4342006e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_371670ff4342006e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_371670ff4342006e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_371670ff4342006e.json",
+      "title": "Obstetrics for beginners",
+      "content_words": 3021,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_4f4d1c70f2481b5f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_4f4d1c70f2481b5f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_4f4d1c70f2481b5f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_4f4d1c70f2481b5f.json",
+      "title": "HOMECOMING",
+      "content_words": 3023,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_538e6e71213a2b1f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_538e6e71213a2b1f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_538e6e71213a2b1f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_538e6e71213a2b1f.json",
+      "title": "Just another free soul",
+      "content_words": 3040,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_33fa73f0ed840e06",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_33fa73f0ed840e06.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_33fa73f0ed840e06.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_33fa73f0ed840e06.json",
+      "title": "AI: what's the worst that could happen?",
+      "content_words": 3097,
+      "qa_count": 1
+    },
+    {
+      "article_name": "a_ccde4399952410b8",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_ccde4399952410b8.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_ccde4399952410b8.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_ccde4399952410b8.json",
+      "title": "AI: what's the worst that could happen?",
+      "content_words": 3162,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_c9b6a3443916e904",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c9b6a3443916e904.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c9b6a3443916e904.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c9b6a3443916e904.json",
+      "title": "THE TALKATIVE TREE",
+      "content_words": 3236,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_c794c945dc68af4f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c794c945dc68af4f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c794c945dc68af4f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c794c945dc68af4f.json",
+      "title": "The Birds and the Bees",
+      "content_words": 3272,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_a6403373a9f90adc",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a6403373a9f90adc.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a6403373a9f90adc.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a6403373a9f90adc.json",
+      "title": "IN CASE OF FIRE",
+      "content_words": 3311,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_4960808b19593728",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_4960808b19593728.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_4960808b19593728.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_4960808b19593728.json",
+      "title": "IN THE GARDEN",
+      "content_words": 3332,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_543be5bbe84a61de",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_543be5bbe84a61de.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_543be5bbe84a61de.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_543be5bbe84a61de.json",
+      "title": "IN THE GARDEN",
+      "content_words": 3350,
+      "qa_count": 1
+    },
+    {
+      "article_name": "a_fa848e214d60aef7",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_fa848e214d60aef7.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_fa848e214d60aef7.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_fa848e214d60aef7.json",
+      "title": "ACCIDENTAL DEATH",
+      "content_words": 3372,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_e12c72a1ecc7ab28",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_e12c72a1ecc7ab28.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_e12c72a1ecc7ab28.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_e12c72a1ecc7ab28.json",
+      "title": "DOUBLECROSS",
+      "content_words": 3525,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_29f4a6a77d84869d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_29f4a6a77d84869d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_29f4a6a77d84869d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_29f4a6a77d84869d.json",
+      "title": "Krugman's Life of Brian",
+      "content_words": 3571,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_81ff103cbc2fcf49",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_81ff103cbc2fcf49.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_81ff103cbc2fcf49.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_81ff103cbc2fcf49.json",
+      "title": "Spawning Ground",
+      "content_words": 3670,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_b1e56639d1b1d437",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_b1e56639d1b1d437.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_b1e56639d1b1d437.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_b1e56639d1b1d437.json",
+      "title": "THE RECRUIT",
+      "content_words": 3678,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_b6a2150f2bd3d5e6",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_b6a2150f2bd3d5e6.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_b6a2150f2bd3d5e6.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_b6a2150f2bd3d5e6.json",
+      "title": "houlihan's equation",
+      "content_words": 3808,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_9cea01b713db2921",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_9cea01b713db2921.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_9cea01b713db2921.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_9cea01b713db2921.json",
+      "title": "MUTINEER",
+      "content_words": 3895,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_46e69ae9a81829ef",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_46e69ae9a81829ef.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_46e69ae9a81829ef.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_46e69ae9a81829ef.json",
+      "title": "TACTICS",
+      "content_words": 4168,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_471f2222cb489a1d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_471f2222cb489a1d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_471f2222cb489a1d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_471f2222cb489a1d.json",
+      "title": "THE GREAT NEBRASKA SEA",
+      "content_words": 4301,
+      "qa_count": 20
+    },
+    {
+      "article_name": "a_2989b39785c48f6d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_2989b39785c48f6d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_2989b39785c48f6d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_2989b39785c48f6d.json",
+      "title": "\"Phone Me in Central Park\"",
+      "content_words": 4310,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_7a7f4fbc7f26ee1d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_7a7f4fbc7f26ee1d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_7a7f4fbc7f26ee1d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_7a7f4fbc7f26ee1d.json",
+      "title": "THE SUPER OPENER",
+      "content_words": 4313,
+      "qa_count": 20
+    },
+    {
+      "article_name": "a_a9c2a6e83821a9e0",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a9c2a6e83821a9e0.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a9c2a6e83821a9e0.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a9c2a6e83821a9e0.json",
+      "title": "WALL",
+      "content_words": 4329,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_d388a00f3ee9b087",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d388a00f3ee9b087.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d388a00f3ee9b087.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d388a00f3ee9b087.json",
+      "title": "UNBORN TOMORROW",
+      "content_words": 4435,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_3d2b44d920f3e6c6",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_3d2b44d920f3e6c6.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_3d2b44d920f3e6c6.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_3d2b44d920f3e6c6.json",
+      "title": "THE ULTROOM ERROR",
+      "content_words": 4491,
+      "qa_count": 20
+    },
+    {
+      "article_name": "a_2123c6de5ce2c54a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_2123c6de5ce2c54a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_2123c6de5ce2c54a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_2123c6de5ce2c54a.json",
+      "title": "THE LITTLE RED BAG",
+      "content_words": 4527,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_0738452092642612",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0738452092642612.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0738452092642612.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0738452092642612.json",
+      "title": "Doctor Universe",
+      "content_words": 4529,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_761ab70c26509956",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_761ab70c26509956.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_761ab70c26509956.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_761ab70c26509956.json",
+      "title": "CAKEWALK TO GLORYANNA",
+      "content_words": 4583,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_9073ae21f6069eb1",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_9073ae21f6069eb1.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_9073ae21f6069eb1.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_9073ae21f6069eb1.json",
+      "title": "THE FIRST ONE",
+      "content_words": 4609,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_c6b2a2598534379e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c6b2a2598534379e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c6b2a2598534379e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c6b2a2598534379e.json",
+      "title": "The Winning of the Moon",
+      "content_words": 4613,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_6fb3b00f835658f2",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_6fb3b00f835658f2.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_6fb3b00f835658f2.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_6fb3b00f835658f2.json",
+      "title": "COUNTERWEIGHT",
+      "content_words": 4619,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_c2bc895a39ac1a14",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c2bc895a39ac1a14.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c2bc895a39ac1a14.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c2bc895a39ac1a14.json",
+      "title": "GOURMET",
+      "content_words": 4642,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_a6e66d2e491dcf04",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a6e66d2e491dcf04.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a6e66d2e491dcf04.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a6e66d2e491dcf04.json",
+      "title": "THE DELEGATE FROM VENUS",
+      "content_words": 4645,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_888fb39ffe1b69d0",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_888fb39ffe1b69d0.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_888fb39ffe1b69d0.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_888fb39ffe1b69d0.json",
+      "title": "QUEST OF THIG",
+      "content_words": 4673,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_f7dfa645f0c3716f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f7dfa645f0c3716f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f7dfa645f0c3716f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_f7dfa645f0c3716f.json",
+      "title": "THE GREEN BERET",
+      "content_words": 4699,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_149778067861b252",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_149778067861b252.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_149778067861b252.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_149778067861b252.json",
+      "title": "THE FROZEN PLANET",
+      "content_words": 4759,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_d9b796565fb9891a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d9b796565fb9891a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d9b796565fb9891a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d9b796565fb9891a.json",
+      "title": "SILENCE IS—DEADLY",
+      "content_words": 4767,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_aae1371f48c73e3e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_aae1371f48c73e3e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_aae1371f48c73e3e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_aae1371f48c73e3e.json",
+      "title": "CALL HIM NEMESIS",
+      "content_words": 4795,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_9a821af24194eeec",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_9a821af24194eeec.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_9a821af24194eeec.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_9a821af24194eeec.json",
+      "title": "PEGGY FINDS THE THEATER",
+      "content_words": 4842,
+      "qa_count": 13
+    },
+    {
+      "article_name": "a_50421237e9e1c068",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_50421237e9e1c068.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_50421237e9e1c068.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_50421237e9e1c068.json",
+      "title": "TO EACH HIS STAR",
+      "content_words": 4854,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_227494d7b97675df",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_227494d7b97675df.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_227494d7b97675df.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_227494d7b97675df.json",
+      "title": "monkey on his back",
+      "content_words": 4865,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_9194af8c136f7067",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_9194af8c136f7067.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_9194af8c136f7067.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_9194af8c136f7067.json",
+      "title": "GRIFTERS' ASTEROID",
+      "content_words": 4869,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_0a55479de19616f5",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0a55479de19616f5.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0a55479de19616f5.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0a55479de19616f5.json",
+      "title": "A PLANET NAMED JOE",
+      "content_words": 4888,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_ec6432d389595d1d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_ec6432d389595d1d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_ec6432d389595d1d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_ec6432d389595d1d.json",
+      "title": "THE PERFECTIONISTS",
+      "content_words": 4894,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_a04732a124d7fe27",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a04732a124d7fe27.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a04732a124d7fe27.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a04732a124d7fe27.json",
+      "title": "THE GIANTS RETURN",
+      "content_words": 4916,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_d8c1d6070b6fff0e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d8c1d6070b6fff0e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d8c1d6070b6fff0e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d8c1d6070b6fff0e.json",
+      "title": "SPACEMAN ON A SPREE",
+      "content_words": 4920,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_a46900236fdafca2",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a46900236fdafca2.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a46900236fdafca2.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a46900236fdafca2.json",
+      "title": "THE JUPITER WEAPON",
+      "content_words": 4934,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_f5fc02f6fc42cc6f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f5fc02f6fc42cc6f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f5fc02f6fc42cc6f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_f5fc02f6fc42cc6f.json",
+      "title": "Warrior of Two Worlds",
+      "content_words": 4947,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_2b020f28fca0d8fe.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_2b020f28fca0d8fe.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_2b020f28fca0d8fe.json",
+      "title": "The Snowball Effect",
+      "content_words": 4978,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_0e7b285d3d466773",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0e7b285d3d466773.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0e7b285d3d466773.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0e7b285d3d466773.json",
+      "title": "TOLLIVER'S ORBIT",
+      "content_words": 4980,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_65fc24a07dfe0707",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_65fc24a07dfe0707.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_65fc24a07dfe0707.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_65fc24a07dfe0707.json",
+      "title": "Red Witch of Mercury",
+      "content_words": 4980,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_c22ae45dcc791f0d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c22ae45dcc791f0d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c22ae45dcc791f0d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c22ae45dcc791f0d.json",
+      "title": "CINDERELLA STORY",
+      "content_words": 4985,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_28fe10fe657f7e28",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_28fe10fe657f7e28.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_28fe10fe657f7e28.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_28fe10fe657f7e28.json",
+      "title": "The Cosmic Express",
+      "content_words": 4998,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_aa840a6ced2358c4",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_aa840a6ced2358c4.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_aa840a6ced2358c4.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_aa840a6ced2358c4.json",
+      "title": "Spacemen Die at Home",
+      "content_words": 5003,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_5470d2a7d7e6b358",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_5470d2a7d7e6b358.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_5470d2a7d7e6b358.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_5470d2a7d7e6b358.json",
+      "title": "DOUBLE TROUBLE",
+      "content_words": 5022,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_e5bb2f97030dfcaf",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_e5bb2f97030dfcaf.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_e5bb2f97030dfcaf.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_e5bb2f97030dfcaf.json",
+      "title": "THE BIG HEADACHE",
+      "content_words": 5030,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_0e747667263343c5",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0e747667263343c5.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0e747667263343c5.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0e747667263343c5.json",
+      "title": "IMAGE OF SPLENDOR",
+      "content_words": 5034,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_092f932462652ced",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_092f932462652ced.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_092f932462652ced.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_092f932462652ced.json",
+      "title": "JUNIOR ACHIEVEMENT",
+      "content_words": 5056,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_bfa15876775d56bf",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_bfa15876775d56bf.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_bfa15876775d56bf.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_bfa15876775d56bf.json",
+      "title": "CAPTAIN CHAOS",
+      "content_words": 5068,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_c6715d1d7714e9b7",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c6715d1d7714e9b7.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c6715d1d7714e9b7.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c6715d1d7714e9b7.json",
+      "title": "GUN FOR HIRE",
+      "content_words": 5085,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_798ea43eec5662df",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_798ea43eec5662df.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_798ea43eec5662df.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_798ea43eec5662df.json",
+      "title": "The Haunted Fountain",
+      "content_words": 5091,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_efcacda1d3add3e2",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_efcacda1d3add3e2.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_efcacda1d3add3e2.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_efcacda1d3add3e2.json",
+      "title": "The Haunted Fountain",
+      "content_words": 5096,
+      "qa_count": 1
+    },
+    {
+      "article_name": "a_984fdb3cab8be8d5",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_984fdb3cab8be8d5.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_984fdb3cab8be8d5.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_984fdb3cab8be8d5.json",
+      "title": "THE RADIO PLANET",
+      "content_words": 5134,
+      "qa_count": 13
+    },
+    {
+      "article_name": "a_b5eb4110dcc93dbe",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_b5eb4110dcc93dbe.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_b5eb4110dcc93dbe.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_b5eb4110dcc93dbe.json",
+      "title": "THE 64-SQUARE MADHOUSE",
+      "content_words": 5141,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_1a6d36d10045e367",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1a6d36d10045e367.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1a6d36d10045e367.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1a6d36d10045e367.json",
+      "title": "Name Your Symptom",
+      "content_words": 5150,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_d046cab2e894c38b",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d046cab2e894c38b.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d046cab2e894c38b.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d046cab2e894c38b.json",
+      "title": "THE HAIRY ONES",
+      "content_words": 5153,
+      "qa_count": 12
+    },
+    {
+      "article_name": "a_9e9e8df399e25a46",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_9e9e8df399e25a46.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_9e9e8df399e25a46.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_9e9e8df399e25a46.json",
+      "title": "Bodyguard",
+      "content_words": 5154,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_50e69ad6c5691741",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_50e69ad6c5691741.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_50e69ad6c5691741.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_50e69ad6c5691741.json",
+      "title": "DOWN TO THE WORLDS OF MEN",
+      "content_words": 5156,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_6b345299286c5974",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_6b345299286c5974.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_6b345299286c5974.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_6b345299286c5974.json",
+      "title": "BRAMBLE BUSH",
+      "content_words": 5158,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_dd4c509ce23ddf54",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_dd4c509ce23ddf54.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_dd4c509ce23ddf54.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_dd4c509ce23ddf54.json",
+      "title": "... and it comes out here",
+      "content_words": 5161,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_19680df3295d69ca",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_19680df3295d69ca.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_19680df3295d69ca.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_19680df3295d69ca.json",
+      "title": "MONOPOLY",
+      "content_words": 5169,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_46077e75504d5b2a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_46077e75504d5b2a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_46077e75504d5b2a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_46077e75504d5b2a.json",
+      "title": "The Monster Maker",
+      "content_words": 5178,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_4290ec4f5e19d3f1",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_4290ec4f5e19d3f1.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_4290ec4f5e19d3f1.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_4290ec4f5e19d3f1.json",
+      "title": "THE FIRE and THE SWORD",
+      "content_words": 5200,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_d207f0101eb74184",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d207f0101eb74184.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d207f0101eb74184.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d207f0101eb74184.json",
+      "title": "THE MADMAN FROM EARTH",
+      "content_words": 5203,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_e1438520bf30706c",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_e1438520bf30706c.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_e1438520bf30706c.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_e1438520bf30706c.json",
+      "title": "THE HUNTED HEROES",
+      "content_words": 5208,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0914f0cae2712b97.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0914f0cae2712b97.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0914f0cae2712b97.json",
+      "title": "SEA LEGS",
+      "content_words": 5209,
+      "qa_count": 13
+    },
+    {
+      "article_name": "a_4fa9744dd9ad2e77",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_4fa9744dd9ad2e77.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_4fa9744dd9ad2e77.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_4fa9744dd9ad2e77.json",
+      "title": "RATTLE OK",
+      "content_words": 5209,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_a86bc06dca1cf685",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a86bc06dca1cf685.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a86bc06dca1cf685.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a86bc06dca1cf685.json",
+      "title": "A Coffin for Jacob",
+      "content_words": 5233,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_135b29f55cc105fd",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_135b29f55cc105fd.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_135b29f55cc105fd.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_135b29f55cc105fd.json",
+      "title": "The Blue Behemoth",
+      "content_words": 5240,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_ff1f1a5e6fb7b241",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_ff1f1a5e6fb7b241.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_ff1f1a5e6fb7b241.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_ff1f1a5e6fb7b241.json",
+      "title": "Charity Case",
+      "content_words": 5245,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_01fe6df44c09f288.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_01fe6df44c09f288.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_01fe6df44c09f288.json",
+      "title": "My Lady Greensleeves",
+      "content_words": 5256,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_32efe4e4e4c76b45",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_32efe4e4e4c76b45.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_32efe4e4e4c76b45.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_32efe4e4e4c76b45.json",
+      "title": "And Then the Town Took Off",
+      "content_words": 5269,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_cdac9b8b042c6c3f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_cdac9b8b042c6c3f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_cdac9b8b042c6c3f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_cdac9b8b042c6c3f.json",
+      "title": "THE SECRET MARTIANS",
+      "content_words": 5271,
+      "qa_count": 8
+    },
+    {
+      "article_name": "a_db6faa0559ad23f5",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_db6faa0559ad23f5.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_db6faa0559ad23f5.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_db6faa0559ad23f5.json",
+      "title": "PEN PAL",
+      "content_words": 5276,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_ee022fa566559f96",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_ee022fa566559f96.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_ee022fa566559f96.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_ee022fa566559f96.json",
+      "title": "THE SECRET MARTIANS",
+      "content_words": 5277,
+      "qa_count": 6
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1691cfb0ed0b829e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1691cfb0ed0b829e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1691cfb0ed0b829e.json",
+      "title": "CULTURAL EXCHANGE",
+      "content_words": 5298,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_a2f15f6287108e95",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a2f15f6287108e95.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a2f15f6287108e95.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a2f15f6287108e95.json",
+      "title": "COSMIC YO-YO",
+      "content_words": 5300,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_3351b158881489c4",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_3351b158881489c4.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_3351b158881489c4.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_3351b158881489c4.json",
+      "title": "I am a Nucleus",
+      "content_words": 5324,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_3c15df04739fd357",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_3c15df04739fd357.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_3c15df04739fd357.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_3c15df04739fd357.json",
+      "title": "JUPITER'S JOKE",
+      "content_words": 5335,
+      "qa_count": 20
+    },
+    {
+      "article_name": "a_6a2b27db62edea34",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_6a2b27db62edea34.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_6a2b27db62edea34.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_6a2b27db62edea34.json",
+      "title": "PLANET of DREAD",
+      "content_words": 5336,
+      "qa_count": 13
+    },
+    {
+      "article_name": "a_2dcfd71746527047",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_2dcfd71746527047.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_2dcfd71746527047.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_2dcfd71746527047.json",
+      "title": "PLANET of DREAD",
+      "content_words": 5337,
+      "qa_count": 7
+    },
+    {
+      "article_name": "a_a490a51de65ccf08",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a490a51de65ccf08.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a490a51de65ccf08.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a490a51de65ccf08.json",
+      "title": "Birds of a Feather",
+      "content_words": 5345,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_c719ce3807e7eb5a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c719ce3807e7eb5a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c719ce3807e7eb5a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c719ce3807e7eb5a.json",
+      "title": "UPSTARTS",
+      "content_words": 5363,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_e19535a0233d6123",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_e19535a0233d6123.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_e19535a0233d6123.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_e19535a0233d6123.json",
+      "title": "Confidence Game",
+      "content_words": 5369,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_9bca6ff1ae37cded",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_9bca6ff1ae37cded.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_9bca6ff1ae37cded.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_9bca6ff1ae37cded.json",
+      "title": "BEACH SCENE",
+      "content_words": 5424,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_3e53746da2c165a4",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_3e53746da2c165a4.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_3e53746da2c165a4.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_3e53746da2c165a4.json",
+      "title": "A FALL OF GLASS",
+      "content_words": 5434,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_da5abd3b2bcb8030",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_da5abd3b2bcb8030.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_da5abd3b2bcb8030.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_da5abd3b2bcb8030.json",
+      "title": "WHEN THE MOUNTAIN SHOOK",
+      "content_words": 5450,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_cc93c43654078f53",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_cc93c43654078f53.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_cc93c43654078f53.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_cc93c43654078f53.json",
+      "title": "Volpla",
+      "content_words": 5466,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_f38eb52f89d0f0f0",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f38eb52f89d0f0f0.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f38eb52f89d0f0f0.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_f38eb52f89d0f0f0.json",
+      "title": "THE FIVE HELLS OF ORION",
+      "content_words": 5472,
+      "qa_count": 13
+    },
+    {
+      "article_name": "a_5c44f3c1449daf6f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_5c44f3c1449daf6f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_5c44f3c1449daf6f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_5c44f3c1449daf6f.json",
+      "title": "Crossing",
+      "content_words": 5475,
+      "qa_count": 3
+    },
+    {
+      "article_name": "a_a7230267a5982d21",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a7230267a5982d21.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a7230267a5982d21.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a7230267a5982d21.json",
+      "title": "Crossing",
+      "content_words": 5476,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_400a48e381b75652.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_400a48e381b75652.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_400a48e381b75652.json",
+      "title": "A Gift From Earth",
+      "content_words": 5484,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_b605f3123e952da0",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_b605f3123e952da0.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_b605f3123e952da0.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_b605f3123e952da0.json",
+      "title": "THE MAN OUTSIDE",
+      "content_words": 5526,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_dd30a80d5c33d63f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_dd30a80d5c33d63f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_dd30a80d5c33d63f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_dd30a80d5c33d63f.json",
+      "title": "VOYAGE TO FAR N'JURD",
+      "content_words": 5545,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_d1aa97244aead18a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d1aa97244aead18a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d1aa97244aead18a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d1aa97244aead18a.json",
+      "title": "What Is Open Access?",
+      "content_words": 5600,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_38ac5c442b8fba1e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_38ac5c442b8fba1e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_38ac5c442b8fba1e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_38ac5c442b8fba1e.json",
+      "title": "THE DOPE on Mars",
+      "content_words": 5608,
+      "qa_count": 10
+    },
+    {
+      "article_name": "a_24d562b5c16ddeaa",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_24d562b5c16ddeaa.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_24d562b5c16ddeaa.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_24d562b5c16ddeaa.json",
+      "title": "THE DOPE on Mars",
+      "content_words": 5625,
+      "qa_count": 5
+    },
+    {
+      "article_name": "a_71f261b65687f681",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_71f261b65687f681.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_71f261b65687f681.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_71f261b65687f681.json",
+      "title": "Atom Mystery",
+      "content_words": 5629,
+      "qa_count": 20
+    },
+    {
+      "article_name": "a_49c5d36f2f832fda",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_49c5d36f2f832fda.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_49c5d36f2f832fda.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_49c5d36f2f832fda.json",
+      "title": "BIG ANCESTOR",
+      "content_words": 5690,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_a30ad9d413f4bbc3",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_a30ad9d413f4bbc3.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_a30ad9d413f4bbc3.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_a30ad9d413f4bbc3.json",
+      "title": "HUNT the HUNTER",
+      "content_words": 5735,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_d3ea908fe8b5d56a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d3ea908fe8b5d56a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d3ea908fe8b5d56a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d3ea908fe8b5d56a.json",
+      "title": "THE GOD NEXT DOOR",
+      "content_words": 5769,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_d8287e7a17d971ca",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d8287e7a17d971ca.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d8287e7a17d971ca.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d8287e7a17d971ca.json",
+      "title": "Law",
+      "content_words": 5872,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_b56613a51e119545",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_b56613a51e119545.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_b56613a51e119545.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_b56613a51e119545.json",
+      "title": "PICK A CRIME",
+      "content_words": 6004,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_983d9d88d5070e97",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_983d9d88d5070e97.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_983d9d88d5070e97.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_983d9d88d5070e97.json",
+      "title": "The Sense of Wonder",
+      "content_words": 6023,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_3aefbec26b6ead34",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_3aefbec26b6ead34.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_3aefbec26b6ead34.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_3aefbec26b6ead34.json",
+      "title": "SCRIMSHAW",
+      "content_words": 6104,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_34d9eff07b6a756d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_34d9eff07b6a756d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_34d9eff07b6a756d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_34d9eff07b6a756d.json",
+      "title": "Conditionally Human",
+      "content_words": 6237,
+      "qa_count": 17
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "vdb_search_docs": {
+    "name": "vdb_search_docs",
+    "description": "Document-level semantic retrieval from the vector store for broad topical recall.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Semantic search query.",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "Maximum number of document-level hits. Default 5.",
+        "required": false
+      }
+    ]
+  },
+  "vdb_get_docs_by_document_ids": {
+    "name": "vdb_get_docs_by_document_ids",
+    "description": "Fetch raw document chunks by document_id from the vector store.",
+    "parameters": [
+      {
+        "name": "document_ids",
+        "type": "array",
+        "description": "List of document_ids.",
+        "required": true
+      }
+    ]
+  },
+  "vdb_search_hierdocs": {
+    "name": "vdb_search_hierdocs",
+    "description": "Parent-child semantic retrieval: recall relevant sentences, aggregate them to parent passages or documents, then rerank.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Semantic search query.",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "Maximum number of parent-level hits. Default 20.",
+        "required": false
+      }
+    ]
+  },
+  "vdb_search_sentences": {
+    "name": "vdb_search_sentences",
+    "description": "Sentence-level semantic retrieval for fine-grained evidence and paraphrased local details.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Semantic sentence-search query.",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "Maximum number of sentence hits. Default 5.",
+        "required": false
+      }
+    ]
+  }
+}

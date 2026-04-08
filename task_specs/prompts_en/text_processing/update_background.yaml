@@ -1,0 +1,71 @@
+id: update_background
+category: text_processing
+name: Update Background
+description: >
+  Produce or update a narrative-style background summary based on current text and optional previous background.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The current text to incorporate.
+
+  - name: previous_background_block
+    type: string
+    required: false
+    description: Optional pre-rendered block containing previous background.
+
+  - name: goal_block
+    type: string
+    required: false
+    description: Optional pre-rendered block describing task goal/focus.
+
+template: |
+  You are updating a background summary for a document.
+
+  --------------------------------
+  GOAL
+  --------------------------------
+  Produce a background summary in a book/script synopsis style:
+  - single paragraph
+  - coherent
+  - highlight core plans/conflicts and key clues
+  - 120–220 words (English)
+
+  If a previous background is provided, make minimal modifications:
+  - retain valid information
+  - merge redundancies
+  - unify terminology
+  - update only when supported by the current text
+
+  --------------------------------
+  RULES
+  --------------------------------
+  - Do NOT fabricate information.
+  - If a fact appears only in previous background but is not supported by current text, keep it only if it does not conflict and is plausibly still valid.
+  - Avoid bullet/list formatting and slogan-like writing.
+  - Reduce timeline stacking.
+  - Keep proper nouns consistent.
+
+  {previous_background_block}
+
+  {goal_block}
+
+  --------------------------------
+  CURRENT TEXT
+  --------------------------------
+  {text}
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT JSON ONLY)
+  --------------------------------
+  {{
+    "background": "..."
+  }}
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+  - Output JSON only.
+  - No markdown, no commentary.

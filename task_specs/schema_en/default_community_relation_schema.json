@@ -1,0 +1,12 @@
+{
+  "community_relations": [
+    {
+      "name": "COMMUNITY_CONTAINS",
+      "description": "A Community directly contains a base graph member node."
+    },
+    {
+      "name": "COMMUNITY_PARENT_OF",
+      "description": "A higher-level Community points to a finer-grained child Community."
+    }
+  ]
+}

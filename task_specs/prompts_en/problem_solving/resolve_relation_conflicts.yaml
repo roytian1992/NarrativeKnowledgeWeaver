@@ -1,0 +1,75 @@
+id: resolve_relation_conflicts
+category: problem_solving
+name: Resolve Relation Conflicts
+description: >
+  Review multiple relation types extracted between the same two entities and decide which relation types to keep,
+  using only the provided context report. Strict JSON-only output.
+
+task_variables:
+  - name: context
+    type: string
+    required: true
+    description: Multi-edge context/report for one entity pair, including relation type summary and evidence lines.
+
+  - name: subject_entity
+    type: string
+    required: true
+    description: Subject entity (name/id) for clarity.
+
+  - name: object_entity
+    type: string
+    required: true
+    description: Object entity (name/id) for clarity.
+
+static_variables: []
+
+template: |
+  You are reviewing MULTIPLE relations extracted between the SAME two entities
+  in a narrative knowledge graph.
+
+  TASK
+  You are given:
+  1) A multi-edge report for ONE entity pair (subject_entity -> object_entity).
+     It includes:
+     - relation_type summary (type, description, count)
+     - per-edge evidence lines (base_chapter / chapter_key / rid)
+  2) subject_entity and object_entity names/ids for clarity.
+
+  Your job:
+  - Decide which relation types should be KEPT for this entity pair.
+  - Focus on potential contradictions like affinity_with vs hostility_with that may co-occur.
+    IMPORTANT: Co-occurrence does NOT necessarily mean one is wrong; it can reflect a temporary flare-up
+    (e.g., friends arguing) or story dynamics.
+  - Be conservative:
+    - If you are uncertain, KEEP BOTH rather than dropping.
+    - Only DROP a relation type if the evidence strongly suggests it is a misclassification for this pair
+      (for example: the evidence looks like a one-off momentary attitude rather than an established relationship state).
+
+  CRITICAL RULES
+  - Use ONLY the provided multi-edge information. Do NOT use external knowledge.
+  - Do NOT invent new relation types.
+  - You may only output relation types that appear in the report.
+  - You are NOT performing normalization or merging here. Downstream will merge edges by relation_type.
+
+  INPUTS
+  [Subject Entity]
+  {subject_entity}
+
+  [Object Entity]
+  {object_entity}
+
+  [Context]
+  {context}
+
+  OUTPUT FORMAT
+  Return ONLY one JSON object, with no extra text:
+
+  {
+    "keep_relation_types": ["string", "..."],
+    "reason": "Brief justification grounded in the context."
+  }
+
+  INTERPRETATION
+  - keep_relation_types lists relation types that should be preserved for this pair.
+  - If both affinity_with and hostility_with should remain, include both.
+  - If no types should be dropped, include all types that appear in the report.

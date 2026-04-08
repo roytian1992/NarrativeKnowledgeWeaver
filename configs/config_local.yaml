@@ -31,10 +31,7 @@ memory:
 
 # 存储配置
 storage:
-  # Neo4j图数据库
-  neo4j_uri: bolt://localhost:7687
-  neo4j_username: neo4j
-  neo4j_password: lifeishard
+  graph_store_path: data/knowledge_graph/graph_runtime.pkl
   
   # 向量数据库
   vector_store_type: chroma
@@ -56,4 +53,3 @@ processing:
   enable_parallel: true
   cache_enabled: true
   cache_dir: data/cache
-

@@ -1,0 +1,36 @@
+{
+  "dataset_root": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed",
+  "train_articles": 0,
+  "eval_articles": 3,
+  "seed": 42,
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_b502e6b5b48cd2b2",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_b502e6b5b48cd2b2.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_b502e6b5b48cd2b2.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_b502e6b5b48cd2b2.json",
+      "title": "Human Clones: Why Not?",
+      "content_words": 2215,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_c719ce3807e7eb5a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c719ce3807e7eb5a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c719ce3807e7eb5a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c719ce3807e7eb5a.json",
+      "title": "UPSTARTS",
+      "content_words": 5363,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_f38eb52f89d0f0f0",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f38eb52f89d0f0f0.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f38eb52f89d0f0f0.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_f38eb52f89d0f0f0.json",
+      "title": "THE FIVE HELLS OF ORION",
+      "content_words": 5472,
+      "qa_count": 13
+    }
+  ]
+}

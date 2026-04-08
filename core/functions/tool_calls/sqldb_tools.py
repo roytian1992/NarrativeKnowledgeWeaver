@@ -3,593 +3,361 @@ from __future__ import annotations
 
 """
 sqldb_tools.py
-- 提供基于 SQLite 的 CMP_info 表查询工具，并注册为 Qwen Agent 可调用工具。
-- 工具：
-  1) search_by_character  按“相关角色”模糊检索完整记录
-  2) search_by_scene      按“场次名/子场次名”检索完整记录
-  3) chunk_to_scene       由 chunk_id 映射到 场次名/子场次名
-  4) scene_to_chunks      由场次（可选子场次）列出所有 chunk_id
+
+Interaction-oriented SQLite tools.
+Target table: Interaction_info
 """
 
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import List, Dict, Any, Tuple
 import json
 import sqlite3
 
 from qwen_agent.tools.base import BaseTool, register_tool
 from qwen_agent.utils.utils import logger
-from langchain_community.utilities import SQLDatabase
-from langchain_experimental.sql.base import SQLDatabaseSequentialChain
+from core.utils.format import DOC_TYPE_META
 
 
-# —— 列清单（与表结构一致） —— #
-COLUMNS = [
-    "名称", "类别", "子类别", "外观", "状态", "相关角色",
-    "文中线索", "补充信息", "chunk_id", "场次", "场次名", "子场次名"
-]
+def _qident(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
 
 
-def build_cols_sql(conn, table: str, candidate_cols: list[str]) -> str:
-    cur = conn.cursor()
-    cur.execute(f"PRAGMA table_info('{table}')")
-    cols_in_db = {row[1] for row in cur.fetchall()}
-    valid_cols = [c for c in candidate_cols if c in cols_in_db]
-    return ", ".join([f'"{c}"' for c in valid_cols])
+def _like(v: str) -> str:
+    return f"%{v}%"
 
 
-def _parse_sql_from_steps(steps):
-    if not steps:
-        return None
-    for st in steps:
-        if isinstance(st, dict) and "sql_cmd" in st:
-            return st["sql_cmd"].strip()
-        if isinstance(st, str) and st.strip().lower().startswith("select"):
-            return st.strip()
-    return None
+def _fmt_row(row: Dict[str, Any], cols: List[str]) -> str:
+    parts: List[str] = []
+    for c in cols:
+        if c not in row:
+            continue
+        v = row.get(c)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        parts.append(f"{c}: {s}")
+    return " | ".join(parts)
 
 
-def _format_sql_rows_text(raw):
-    if raw is None:
-        return "未查询到结果。"
-    if isinstance(raw, str):
-        try:
-            data = ast.literal_eval(raw)
-            if isinstance(data, (list, tuple)) and data and isinstance(data[0], (list, tuple)):
-                lines = []
-                for row in data:
-                    items = [str(x) for x in row]
-                    lines.append("- " + "；".join(items))
-                return "查询结果如下：\n" + "\n".join(lines)
-            return raw
-        except Exception:
-            return raw
-    if isinstance(raw, (list, tuple)):
-        if not raw:
-            return "未查询到结果。"
-        lines = []
-        for row in raw:
-            if isinstance(row, (list, tuple)):
-                items = [str(x) for x in row]
-                lines.append("- " + "；".join(items))
-            else:
-                lines.append("- " + str(row))
-        return "查询结果如下：\n" + "\n".join(lines)
-    return str(raw)
-
-
-# —— 通用格式化：把查询结果转为自然语言 —— #
-def _fmt_kv_line(row: Dict[str, Any], columns: List[str]) -> str:
-    items = []
-    for c in columns:
-        if c in row:
-            v = row[c]
-            v = "" if v is None else str(v).strip()
-            if v != "":
-                items.append(f"{c}：{v}")
-    return "；".join(items)
-
-def format_rows_dicts_to_nl(rows: List[Dict[str, Any]],
-                            columns: Optional[List[str]] = None,
-                            dedup: bool = True,
-                            header: Optional[str] = "查询结果如下：") -> str:
+def _fmt_rows(rows: List[Dict[str, Any]], cols: List[str], *, header: str) -> str:
     if not rows:
         return "未查询到结果。"
-    if columns is None:
-        # 以 COLUMNS 为主序，再补其它键
-        appeared = set()
-        ordered = []
-        for c in COLUMNS:
-            if any(c in r for r in rows):
-                ordered.append(c); appeared.add(c)
-        for k in rows[0].keys():
-            if k not in appeared:
-                ordered.append(k); appeared.add(k)
-        columns = ordered
-
-    seen: set[Tuple] = set()
-    lines: List[str] = []
+    lines = []
     for r in rows:
-        line = _fmt_kv_line(r, columns)
-        if not line:
-            continue
-        key = tuple((k, r.get(k, None)) for k in columns)
-        if dedup and key in seen:
-            continue
-        seen.add(key)
-        lines.append(f"- {line}")
-
+        line = _fmt_row(r, cols)
+        if line:
+            lines.append(f"- {line}")
     if not lines:
         return "未查询到结果。"
-    if header:
-        return header + "\n" + "\n".join(lines)
-    return "\n".join(lines)
-
-def format_query_result(
-    data: Union[List[Dict[str, Any]], None],
-    columns: Optional[List[str]] = None,
-    header: Optional[str] = "查询结果如下：",
-) -> str:
-    if data is None:
-        return "未查询到结果。"
-    if isinstance(data, list) and (not data or isinstance(data[0], dict)):
-        return format_rows_dicts_to_nl(data, columns=columns, header=header)
-    return "（无法识别的结果类型，未能格式化。）"
-
-def format_mapping_chunks_to_scene(mappings: List[Dict[str, Any]]) -> str:
-    """
-    专用于 chunk_to_scene：处理多个结果
-    """
-    if not mappings:
-        return "未找到任何 chunk_id 对应的场次信息。"
-
-    lines = []
-    for m in mappings:
-        chunk = m.get("chunk_id", "")
-        scene = m.get("场次名", "")
-        sub = m.get("子场次名", "")
-        tail = f"；子场次名：{sub}" if sub else ""
-        lines.append(f"- chunk_id：{chunk} → 场次名：{scene}{tail}")
-
-    return "查询结果如下：\n" + "\n".join(lines)
-
-def format_scene_to_chunks(scene_name: str,
-                           chunks: List[str],
-                           subscene_name: Optional[str] = None) -> str:
-    """
-    专用于 scene_to_chunks 的输出
-    """
-    if not chunks:
-        if subscene_name:
-            return f"未在场次「{scene_name}」-「{subscene_name}」下找到任何 chunk_id。"
-        return f"未在场次「{scene_name}」下找到任何 chunk_id。"
-    head = f"场次「{scene_name}」" + (f" - 「{subscene_name}」" if subscene_name else "")
-    lines = "\n".join(f"- {cid}" for cid in chunks)
-    return f"{head} 共 {len(chunks)} 个 chunk_id：\n{lines}"
+    return header + "\n" + "\n".join(lines)
 
 
-# —— SQLite 基础 —— #
-def get_conn(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+class _BaseInteractionSQLTool(BaseTool):
+    DEFAULT_TABLE = "Interaction_info"
 
-def rows_to_dicts(rows: List[sqlite3.Row]) -> List[Dict[str, Any]]:
-    return [dict(row) for row in rows]
-
-def ensure_indices(conn: sqlite3.Connection, table: str) -> None:
-    cur = conn.cursor()
-    cur.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_related_role ON "{table}"("相关角色");')
-    cur.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_scene        ON "{table}"("场次名");')
-    cur.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_subscene     ON "{table}"("子场次名");')
-    cur.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_chunk        ON "{table}"("chunk_id");')
-    conn.commit()
-
-
-# —— 1) 按角色名模糊检索 —— #
-@register_tool("search_by_character")
-class Search_By_Character(BaseTool):
-    """
-    在 SQLite 表的“相关角色”列进行不区分大小写的模糊匹配，返回整行信息。
-    """
-    name = "search_by_character"
-    description = "在 CMP_info 表中按“相关角色”进行模糊检索，返回匹配到的完整记录。"
-    parameters = [
-        {
-            "name": "query",
-            "type": "string",
-            "description": "角色名关键词（模糊匹配，大小写不敏感）",
-            "required": True
-        },
-        {
-            "name": "limit",
-            "type": "integer",
-            "description": "最多返回的记录条数（可选）",
-            "required": False
-        }
-    ]
-
-    def __init__(self, db_path: str,
-                 default_table: str = "CMP_info",
-                 build_indices: bool = False):
+    def __init__(self, db_path: str, table_name: str = DEFAULT_TABLE, doc_type: str = "screenplay"):
         self.db_path = db_path
-        self.default_table = default_table
-        if build_indices:
-            conn = get_conn(self.db_path)
-            try:
-                ensure_indices(conn, self.default_table)
-            finally:
-                conn.close()
-        self.COLS_SQL = build_cols_sql(get_conn(db_path), "CMP_info", COLUMNS)
+        self.table_name = table_name or self.DEFAULT_TABLE
+        self._cols = self._get_columns()
+        self.doc_type = str(doc_type or "screenplay").strip().lower()
 
+        meta = DOC_TYPE_META.get(self.doc_type, DOC_TYPE_META["general"])
+        self.section_label = str(meta.get("section_label", "Section")).strip() or "Section"
+        self.section_title_field = str(meta.get("title", "title")).strip() or "title"
+        self.section_subtitle_field = str(meta.get("subtitle", "subtitle")).strip() or "subtitle"
 
-    def _search_by_character(self, character_keyword: str,
-                             limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        
-        sql = f'''
-            SELECT {self.COLS_SQL}
-            FROM "{self.default_table}"
-            WHERE "相关角色" LIKE ? COLLATE NOCASE
-            ORDER BY "场次名","子场次名","chunk_id"
-        '''
-        params: List[Any] = [f"%{character_keyword}%"]
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(int(limit))
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
-        conn = get_conn(self.db_path)
+    def _get_columns(self) -> set[str]:
+        conn = self._connect()
         try:
             cur = conn.cursor()
-            cur.execute(sql, tuple(params))
-            return rows_to_dicts(cur.fetchall())
+            cur.execute(f"PRAGMA table_info({_qident(self.table_name)})")
+            return {str(r[1]) for r in cur.fetchall()}
         finally:
             conn.close()
 
-    def call(self, params: str, **kwargs) -> str:
-        logger.info("🔎 search_by_character: 开始执行 SQL 模糊检索（相关角色）")
-        p: Dict[str, Any] = json.loads(params)
-        query = str(p.get("query", "")).strip()
-        limit = p.get("limit", None)
-        if isinstance(limit, str) and limit.isdigit():
-            limit = int(limit)
-        elif not isinstance(limit, (int, type(None))):
-            limit = None
+    def _available(self, cols: List[str]) -> List[str]:
+        return [c for c in cols if c in self._cols]
 
-        rows = self._search_by_character(query, limit=limit)
-        return format_query_result(rows, header=f"与「{query}」相关的记录：")
+    def _resolve_column(self, preferred: str, fallbacks: List[str]) -> str:
+        candidates = [preferred] + [c for c in fallbacks if c != preferred]
+        for col in candidates:
+            if col in self._cols:
+                return col
+        return ""
 
-
-# —— 2) 按场次/子场次检索 —— #
-@register_tool("search_by_scene")
-class Search_By_Scene(BaseTool):
-    """
-    根据场次（可选子场次）返回所有相关信息；支持模糊/精确匹配。
-    """
-    name = "search_by_scene"
-    description = "在指定表中按“场次名”（可选“子场次名”）检索并返回完整记录，支持模糊匹配。"
-    parameters = [
-        {
-            "name": "scene_name",
-            "type": "string",
-            "description": "场次名关键词（模糊或精确匹配的关键字段）",
-            "required": True
-        },
-        {
-            "name": "subscene_name",
-            "type": "string",
-            "description": "子场次名关键词（可选；与场次名共同过滤）",
-            "required": False
-        },
-        {
-            "name": "fuzzy",
-            "type": "boolean",
-            "description": "是否使用模糊匹配（LIKE）。默认 true。",
-            "required": False
-        },
-        {
-            "name": "limit",
-            "type": "integer",
-            "description": "最多返回的记录条数（可选）",
-            "required": False
-        }
-    ]
-
-    def __init__(self, db_path: str,
-                 default_table: str = "CMP_info",
-                 build_indices: bool = False):
-        self.db_path = db_path
-        self.default_table = default_table
-        if build_indices:
-            conn = get_conn(self.db_path)
-            try:
-                ensure_indices(conn, self.default_table)
-            finally:
-                conn.close()
-        self.COLS_SQL = build_cols_sql(get_conn(db_path), "CMP_info", COLUMNS)
-
-    @staticmethod
-    def _build_where(scene_name: str,
-                     subscene_name: Optional[str],
-                     fuzzy: bool) -> tuple[str, list[Any]]:
-        where = []
-        params: list[Any] = []
-        if fuzzy:
-            where.append('"场次名" LIKE ? COLLATE NOCASE')
-            params.append(f"%{scene_name}%")
-        else:
-            where.append('"场次名" = ?')
-            params.append(scene_name)
-
-        if subscene_name:
-            if fuzzy:
-                where.append('"子场次名" LIKE ? COLLATE NOCASE')
-                params.append(f"%{subscene_name}%")
-            else:
-                where.append('"子场次名" = ?')
-                params.append(subscene_name)
-
-        return " AND ".join(where) if where else "1=1", params
-
-    def _search_by_scene(self, scene_name: str,
-                         subscene_name: Optional[str] = None,
-                         fuzzy: bool = True,
-                         limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        where_sql, params = self._build_where(scene_name, subscene_name, fuzzy)
-        sql = f'''
-            SELECT {self.COLS_SQL}
-            FROM "{self.default_table}"
-            WHERE {where_sql}
-            ORDER BY "场次名","子场次名","chunk_id"
-        '''
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(int(limit))
-
-        conn = get_conn(self.db_path)
-        try:
-            cur = conn.cursor()
-            cur.execute(sql, tuple(params))
-            return rows_to_dicts(cur.fetchall())
-        finally:
-            conn.close()
-
-    def call(self, params: str, **kwargs) -> str:
-        # logger.info("🎬 search_by_scene: 按场次检索完整记录")
-        p: Dict[str, Any] = json.loads(params)
-        scene_name = str(p.get("scene_name", "")).strip()
-        subscene_name = (str(p["subscene_name"]).strip()
-                         if p.get("subscene_name") not in (None, "") else None)
-        fuzzy = True if p.get("fuzzy", True) else False
-        limit = p.get("limit", None)
-        if isinstance(limit, str) and limit.isdigit():
-            limit = int(limit)
-        elif not isinstance(limit, (int, type(None))):
-            limit = None
-
-        rows = self._search_by_scene(scene_name, subscene_name=subscene_name,
-                                     fuzzy=fuzzy, limit=limit)
-        head = f"场次「{scene_name}」" + (f" - 「{subscene_name}」" if subscene_name else "")
-        return format_query_result(rows, header=f"{head} 的相关记录：")
-
-
-# —— 3) chunk_id 列表 → 场次/子场次 —— #
-@register_tool("chunk_to_scene")
-class Chunk_To_Scene(BaseTool):
-    """
-    从一组 chunk_id 映射到场次：返回 chunk_id、场次名、子场次名。
-    """
-    name = "chunk_to_scene"
-    description = "给定一个或多个 chunk_id，查询其对应的 场次名 / 子场次名 映射。"
-    parameters = [
-        {
-            "name": "chunk_ids",
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "要查询的 chunk_id 列表（精确匹配）",
-            "required": True
-        }
-    ]
-
-    def __init__(self, db_path: str,
-                 default_table: str = "Scene_info",
-                 build_indices: bool = False):
-        self.db_path = db_path
-        self.default_table = default_table
-        if build_indices:
-            conn = get_conn(self.db_path)
-            try:
-                ensure_indices(conn, self.default_table)
-            finally:
-                conn.close()
-
-    def _chunk_to_scene(self, chunk_ids: List[str]) -> List[Dict[str, Any]]:
-        if not chunk_ids:
+    def _query_rows(
+        self,
+        *,
+        select_cols: List[str],
+        where_sql: str,
+        params: Tuple[Any, ...],
+        order_by: str,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        cols = self._available(select_cols)
+        if not cols:
             return []
-        placeholders = ",".join("?" for _ in chunk_ids)
-        sql = f'''
-            SELECT "chunk_id","场次名","子场次名"
-            FROM "{self.default_table}"
-            WHERE "chunk_id" IN ({placeholders})
-            ORDER BY "场次名","子场次名","chunk_id"
-        '''
-        conn = get_conn(self.db_path)
+        sql = (
+            f"SELECT {', '.join(_qident(c) for c in cols)} "
+            f"FROM {_qident(self.table_name)} "
+            f"WHERE {where_sql} "
+            f"ORDER BY {order_by} "
+            f"LIMIT ?"
+        )
+        conn = self._connect()
         try:
             cur = conn.cursor()
-            cur.execute(sql, tuple(chunk_ids))
-            return rows_to_dicts(cur.fetchall())
+            cur.execute(sql, tuple(params) + (int(limit),))
+            return [dict(r) for r in cur.fetchall()]
         finally:
             conn.close()
 
-    def call(self, params: str, **kwargs) -> str:
-        logger.info("🧭 chunk_to_scene: 由多个 chunk_id 映射到场次")
-        p: Dict[str, Any] = json.loads(params)
-        chunk_ids = p.get("chunk_ids", [])
-        if not isinstance(chunk_ids, list) or not chunk_ids:
-            return "请提供一个非空的 chunk_id 列表。"
-        chunk_ids = [str(cid).strip() for cid in chunk_ids if str(cid).strip()]
 
-        mappings = self._chunk_to_scene(chunk_ids)
-        return format_mapping_chunks_to_scene(mappings)
-
-
-# —— 4) 场次/子场次 → chunk_id 列表 —— #
-@register_tool("scene_to_chunks")
-class Scene_To_Chunks(BaseTool):
-    """
-    从场次（可选子场次）映射到所有 chunk_id（去重、排序）。
-    """
-    name = "scene_to_chunks"
-    description = "给定场次名（可选子场次名），列出该范围内所有 chunk_id。支持模糊匹配。"
+@register_tool("search_dialogues")
+class SQLSearchDialogues(_BaseInteractionSQLTool):
+    name = "search_dialogues"
+    description = "检索对白交互记录，支持按说话方、对象、章节/场景、文档ID和内容过滤。"
     parameters = [
-        {
-            "name": "scene_name",
-            "type": "string",
-            "description": "场次名关键词（模糊或精确匹配的关键字段）",
-            "required": True
-        },
-        {
-            "name": "subscene_name",
-            "type": "string",
-            "description": "子场次名关键词（可选）",
-            "required": False
-        },
-        {
-            "name": "fuzzy",
-            "type": "boolean",
-            "description": "是否使用模糊匹配（LIKE）。默认 true。",
-            "required": False
-        }
+        {"name": "subject", "type": "string", "required": False, "description": "按 subject_name 模糊匹配"},
+        {"name": "object", "type": "string", "required": False, "description": "按 object_name 模糊匹配"},
+        {"name": "section", "type": "string", "required": False, "description": "按章节/场景标题模糊匹配"},
+        {"name": "subsection", "type": "string", "required": False, "description": "按子章节/子场景标题模糊匹配"},
+        {"name": "content", "type": "string", "required": False, "description": "按 content 模糊匹配"},
+        {"name": "document_id", "type": "string", "required": False, "description": "按 document_id 精确匹配"},
+        {"name": "limit", "type": "integer", "required": False, "description": "返回条数，默认 20"},
     ]
 
-    def __init__(self, db_path: str,
-                 default_table: str = "Scene_info",
-                 build_indices: bool = False):
-        self.db_path = db_path
-        self.default_table = default_table
-        if build_indices:
-            conn = get_conn(self.db_path)
-            try:
-                ensure_indices(conn, self.default_table)
-            finally:
-                conn.close()
-
-    @staticmethod
-    def _build_where(scene_name: str,
-                     subscene_name: Optional[str],
-                     fuzzy: bool) -> tuple[str, list[Any]]:
-        where = []
-        params: list[Any] = []
-        if fuzzy:
-            where.append('"场次名" LIKE ? COLLATE NOCASE')
-            params.append(f"%{scene_name}%")
-        else:
-            where.append('"场次名" = ?')
-            params.append(scene_name)
-
-        if subscene_name:
-            if fuzzy:
-                where.append('"子场次名" LIKE ? COLLATE NOCASE')
-                params.append(f"%{subscene_name}%")
-            else:
-                where.append('"子场次名" = ?')
-                params.append(subscene_name)
-
-        return " AND ".join(where) if where else "1=1", params
-
-    def _scene_to_chunks(self, scene_name: str,
-                         subscene_name: Optional[str] = None,
-                         fuzzy: bool = True) -> List[str]:
-        where_sql, params = self._build_where(scene_name, subscene_name, fuzzy)
-        sql = f'''
-            SELECT DISTINCT "chunk_id"
-            FROM "{self.default_table}"
-            WHERE {where_sql}
-            ORDER BY "chunk_id"
-        '''
-        conn = get_conn(self.db_path)
-        try:
-            cur = conn.cursor()
-            cur.execute(sql, tuple(params))
-            return [r["chunk_id"] for r in cur.fetchall()]
-        finally:
-            conn.close()
-
     def call(self, params: str, **kwargs) -> str:
-        logger.info("🧩 scene_to_chunks: 由场次映射到 chunk 列表")
-        p: Dict[str, Any] = json.loads(params)
-        scene_name = str(p.get("scene_name", "")).strip()
-        subscene_name = (str(p["subscene_name"]).strip()
-                         if p.get("subscene_name") not in (None, "") else None)
-        fuzzy = True if p.get("fuzzy", True) else False
+        p = json.loads(params or "{}")
+        subject = str(p.get("subject", "")).strip()
+        obj = str(p.get("object", "")).strip()
+        section = str(p.get("section", p.get("scene", ""))).strip()
+        subsection = str(p.get("subsection", p.get("sub_scene", ""))).strip()
+        content = str(p.get("content", "")).strip()
+        document_id = str(p.get("document_id", "")).strip()
+        limit = int(p.get("limit", 20) or 20)
+        limit = max(1, min(limit, 200))
 
-        chunks = self._scene_to_chunks(scene_name, subscene_name=subscene_name, fuzzy=fuzzy)
-        return format_scene_to_chunks(scene_name, chunks, subscene_name=subscene_name)
-
-
-@register_tool("nlp2sql_query")
-class NLP2SQL_Query(BaseTool):
-    """
-    用自然语言查询 SQLite 数据库（CMP.db），自动生成 SQL 并执行。
-    """
-
-    name = "nlp2sql_query"
-    description = f"用自然语言提问服饰、化妆、道具数据库，自动生成并执行 SQL，返回自然语言结果（可选附带 SQL）。该数据库的列名column names有：{COLUMNS}"
-    parameters = [
-        {
-            "name": "query",
-            "type": "string",
-            "description": "自然语言查询文本",
-            "required": True
-        },
-        {
-            "name": "return_sql",
-            "type": "boolean",
-            "description": "是否在结果中附带生成的 SQL 语句，默认 false",
-            "required": False
-        }
-    ]
-
-    def __init__(self,
-                 db_path, llm, instruction="在处理查询时，不要只做精确匹配，应同时考虑字符串包含、同义词扩展或语义相似度等方式来覆盖相关结果。"):
-        self.db_path = db_path
-        self.db = SQLDatabase.from_uri(f"sqlite:///{self.db_path}")
-        self.llm = llm
-        self.instruction = instruction
-
-        # 初始化 SQL chain（固定参数）
-        self.chain = SQLDatabaseSequentialChain.from_llm(
-            llm=self.llm,
-            db=self.db,
-            verbose=False,
-            return_direct=True,
-            return_intermediate_steps=True,
-            top_k=10000,
-            use_query_checker=True
+        section_col = self._resolve_column(self.section_title_field, ["scene_name", "chapter_name", "title"])
+        subsection_col = self._resolve_column(
+            self.section_subtitle_field,
+            ["sub_scene_name", "sub_chapter_name", "subtitle"],
         )
 
+        where = ["interaction_type = ?"]
+        vals: List[Any] = ["dialogue"]
+        if subject:
+            where.append("subject_name LIKE ? COLLATE NOCASE")
+            vals.append(_like(subject))
+        if obj:
+            where.append("object_name LIKE ? COLLATE NOCASE")
+            vals.append(_like(obj))
+        if section and section_col:
+            where.append(f"{_qident(section_col)} LIKE ? COLLATE NOCASE")
+            vals.append(_like(section))
+        if subsection and subsection_col:
+            where.append(f"{_qident(subsection_col)} LIKE ? COLLATE NOCASE")
+            vals.append(_like(subsection))
+        if content:
+            where.append("content LIKE ? COLLATE NOCASE")
+            vals.append(_like(content))
+        if document_id:
+            where.append("document_id = ?")
+            vals.append(document_id)
+
+        select_cols = [
+            "id",
+            "document_id",
+            "subject_name",
+            "subject_type",
+            "object_name",
+            "object_type",
+            "content",
+        ]
+        if section_col:
+            select_cols.insert(2, section_col)
+        if subsection_col:
+            select_cols.insert(3 if section_col else 2, subsection_col)
+        rows = self._query_rows(
+            select_cols=select_cols,
+            where_sql=" AND ".join(where),
+            params=tuple(vals),
+            order_by="id",
+            limit=limit,
+        )
+        logger.info("search_dialogues rows=%s", len(rows))
+        return _fmt_rows(rows, self._available(select_cols), header=f"Dialogue 查询结果（{self.section_label}维度）：")
+
+
+@register_tool("search_interactions")
+class SQLSearchInteractions(_BaseInteractionSQLTool):
+    name = "search_interactions"
+    description = "检索非对白交互记录，支持按主客体、章节/场景、情感极性、文档ID和内容过滤。"
+    parameters = [
+        {"name": "subject", "type": "string", "required": False, "description": "按 subject_name 模糊匹配"},
+        {"name": "object", "type": "string", "required": False, "description": "按 object_name 模糊匹配"},
+        {"name": "section", "type": "string", "required": False, "description": "按章节/场景标题模糊匹配"},
+        {"name": "subsection", "type": "string", "required": False, "description": "按子章节/子场景标题模糊匹配"},
+        {"name": "content", "type": "string", "required": False, "description": "按 content 模糊匹配"},
+        {"name": "polarity", "type": "string", "required": False, "description": "positive/negative/neutral"},
+        {"name": "document_id", "type": "string", "required": False, "description": "按 document_id 精确匹配"},
+        {"name": "limit", "type": "integer", "required": False, "description": "返回条数，默认 20"},
+    ]
+
     def call(self, params: str, **kwargs) -> str:
-        logger.info("🧠 nl2psql_query: 自然语言转 SQL + 执行")
-        p = json.loads(params)
-        query = str(p.get("query", "")).strip()
+        p = json.loads(params or "{}")
+        subject = str(p.get("subject", "")).strip()
+        obj = str(p.get("object", "")).strip()
+        section = str(p.get("section", p.get("scene", ""))).strip()
+        subsection = str(p.get("subsection", p.get("sub_scene", ""))).strip()
+        content = str(p.get("content", "")).strip()
+        polarity = str(p.get("polarity", "")).strip().lower()
+        document_id = str(p.get("document_id", "")).strip()
+        limit = int(p.get("limit", 20) or 20)
+        limit = max(1, min(limit, 200))
 
-        if not query:
-            return "请提供 query。"
-        if self.instruction:
-            query += "\n" + self.instruction
+        section_col = self._resolve_column(self.section_title_field, ["scene_name", "chapter_name", "title"])
+        subsection_col = self._resolve_column(
+            self.section_subtitle_field,
+            ["sub_scene_name", "sub_chapter_name", "subtitle"],
+        )
 
-        return_sql = bool(p.get("return_sql", False))
+        where = ["interaction_type <> ?"]
+        vals: List[Any] = ["dialogue"]
+        if subject:
+            where.append("subject_name LIKE ? COLLATE NOCASE")
+            vals.append(_like(subject))
+        if obj:
+            where.append("object_name LIKE ? COLLATE NOCASE")
+            vals.append(_like(obj))
+        if section and section_col:
+            where.append(f"{_qident(section_col)} LIKE ? COLLATE NOCASE")
+            vals.append(_like(section))
+        if subsection and subsection_col:
+            where.append(f"{_qident(subsection_col)} LIKE ? COLLATE NOCASE")
+            vals.append(_like(subsection))
+        if content:
+            where.append("content LIKE ? COLLATE NOCASE")
+            vals.append(_like(content))
+        if polarity:
+            where.append("LOWER(polarity) = ?")
+            vals.append(polarity)
+        if document_id:
+            where.append("document_id = ?")
+            vals.append(document_id)
 
-        try:
-            out = self.chain.invoke(query)
-            result = out.get("result", "")
-            steps = out.get("intermediate_steps", None)
-            sql_cmd = _parse_sql_from_steps(steps)
+        select_cols = [
+            "id",
+            "document_id",
+            "subject_name",
+            "subject_type",
+            "object_name",
+            "object_type",
+            "interaction_type",
+            "polarity",
+            "content",
+        ]
+        if section_col:
+            select_cols.insert(2, section_col)
+        if subsection_col:
+            select_cols.insert(3 if section_col else 2, subsection_col)
+        rows = self._query_rows(
+            select_cols=select_cols,
+            where_sql=" AND ".join(where),
+            params=tuple(vals),
+            order_by="id",
+            limit=limit,
+        )
+        logger.info("search_interactions rows=%s", len(rows))
+        return _fmt_rows(
+            rows,
+            self._available(select_cols),
+            header=f"Interaction 查询结果（{self.section_label}维度）：",
+        )
 
-            nl = _format_sql_rows_text(result)
-            parts = [f"◼︎ 自然语言结果：\n{nl}"]
-            if return_sql and sql_cmd:
-                parts.append(f"◼︎ 生成的 SQL：\n```sql\n{sql_cmd}\n```")
-            return "\n\n".join(parts)
-        except Exception as e:
-            logger.exception("nl2sql_query 执行失败")
-            return f"查询执行失败：{type(e).__name__}: {e}"
-        
 
+@register_tool("get_interactions_by_document_ids")
+class SQLGetInteractionsByDocumentIDs(_BaseInteractionSQLTool):
+    name = "get_interactions_by_document_ids"
+    description = "按 document_id 列表批量获取交互记录，可按交互类型过滤。"
+    parameters = [
+        {"name": "document_ids", "type": "array", "required": True, "description": "document_id 列表"},
+        {
+            "name": "interaction_type",
+            "type": "string",
+            "required": False,
+            "description": "可选: dialogue 或 interaction；不填表示返回全部",
+        },
+        {"name": "limit", "type": "integer", "required": False, "description": "返回条数，默认 100"},
+    ]
+
+    @staticmethod
+    def _dedup_ids(xs: Any) -> List[str]:
+        if not isinstance(xs, list):
+            return []
+        out: List[str] = []
+        seen = set()
+        for x in xs:
+            s = str(x).strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            out.append(s)
+        return out
+
+    def call(self, params: str, **kwargs) -> str:
+        p = json.loads(params or "{}")
+        document_ids = self._dedup_ids(p.get("document_ids"))
+        interaction_type_filter = str(p.get("interaction_type", "")).strip().lower()
+        limit = int(p.get("limit", 100) or 100)
+        limit = max(1, min(limit, 500))
+        section_col = self._resolve_column(self.section_title_field, ["scene_name", "chapter_name", "title"])
+        subsection_col = self._resolve_column(
+            self.section_subtitle_field,
+            ["sub_scene_name", "sub_chapter_name", "subtitle"],
+        )
+
+        if not document_ids:
+            return "请提供非空 document_ids。"
+        if interaction_type_filter not in ("", "all", "dialogue", "interaction"):
+            return "interaction_type 仅支持 dialogue 或 interaction（留空表示全部）。"
+
+        placeholders = ",".join(["?"] * len(document_ids))
+        where = [f"document_id IN ({placeholders})"]
+        vals: List[Any] = list(document_ids)
+        if interaction_type_filter == "dialogue":
+            where.append("interaction_type = ?")
+            vals.append("dialogue")
+        elif interaction_type_filter == "interaction":
+            where.append("interaction_type <> ?")
+            vals.append("dialogue")
+
+        select_cols = [
+            "id",
+            "document_id",
+            "subject_name",
+            "object_name",
+            "interaction_type",
+            "content",
+        ]
+        if section_col:
+            select_cols.insert(2, section_col)
+        if subsection_col:
+            select_cols.insert(3 if section_col else 2, subsection_col)
+        if interaction_type_filter != "dialogue":
+            select_cols.append("polarity")
+        rows = self._query_rows(
+            select_cols=select_cols,
+            where_sql=" AND ".join(where),
+            params=tuple(vals),
+            order_by="id",
+            limit=limit,
+        )
+        logger.info("get_interactions_by_document_ids rows=%s", len(rows))
+        return _fmt_rows(rows, self._available(select_cols), header="按 document_id 查询结果：")

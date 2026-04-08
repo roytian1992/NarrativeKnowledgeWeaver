@@ -8,10 +8,6 @@ langgraph>=0.1.0
 
 # ===== 大语言模型API =====
 openai>=1.0.0
-qwen-agent==0.0.26
-# ===== 图数据库 =====
-neo4j>=5.0.0
-
 # ===== 向量存储和嵌入 =====
 chromadb>=0.4.0
 sentence-transformers>=2.2.0
@@ -31,8 +27,8 @@ tqdm>=4.64.0
 
 # ===== 根据自己的环境选择 =====
 # torch==2.7.1+cu128  
-torchvision==0.22.1  
-torchaudio==2.7.1 
+# torchvision==0.22.1  
+# torchaudio==2.7.1 
 
 # 2️⃣ 安装 Transformers 4.53.3
-transformers==4.53.3
+# transformers==4.53.3

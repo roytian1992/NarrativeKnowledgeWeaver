@@ -1,0 +1,14 @@
+{
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_2b020f28fca0d8fe",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_2b020f28fca0d8fe.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_2b020f28fca0d8fe.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_2b020f28fca0d8fe.json",
+      "title": "The Snowball Effect",
+      "content_words": 4978,
+      "qa_count": 14
+    }
+  ]
+}

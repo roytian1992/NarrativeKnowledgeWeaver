@@ -34,9 +34,29 @@ Usage example:
     ...     print(r.page_content, r.metadata)
 """
 
-from typing import List, Optional
+import re
+from typing import Callable, List, Optional
 from langchain_core.documents import Document
 from langchain_community.retrievers import BM25Retriever as LCBM25Retriever
+
+
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]")
+
+
+def _default_preprocess(text: str) -> List[str]:
+    """
+    Safe fallback tokenizer for BM25.
+
+    LangChain's BM25 wrapper requires a callable preprocess_func. Passing None
+    can crash in some versions, so we always provide a tokenizer here.
+    """
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return []
+    tokens = _TOKEN_RE.findall(raw)
+    if tokens:
+        return tokens
+    return raw.split()
 
 
 class KeywordBM25Retriever:
@@ -53,7 +73,7 @@ class KeywordBM25Retriever:
         self,
         documents: List[Document],
         *,
-        zh_preprocess=None,
+        zh_preprocess: Optional[Callable[[str], List[str]]] = None,
         k_default: int = 10,
     ):
         """
@@ -65,9 +85,10 @@ class KeywordBM25Retriever:
             k_default: Default number of documents to return.
         """
         self.k_default = k_default
+        preprocess = zh_preprocess or _default_preprocess
         self._bm25 = LCBM25Retriever.from_documents(
             documents=documents,
-            preprocess_func=zh_preprocess,
+            preprocess_func=preprocess,
         )
         self._bm25.k = k_default
 

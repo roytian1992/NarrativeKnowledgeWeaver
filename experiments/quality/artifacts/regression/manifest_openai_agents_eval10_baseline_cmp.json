@@ -1,0 +1,99 @@
+{
+  "dataset_root": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed",
+  "train_articles": 0,
+  "eval_articles": 10,
+  "seed": 42,
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_01fe6df44c09f288",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_01fe6df44c09f288.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_01fe6df44c09f288.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_01fe6df44c09f288.json",
+      "title": "My Lady Greensleeves",
+      "content_words": 5256,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_033588f6a93c94d1",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_033588f6a93c94d1.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_033588f6a93c94d1.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_033588f6a93c94d1.json",
+      "title": "STAR MOTHER",
+      "content_words": 1865,
+      "qa_count": 12
+    },
+    {
+      "article_name": "a_092f932462652ced",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_092f932462652ced.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_092f932462652ced.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_092f932462652ced.json",
+      "title": "JUNIOR ACHIEVEMENT",
+      "content_words": 5056,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_09e1543478c34e8e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_09e1543478c34e8e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_09e1543478c34e8e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_09e1543478c34e8e.json",
+      "title": "Eleven-Twelfths of 1999 In Review",
+      "content_words": 1728,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_0a55479de19616f5",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0a55479de19616f5.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0a55479de19616f5.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0a55479de19616f5.json",
+      "title": "A PLANET NAMED JOE",
+      "content_words": 4888,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_1a6d36d10045e367",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1a6d36d10045e367.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1a6d36d10045e367.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1a6d36d10045e367.json",
+      "title": "Name Your Symptom",
+      "content_words": 5150,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_1c98fcb5a3e9f921",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1c98fcb5a3e9f921.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1c98fcb5a3e9f921.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1c98fcb5a3e9f921.json",
+      "title": "eBabe",
+      "content_words": 2181,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_1f318a6f235de974",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1f318a6f235de974.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1f318a6f235de974.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1f318a6f235de974.json",
+      "title": "BREAKAWAY",
+      "content_words": 2280,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_1f90405ef9acbf93",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1f90405ef9acbf93.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1f90405ef9acbf93.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1f90405ef9acbf93.json",
+      "title": "Dole vs. the Times",
+      "content_words": 2045,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_1fa713be6d53fc6a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1fa713be6d53fc6a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1fa713be6d53fc6a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1fa713be6d53fc6a.json",
+      "title": "Shut Up, He Explained",
+      "content_words": 2100,
+      "qa_count": 17
+    }
+  ]
+}

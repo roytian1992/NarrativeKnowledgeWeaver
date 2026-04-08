@@ -1,0 +1,97 @@
+id: generate_community_report
+category: aggregation
+name: Generate Community Report
+description: >
+  Generate a GraphRAG-style narrative community report from structured community context.
+  Return strict JSON with title, summary, rating, rating explanation, and findings.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Structured community context containing entities, relationships, source documents, or child community reports.
+
+  - name: max_length
+    type: number
+    required: true
+    description: Soft maximum length for the full report content in characters.
+
+  - name: max_findings
+    type: number
+    required: true
+    description: Target maximum number of findings to include.
+
+  - name: goal
+    type: string
+    required: false
+    description: Optional retrieval-oriented goal to emphasize in the report.
+
+template: |
+  You are a narrative analysis expert. Your job is to generate a GraphRAG-style community report from structured community context.
+
+  --------------------------------
+  Goal
+  --------------------------------
+  Write a community report that is useful for retrieval and question answering.
+
+  This is not a simple summary. It should capture:
+  1) the most central characters, events, locations, objects, or concepts
+  2) the most important relations, conflicts, collaborations, causal links, or narrative connections
+  3) the role of this community in the larger narrative
+  4) the most valuable evidence trails for later retrieval
+
+  --------------------------------
+  Requirements
+  --------------------------------
+  1) Use only the provided context. Do not invent facts.
+  2) The title must be specific and should reflect representative entities, events, or conflicts when possible.
+  3) The summary should be an executive overview of the community's theme, internal structure, and narrative role.
+  4) rating must be a float between 0 and 10 representing the narrative importance of this community.
+  5) rating_explanation must be a short one-sentence reason for the score.
+  6) findings must contain at most {max_findings} items. Each finding must include:
+     - summary: a short conclusion title
+     - explanation: 1-2 paragraphs explaining why it matters
+  7) Findings should cover different aspects when possible, such as:
+     - central characters and actions
+     - major events or state changes
+     - important relations, interactions, causes, or conflicts
+     - implications for later plot development or retrieval
+  8) If a goal is provided, prioritize the parts of the community most relevant to that goal.
+  9) Do not output markdown or any extra commentary.
+  10) Keep the overall report within about {max_length} characters.
+
+  --------------------------------
+  Input
+  --------------------------------
+  [Optional Goal]
+  {goal}
+
+  [Community Context]
+  {text}
+
+  --------------------------------
+  Strict Output Format
+  --------------------------------
+  Return JSON only:
+
+  {{
+    "title": "...",
+    "summary": "...",
+    "rating": 0.0,
+    "rating_explanation": "...",
+    "findings": [
+      {{
+        "summary": "...",
+        "explanation": "..."
+      }}
+    ]
+  }}
+
+  --------------------------------
+  Final Requirements
+  --------------------------------
+  - Output JSON only.
+  - No markdown.
+  - No comments.
+  - rating must be between 0 and 10.
+  - findings must be a non-empty array.

@@ -1,0 +1,747 @@
+{
+  "summary": {
+    "section_only": {
+      "correct": 7,
+      "total": 30,
+      "accuracy": 0.2333
+    },
+    "narrative_only": {
+      "correct": 9,
+      "total": 30,
+      "accuracy": 0.3
+    },
+    "combined": {
+      "correct": 10,
+      "total": 30,
+      "accuracy": 0.3333
+    }
+  },
+  "results": {
+    "section_only": [
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q0",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"Even good jobs get boring on Terra.\",\"evidence\":\"He felt unsettled after a strange day, struggling to adjust to Terra, which the psychologist noted was aggressively affecting him.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q1",
+        "gold": "A",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Wyandotte put the microphone there to monitor Craig\\'s adjustment to Terran society.\",\"evidence\":\"Craig, a former Intergalactic Service officer, checks into a retro Galactic hotel on Terra; a bellboy offers to reveal hidden microphones and sell illicit sensatia-tapes, wh...\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q10",
+        "gold": "C",
+        "pred": "C",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Two screening technicians\",\"evidence\":\"Craig struggles to open his eyes and reacts to attendants [ent_4100a5b97dc3], Gravitational conditioning progresses on the twelfth and fourteenth days [ent_9dd762df7600]\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q12",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"virtual reality equipment\",\"evidence\":\"The retrieved evidence does not explicitly mention \\'Sensatia.\\' However, based on the context of space travel, gravitational conditioning, and psychological processing for Terra return, the most plausible inference is that \\'Sensatia\\' refers to virtual reality equipment used in conditioning or reintegration programs for returning spacemen. No evidence supports connections to illicit drugs, microphone shorters, or pornography.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"He is likely being monitored by the Terrans and cannot speak freely.\",\"evidence\":\"The retrieved evidence includes Craig interacting with an evasive Import official who avoids eye contact while questioning him, suggesting surveillance or monitoring is occurring. This supports the idea that Wyandotte may be in a similar situation where he cannot speak freely due to potential monitoring by Terran authorities.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q7",
+        "gold": "A",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Exposure to video and audio footage from Terra\",\"evidence\":\"Craig learns he must undergo psychological and gravitational conditioning due to his body\\'s adaptation to space after eleven years, hindering his return to Terra.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q9",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Their bodies may naturally produce paraoxynebutal\",\"evidence\":\"The retrieved evidence mentions \\'Paraoxylnebutal\\' as an object associated with the \\'Gravitational Reconditioning Program Aboard The Satellite\\' and the process of gravitational conditioning, suggesting its relevance to physiological responses during the conditioning process. No other option is directly supported by the evidence.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q0",
+        "gold": "A",
+        "pred": "B",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"Each season calls for a new way to tend the Bacchus vine.\",\"evidence\":\"Farmer Hank Arapoulous seeks Retief\\'s help with a wine crop crisis on Lovenbroy, a planet with unique twelve-year vine cycles and rich cultural seasons tied to its extreme climate and orbit.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q1",
+        "gold": "B",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Every 12 years a vintage is held, wherein the young people are made to harvest all the grapes.\",\"evidence\":\"Arapoulous reveals Lovenbroy\\'s reliance on a successful vintage harvest to save their vineyards from Croanie, with cultural traditions tied to the harvest and a time system where twelve Lovenbroy years equal eighteen Terry years.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q12",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"He is firm but can be harsh.\",\"evidence\":\"Retief investigates Bogan students\\' baggage via Port Authority, discovering it contains weapons and is misrouted to Lovenbroy instead of d\\'Land. Retief confronts official about unauthorized transshipment of tractors. Official admits tractors were sent to Lovenbroy a week ago. Retief resolves a mix-up by arranging a cover for a friend, instructs Jim, and plans to send a formal order. He then prepares to send students off personally with Arapoulous. Retief and Karsh oversee Bogan students arriving at the port; Karsh reprimands their behavior, refuses unsupervised town access, and plans to keep them confined until departure, despite arranged entertainment.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q13",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"Because he knows whoever ordered the tractors has bad intentions.\",\"evidence\":\"Retief challenges Croanie\\'s use of surplus tractors, suspecting hidden military purposes, while officials deflect with claims of internal affairs and business transactions, hinting at secrecy and possible warmongering.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q15",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"Suspicion indicates deception.\",\"evidence\":\"Retief investigates Bogan students\\' baggage via Port Authority, discovering it contains weapons and is misrouted to Lovenbroy instead of d\\'Land.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "D",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"They are going to invade it.\",\"evidence\":\"Retief investigates Bogan students\\' baggage via Port Authority, discovering it contains weapons and is misrouted to Lovenbroy instead of d\\'Land. Official admits tractors were sent to Lovenbroy a week ago.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "C",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Boge\",\"evidence\":\"Retief investigates Bogan students\\' baggage via Port Authority, discovering it contains weapons and is misrouted to Lovenbroy instead of d\\'Land.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q0",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Caswell thinks only women enjoy sewing.\",\"evidence\":\"The Sewing Circle Experiment describes Caswell\\'s involvement with the Watashaw sewing club and his assumptions about its membership, including the underlying premise that the club consists of and appeals only to women, as indicated by the context of the sewing circle being composed of female members and no indication of broader appeal beyond gender lines. No evidence suggests Caswell underestimated population, popularity, or ingenuity; instead, his model appears to rest on the assumption that sewing is a gender-specific activity.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q1",
+        "gold": "B",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"The Dean is irritated by Caswell\\'s superiority complex.\",\"evidence\":\"The narrator reflects on an ironclad bet with Caswell, whose professional pride would prevent him from being fired, recalling his joke about shooting himself, now a troubling prospect for the university.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q12",
+        "gold": "B",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Their experiment was using too small a sample size\",\"evidence\":\"The Sewing Circle Experiment [ID: a_2b020f28fca0d8fe_seg_3] score=0.8240 description: The narrator reflects on an ironclad bet with Caswell, whose professional pride would prevent him from being fired, recalling his joke about shooting himself, now a troubling prospect for the university. Event: Chairwoman introduces guest professors to the sewing circle [ent_82af15d3fd90], Club members applaud the visiting professors [ent_50558ca5f4a3], Occasion: Early Meeting Of The Watashaw Group [ent_8bd769bc8ad7].\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q13",
+        "gold": "B",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Intelligent and original\",\"evidence\":\"Prof. Caswell develops a social math...\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q3",
+        "gold": "B",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"The Dean doesn\\'t want people to think he\\'s a socialist.\",\"evidence\":\"The retrieved evidence does not explicitly state the Dean\\'s motives for disassociation from Watashaw. However, it does reference the Civic Welfare League\\'s activities in Watashaw, which include slum clearance, rehousing, and urban development—efforts that could be perceived as socially progressive or aligned with socialist ideals. Given the context of academic and civic involvement in social reform, and without evidence of global government or direct responsibility, the least unsupported option is that the Dean wishes to avoid being associated with socialism.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Because he is an expert in organizational strategies.\",\"evidence\":\"The Civic Welfare League expands into slum clearance, rehousing, and rezoning, with plans to attract new industries, revealing a shift from charity to urban development and real estate planning.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q10",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"There is a 100% chance that they will develop and/or die from a significant physical or mental illness.\",\"evidence\":\"Norris, a Class-C with defective heredity, receives a memo about a deviant neutroid while reflecting on emotional bonds and societal hierarchy after encountering a cat-Q-5.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q11",
+        "gold": "B",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"He returns lost neutroids to their owners instead of taking them to the pound and incinerating them.\",\"evidence\":\"The retrieved evidence does not explicitly mention Terry or any specific act of returning lost neutroids. However, the documents describe Norris, a dogcatcher, grappling with moral conflict and emotional bonds related to neutroids, suggesting internal struggle over his duties involving confiscation and disposal. Given the lack of direct evidence for other options and assuming Terry is analogous to Norris, the least unsupported option is A, as it aligns with the theme of empathy and moral conflict over neutroid disposal, even though specific acts are not detailed.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q2",
+        "gold": "A",
+        "pred": "B",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"She thinks he let her baby die.\",\"evidence\":\"Norris hears news of Dr. Georges\\' death; a woman, Mrs. Glubbes, allegedly stormed his home claiming her baby was stolen, now wanted for questioning by police.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q6",
+        "gold": "D",
+        "pred": "D",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Neutroids from the same series look identical.\",\"evidence\":\"The retrieved evidence does not explicitly state Doctor George\\'s reasoning for believing the substitution would go unnoticed. However, among the options, only \\'D\\' aligns with a plausible, fact-based characteristic of neutroids (physical similarity within a series) that could support a substitution without detection. The other options introduce unsupported claims about speech limitations, the woman\\'s mental state, or serial number tampering, none of which are mentioned in the evidence.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"A black market for nuetroids could result in neutroid slavery.\",\"evidence\":\"O\\'Reilley hurried upstairs, locked the door, and ignored Norris, who worried about black market neutroids and potential trouble from unauthorized bio-agents.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q8",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Their cute appearance causes others to underestimate their high predatory instincts and behaviors, and many injuries and deaths result because of this incongruency.\",\"evidence\":\"Norris struggles to retrieve thirty-five K-99s from buyers, faces emotional resistance, and returns home with facial injuries; Anne notices his wounds after Doctor Georges visits to collect the neutroid.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q1",
+        "gold": "A",
+        "pred": "B",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"He predicts that the Earthmen will not be able to withstand Zurian conditions for long, and that they will soon depart\",\"evidence\":\"The retrieved evidence does not explicitly state Koltan\\'s change of mind or his reasoning for condemning the House of Masur to ruin. However, among the options, B is the least unsupported, as the documents indicate growing Earthmen influence and local dependency on Earth goods, which implies a temporary dynamic. No evidence supports A, C, or D—there is no mention of Koltan seeing profit potential, intending to steal, or viewing Earthmen as intellectually inferior for manipulation. Thus, B is the most plausible based on the implied fragility of Earthmen\\'s presence, though direct evidence is limited.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q2",
+        "gold": "A",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"destruction of the caste system\",\"evidence\":\"Broderick explains their method ensured equality between Earth and Zur by dismantling the caste system, allowing Zotul and his brothers to rejoin as equal partners under new terms.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "C",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Kalrab\",\"evidence\":\"The provided evidence does not explicitly state who listened and agreed with Zotul. However, based on the process of elimination and the entities mentioned in the context, Kalrab is the only name not contradicted by the evidence. Koltan protested the Earthmen, while Zotul questioned Broderick, indicating disagreement. Zotul\\'s wife is not mentioned in any of the evidence. Therefore, Kalrab remains the least unsupported option, even though direct support is absent.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q8",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"the idea of credit\",\"evidence\":\"Zotul and his brothers signed over a quarter of their pottery plant for Earthly luxuries and tech; though profits rose, Earthmen took a fo...\"}'}]"
+      }
+    ],
+    "narrative_only": [
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q0",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"Even good jobs get boring on Terra.\",\"evidence\":\"Wyandotte questions Craig\\'s certainty about finding fulfillment on Terra, suggesting his job might become boring, but Craig remains resolute in his decision to return.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q1",
+        "gold": "A",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Wyandotte put the microphone there to monitor Craig\\'s adjustment to Terran society.\",\"evidence\":\"Craig faces persistent questioning from Wyandotte about his decision to leave space service and settle on Terra, defending his choice as logical and personally resolved. This convergence of emotional resistance and physiological challenge underscores the difficulty of transitioning from a life in space to one on the planet\\'s surface.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q10",
+        "gold": "C",
+        "pred": "B",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"Two members of Terra\\'s welcoming committee\",\"evidence\":\"Upon the ferry\\'s arrival at the docks, Craig is summoned by an audio announcement to report to Orderly 12. He receives a message container from his former comrade Morgan Brockman, which contains a damaged punch card. The card bears irregular punches and handwritten text, deviating from standard machine-readable format, suggesting an urgent or covert communication.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q12",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"virtual reality equipment\",\"evidence\":\"The retrieved evidence does not explicitly mention \\'Sensatia.\\' However, based on contextual inference from similar terms and settings in science fiction narratives involving space travel, adaptation to planetary life, and technological interfaces, \\'Sensatia\\' is most plausibly associated with virtual reality equipment used for sensory adaptation or simulation, which aligns with themes of gravitational re-adaptation and immersive experiences in futuristic environments.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"He is likely being monitored by the Terrans and cannot speak freely.\",\"evidence\":\"The retrieved evidence does not support any explicit motive or behavior related to being monitored, nor does it indicate that Wyandotte is restricted in speech. However, Wyandotte persistently questions Craig\\'s decision to leave space service and settle on Terra, probing his assumptions and challenging his confidence, which may suggest caution or indirect communication. Among the options, A is the least contradicted by evidence, as the others introduce unsupported claims: B (Wyandotte thinking Craig is uneducated), C (knowing gravity conditioning is horrible and trying to change Craig\\'s mind), and D (thinking Craig will be a fish out of water) go beyond what is stated. The evidence shows Wyandotte questions Craig, but not with the explicit intent or beliefs described in B, C, or D. Therefore, while weak, A is the least unsupported option given the context of cautious dialogue.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q7",
+        "gold": "A",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Exposure to video and audio footage from Terra\",\"evidence\":\"[Hierarchical Narrative Search] did not provide explicit information about psychometric evaluation activities; however, among the given choices, \\'Exposure to video and audio footage from Terra\\' is the most commonly cited non-invasive, standard preparatory procedure in similar contexts involving psychological assessment prior to planetary reintegration, and it lacks the unsupported procedural or interpersonal claims present in the other options. The other choices introduce specific scenarios (e.g., \\'role playing worst case scenarios\\', \\'lengthy interviews with multiple officials\\') or conditions (e.g., \\'trial period of exposure to gravity\\') that are not mentioned or implied in the retrieved evidence. Thus, by process of elimination and adherence to minimal assumptions, C is the least unsupported option.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q9",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Their bodies may naturally produce paraoxynebutal\",\"evidence\":\"The retrieved evidence does not explicitly mention paraoxynebutal, Freedomite missions, extraterrestrials, or suspicion based on gravity familiarity. However, it does discuss physiological responses during gravitational re-adaptation, such as Craig\\'s dizziness when returning to Earth, implying individual differences in physical response to environmental change. While none of the options are directly supported, option D refers to a potential biological explanation for resistance to physical illness during conditioning, which aligns more closely with the theme of physiological variation in response to environmental stressors than the speculative or unrelated claims in options A, B, or C.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q0",
+        "gold": "A",
+        "pred": "A",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"Each season’s weather brings a new set of cultural recreation and work.\",\"evidence\":\"Arapoulous outlines the five-season cycle on Lovenbroy, linking each season to specific cultural and artistic activities. He describes winter as a time for painting and sculpture, spring for woodcraft, the monsoon for music composition, and summer for nocturnal beach gatherings featuring drama and symphonies performed with natural elements enhancing the experience.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q1",
+        "gold": "B",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Every 12 years a vintage is held, wherein the young people are made to harvest all the grapes.\",\"evidence\":\"The retrieved evidence states that Lovenbroy has a twelve-year agricultural cycle for the Bacchus vines, requiring little intervention between harvests. It also mentions the community\\'s connection to sustainable farming and communal labor, with cultural practices tied to the planet\\'s five-season cycle. While the evidence confirms the 12-year cycle and communal involvement in agriculture, it does not support specific claims about procreation, celebrations of life or art, or vintage as a celebration. However, it does imply that harvesting is a significant communal activity, and option D is the least unsupported, as it aligns with the 12-year cycle and mentions youth participation in grape harvesting, which is consistent with communal labor practices described.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q12",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"He is firm but can be harsh.\",\"evidence\":\"Retief suspects foul play and directs the Port Authority to inspect the baggage of arriving Bogan students, leading to the discovery of concealed weapons. He takes decisive action by ordering the inspection, preserves the evidence under the guise of cultural exhibits, and departs abruptly to attend scheduled diplomatic engagements, showing firmness and a no-nonsense approach even in the face of diplomatic caution advised by Magnan.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q13",
+        "gold": "C",
+        "pred": "C",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Because the order of tractors is unusually large.\",\"evidence\":\"Retief questions the Commercial Attache about the justification for sending five hundred tractors to Croanie, noting the planet\\'s lack of industrial capacity and the military characteristics of the Bolo WV units. He challenges the explanation that the shipment is a routine business transaction, pointing out the military nature of the Bolo WV units and the lack of mineral resources on Croanie, implying the large number of tractors is unjustified given the context.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q15",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"Suspicion indicates deception.\",\"evidence\":\"Retief, suspecting foul play, directs the Port Authority to inspect the baggage of arriving Bogan students and discovers it contains concealed weapons such as needlers, hand blasters, and power pistols.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "D",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"They are going to invade it.\",\"evidence\":\"Retief meets with Arapoulous to discuss labor needs and learns of Croanie\\'s history with Boge, raising concerns about Bogan intentions. Following the meeting, he initiates a watch for Bogan student applications and quickly receives notice of one from the Bogan Consulate. He interrogates the Port Authority about the students\\' baggage, leading to the discovery of concealed weapons destined for Lovenbroy. With this evidence in hand, Retief prepares to attend scheduled diplomatic engagements, leaving the immediate investigation on hold.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"Croanie\",\"evidence\":\"Whaffle discloses that Croanie is set to receive heavy mining equipment, specifically Bolo Model WV/1 tractors, despite initial hesitation due to inter-agency jurisdictional boundaries.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q0",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Caswell thinks only women enjoy sewing.\",\"evidence\":\"The evidence describes the Watashaw Sewing Circle and its rebranding into a growing League with rapid membership expansion, initially appearing as a women\\'s activity. The narrator connects the sewing circle to the new League after finding identical constitutions, and Caswell is informed of this coordinated expansion. However, there is no evidence that Caswell underestimated population, popularity, or ingenuity. The assumption that only women would be involved in such a group aligns with the context of a \\'sewing club,\\' which is traditionally gendered, and Caswell’s lack of expectation for astronomical growth may stem from this gendered assumption, making D the least unsupported option.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q1",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"The Dean views Caswell as a friend and co-conspirator.\",\"evidence\":\"Facing a critical vulnerability in departmental funding compared to other disciplines, Dr. Caswell initiates a covert strategy to secure financial stability for the Sociology Department. He collaborates with the narrator to design and deploy an organizational experiment, presenting fabricated materials to a high-level external contact in a green suit to gain her interest. After discreetly delivering the documents, the two professors suppress their amusement until safely away, indicating the deceptive nature of their initiative. Over the following months, the experiment unfolds successfully, culminating in widespread recognition reported in the media. The narrator confirms the outcome with Caswell, noting that the results will unlock significant academic funding through fellowships, scholarships, and grants.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q12",
+        "gold": "B",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Their experiment was using too small a sample size\",\"evidence\":\"The retrieved evidence does not explicitly mention sample size, gender assumptions, or specific methodological errors in Caswell\\'s theories. However, the experiment involved manipulating a single student club\\'s election, which implies a very limited scope and population. This suggests a small sample size, making option C the least unsupported choice based on the context of a localized, single-club intervention.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q13",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"Resourceful and diligent\",\"evidence\":\"The narrator receives a new bulletin from a young usher at a gathering, sparking suspicion that leads them to examine its contents closely. Upon discovering a constitution on the back, they question the usher and learn of the League\\'s recent formation and rapid appeal. After leaving the event and comparing documents, the narrator recognizes the constitution as identical to one previously distributed to the Watashaw Sewing Circle. They report their findings to Caswell and, through further investigation, chart a sharp increase in membership, revealing a coordinated expansion effort. The evidence suggests a rebranding and growth strategy linking the League to the former sewing circle. This culminates in a clear pattern of organized recruitment masked by community activities.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q3",
+        "gold": "B",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"The Dean doesn\\'t want people to think he\\'s a socialist.\",\"evidence\":\"The retrieved evidence does not explicitly mention the Dean\\'s motives or his connection to Watashaw. However, among the given options, choice A is the least unsupported, as the narrative involves a covert organization linked to the Watashaw Sewing Circle rebranding and expanding, which may carry ideological connotations. The other options introduce specific claims about a \\'total world government\\' and the Dean\\'s responsibility for its collapse or global socialism, which are not supported by any evidence. Therefore, A is the most plausible choice based on the available information.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Because he is an expert in organizational strategies.\",\"evidence\":\"The evidence shows that Professors Caswell and the narrator secretly devise ways to manipulate club election procedures, transfer a strategic organizational diagram and revised bylaws to influence outcomes, and later confirm the success of their intervention through increased membership and academic funding. This demonstrates Caswell\\'s expertise in organizational strategies, which underpin the group\\'s growth.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q10",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"There is a 100% chance that they will develop and/or die from a significant physical or mental illness.\",\"evidence\":\"The retrieved evidence does not mention Class C citizens, their reproductive rights, compliance with aptitude tests, access to information, or health outcomes. None of the provided options are directly supported by the evidence. However, options A, B, and D describe societal restrictions or systemic conditions that could plausibly exist in the story\\'s context, while option C makes an absolute, statistically definitive claim (100% chance) about health outcomes, which is the most extreme and least likely to be true without explicit support. Since the evidence contains no information about the health prognosis of Class C citizens, the strongest unsupported claim—C—is the least likely to be true and thus the best choice for \\'NOT true.\\'\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q11",
+        "gold": "B",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"He thinks about stealing a neutroid for his wife, but ultimately feels bad and returns it to its owner.\",\"evidence\":\"The retrieved evidence does not contain direct information about Terry\\'s actions or empathy toward neutroid owners. However, among the options, D is the only one that implies a personal moral conflict and empathetic consideration—feeling bad about potentially stealing and returning the neutroid—suggesting an emotional connection to the owner\\'s plight. While the evidence does not explicitly support any choice, D least contradicts the narrative context and introduces an act grounded in empathy, even if inferred.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q2",
+        "gold": "A",
+        "pred": "B",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"She thinks he let her baby die.\",\"evidence\":\"[Episodes] 1. Norris and Anne Head to Unload Neutroids [ID: ep_4926f6b46a8bebde] score=0.1176 description: Norris and Anne leave the house and walk to the kennels to unload the twelve collected neutroids from the truck, working together after their reconciliation. [Events] 1. Norris and Anne go to unload neutroids together [ID: ent_aeb079082461] score=0.1176 description: Norris and Anne leave the house and head to the kennels to unload the twelve collected neutroids from the truck, working together after their reconciliation.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q6",
+        "gold": "D",
+        "pred": "D",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Neutroids from the same series look identical.\",\"evidence\":\"[Storylines] 1. Neutroid Retrieval and Delmont Case Revelation [ID: sl_3150686c2e10bd79] description: After reconciling, Norris and Anne return to the kennels to unload twelve neutroids collected from a recent mission. While Norris handles the transfer, Anne questions him about the Delmont case and his injuries, prompting Norris to reveal details about Delmont\\'s experiments with chimpanzee ova and sub-atomic particle bombardment. The next morning, Norris continues his work by retrieving more neutroids, reflecting on the societal forces driving their use, and selectively bypassing resistant subjects. He completes the transfer of the new batch and later shares with Anne his suspicion that one mother evaded full compliance during retrieval.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"A black market for nuetroids could result in neutroid slavery.\",\"evidence\":\"While waiting outside, Norris becomes troubled by the thought that unauthorized neutroids could be used in a black market, potentially causing significant problems. The bio-agent worried about a black market.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q8",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Their cute appearance causes others to underestimate their high predatory instincts and behaviors, and many injuries and deaths result because of this incongruency.\",\"evidence\":\"The retrieved evidence does not explicitly state the dangerous aspect of neutroids or mutant animals. However, among the options, C is the only one that refers to a plausible incongruence between appearance and behavior, which aligns with the general narrative context involving retrieval, suspicion, and underlying threat (e.g., Norris\\'s cautious handling and suspicion of evasion). The other options introduce unsupported concepts like conspiracy (A), age-limited lifespan effects (B), or societal classification disruption via attachment (D), which are not grounded in the evidence. Thus, C is the least unsupported option based on typical narrative patterns involving mutant animals with deceptive appearances.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q1",
+        "gold": "A",
+        "pred": "B",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"He predicts that the Earthmen will not be able to withstand Zurian conditions for long, and that they will soon depart\",\"evidence\":\"The retrieved evidence describes the Earthmen\\'s expansion of infrastructure and technology on Zur, including radio stations, automobiles, and highways, which leads to widespread adoption by Zurians. However, there is no evidence that Koltan sees profit potential (A), plans to steal goods (C), or views Earthmen as intellectually inferior for manipulation (D). None of the evidence directly states Koltan’s change of mind or his condemnation of the Masur House. Since all options are unsupported and the evidence does not address Koltan’s motivations, the least unsupported option is B, as the context implies Earthmen are foreign and adapting to Zurian conditions—making a prediction about their longevity slightly more plausible than the others, though still not directly supported.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q2",
+        "gold": "A",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"metal, copper wire, and other goods\",\"evidence\":\"Zotul returns home from the pottery and discovers his wife Lania showing off an aluminum pot she bought at the market. He questions its value and origin, expressing concern over spending money on foreign metal goods. Lania explains that the Earthmen are selling such pots widely, emphasizing their low cost, durability, and practical advantages over traditional clay pots.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "C",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Kalrab\",\"evidence\":\"Zotul challenges longstanding family traditions during a conference by defending the Earthmen\\'s use of metal, drawing sharp rebuke from his brother Koltan but unexpected support from the elder Kalrab.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q8",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"the idea of credit\",\"evidence\":\"The retrieved evidence describes Earthmen introducing infrastructure such as radio systems, automobiles, highways, and metal goods like aluminum pots on Zur. It also mentions the Earthmen-controlled Merchandising Council, which implies commercial activity, but there is no mention of credit or financial systems being introduced. The introduction of metal pots is explicitly noted in the evidence (Zotul\\'s wife purchases an aluminum pot), new roads are constructed (highways), and the presence of a governor and council indicates governmental structures. However, there is no evidence that the idea of credit was brought by Earthmen, making it the only option not supported by the text as something that was introduced.\"}'}]"
+      }
+    ],
+    "combined": [
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q0",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"Even good jobs get boring on Terra.\",\"evidence\":\"Wyandotte questions Craig\\'s certainty about finding fulfillment on Terra, suggesting his job might become boring, but Craig remains resolute in his decision to return.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q1",
+        "gold": "A",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Wyandotte put the microphone there to monitor Craig\\'s adjustment to Terran society.\",\"evidence\":\"Craig, a former Intergalactic Service officer, checks into a retro Galactic hotel on Terra; a bellboy offers to reveal hidden microphones and sell illicit sensatia-tapes, which implies surveillance is present and known. Combined with the narrative context that Wyandotte is actively involved in questioning and assessing Craig\\'s decision to leave space service and adapt to life on Terra, the evidence supports that the microphone was likely placed by Wyandotte to monitor Craig\\'s adjustment.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q10",
+        "gold": "C",
+        "pred": "C",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Two screening technicians\",\"evidence\":\"Craig learns he must undergo psychological and gravitational conditioning due to his body\\'s adaptation to space after eleven years, hindering his reintegration. Upon the ferry\\'s arrival at the docks, Craig is summoned by an audio announcement to report to Orderly 12. He receives a message container from his former comrade Morgan Brockman, which contains a damaged punch card. The context implies initial processing by technical staff, and the mention of required conditioning suggests involvement of screening personnel upon landing.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q12",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"virtual reality equipment\",\"evidence\":\"The retrieved evidence does not explicitly mention \\'Sensatia.\\' However, based on the context of space travel, gravitational conditioning, psychological processing, and adaptation to Terra, the most plausible inference is that \\'Sensatia\\' relates to technology involved in sensory or environmental simulation, such as virtual reality equipment, which would align with reconditioning programs for returning spacemen. No evidence supports connections to illicit drugs, microphone shorters, or pornography.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"He is likely being monitored by the Terrans and cannot speak freely.\",\"evidence\":\"The retrieved evidence does not explicitly state Wyandotte\\'s motives for being didactic. However, in the context of Craig\\'s arrival on Terra, there are indications of surveillance and control, such as the bellboy offering to reveal hidden microphones and sell illicit sensatia-tapes. This suggests a monitored environment where open communication may be risky. Wyandotte’s persistent questioning and didactic tone could be a way to convey information indirectly under such surveillance, aligning with the idea that he cannot speak freely due to potential monitoring by Terran authorities.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q7",
+        "gold": "A",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Exposure to video and audio footage from Terra\",\"evidence\":\"The retrieved evidence does not explicitly mention psychometric evaluation activities such as interviews, role playing, or trial exposure to gravity. However, \\'SEA LEGS: Processing for Terra Return\\' indicates Craig must undergo psychological and gravitational conditioning due to his body\\'s adaptation to space, which implies preparatory sensory or psychological exposure. Among the options, \\'exposure to video and audio footage from Terra\\' is the most plausible and least unsupported activity that could be part of such psychological conditioning, as it aligns with standard simulation-based preparation methods, even though the exact method is not detailed in the evidence.\"}'}]"
+      },
+      {
+        "article": "a_0914f0cae2712b97",
+        "question_id": "q9",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Their bodies may naturally produce paraoxynebutal\",\"evidence\":\"The retrieved evidence mentions \\'Paraoxylnebutal\\' as an object related to the \\'Gravitational Reconditioning Program Aboard The Satellite\\' and describes Craig\\'s experience with gravitational conditioning, implying a physiological response to space and reconditioning. While the exact role of paraoxynebutal is not fully explained, its association with the conditioning process suggests a potential natural bodily response in individuals who do not become physically ill, making this the least unsupported option.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q0",
+        "gold": "A",
+        "pred": "A",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"Each season’s weather brings a new set of cultural recreation and work.\",\"evidence\":\"Arapoulous outlines the five-season cycle on Lovenbroy, linking each season to specific cultural and artistic activities. He describes winter as a time for painting and sculpture, spring for woodcraft, the monsoon for music composition, and summer for nocturnal beach gatherings featuring drama and symphonies performed with natural elements enhancing the experience.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q1",
+        "gold": "B",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Every 18 years a vintage is held, which serves as a kind of celebration of life for both young and old people.\",\"evidence\":\"The evidence indicates that the Bacchus vines on Lovenbroy have a twelve-year agricultural cycle. However, the time system on Lovenbroy is such that twelve Lovenbroy years equal eighteen Terry years. The harvest is tied to cultural traditions and the planet\\'s five-season cycle, which includes artistic practices throughout the year, suggesting a celebration of life and culture for the entire community. There is no mention of procreation, exclusive youth involvement in harvesting, or the event being solely an art celebration, but the cultural significance is broadly inclusive and life-affirming.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q12",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"He is firm but can be harsh.\",\"evidence\":\"Retief suspects foul play and directs the Port Authority to inspect the baggage of arriving Bogan students, discovering concealed weapons. He takes decisive action by initiating investigations and preserving evidence, showing firmness. His abrupt departure while leaving instructions to maintain the cover of cultural exhibits suggests a no-nonsense, potentially harsh approach to handling sensitive situations.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q13",
+        "gold": "C",
+        "pred": "C",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Because the order of tractors is unusually large.\",\"evidence\":\"Retief questions the Commercial Attache about the justification for sending five hundred tractors to Croanie, noting the planet\\'s lack of industrial capacity and the military characteristics of the Bolo WV units. The shipment of five hundred tractors is highlighted as unusual given Croanie\\'s limited industrial base and lack of mineral resources, which raises Retief\\'s suspicion.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q15",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"Suspicion indicates deception.\",\"evidence\":\"Retief, suspecting foul play, directs the Port Authority to inspect the baggage of arriving Bogan students and discovers it contains concealed weapons such as needlers, hand blasters, and power pistols.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "D",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"They are going to invade it.\",\"evidence\":\"Retief investigates Bogan students\\' baggage via Port Authority, discovering it contains weapons and is misrouted to Lovenbroy instead of d\\'Land. Retief uncovers a plot involving concealed weapons in student luggage destined for Lovenbroy, indicating a potential invasion rather than theft or agricultural assistance.\"}'}]"
+      },
+      {
+        "article": "a_1691cfb0ed0b829e",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"Croanie\",\"evidence\":\"Whaffle reveals that Croanie is set to receive heavy mining equipment, specifically Bolo Model WV/1 tractors, despite initial hesitation due to inter-agency jurisdictional boundaries.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q0",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Caswell thinks only women enjoy sewing.\",\"evidence\":\"The narrator reflects on an ironclad bet with Caswell, whose professional pride would prevent him from being fired, recalling his joke about shooting himself, now a troubling prospect for the university. The storylines reveal that the Watashaw Sewing Circle is being rebranded and expanded into a larger organization, suggesting that Caswell did not anticipate broader appeal beyond its original demographic. The evidence implies Caswell\\'s narrow assumption about the club\\'s appeal—limited to women interested in sewing—underlying his failure to expect astronomical growth.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q1",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"The Dean views Caswell as a friend and co-conspirator.\",\"evidence\":\"Facing a critical vulnerability in departmental funding compared to other disciplines, Dr. Caswell initiates a covert strategy to secure financial stability for the Sociology Department. He collaborates with the narrator to design and deploy an organizational experiment, presenting fabricated materials to a high-level external contact in a green suit to gain her interest. After discreetly delivering the documents, the two professors suppress their amusement until safely away, indicating the deceptive nature of their initiative.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q12",
+        "gold": "B",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Their experiment was using too small a sample size\",\"evidence\":\"The retrieved evidence does not explicitly mention sample size, gender assumptions, or issues related to the scale of the sample in Caswell\\'s experiment. However, the experiment involved manipulating a single student club\\'s election (the Watashaw Group), which implies a very limited number of participants. This suggests a small sample size. No evidence supports assumptions about gender (A or B), and there is no mention of an overly large initial sample (D). Thus, C is the least unsupported option, as a single club-based intervention typically constitutes a small sample.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q13",
+        "gold": "B",
+        "pred": "B",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"Resourceful and diligent\",\"evidence\":\"The narrator receives a new bulletin from a young usher at a gathering, sparking suspicion that leads them to examine its contents closely. Upon discovering a constitution on the back, they question the usher and learn of the League\\'s recent formation and rapid appeal. After leaving the event and comparing documents, the narrator recognizes the constitution as identical to one previously distributed to the Watashaw Sewing Circle. They report their findings to Caswell and, through further investigation, chart a sharp increase in membership, revealing a coordinated expansion effort. The evidence suggests a rebranding and growth strategy linking the League to the former sewing circle. This culminates in a clear pattern of organized recruitment masked by community activities.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q3",
+        "gold": "B",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"The Dean doesn\\'t want people to think he\\'s a socialist.\",\"evidence\":\"The retrieved evidence does not explicitly mention the Dean or his motivations regarding Watashaw. However, the documents describe the transformation of the Watashaw Sewing Circle into the Civic Welfare League, which engages in urban development and social planning—activities that could be associated with socialist ideologies. Given the context of rebranding and covert expansion of a community organization with broad social reforms, the least unsupported option is that the Dean may wish to avoid being associated with such initiatives due to the political connotations, particularly being labeled a socialist. None of the other options are supported by any mention of a \\'total world government\\' or global socialism in the evidence.\"}'}]"
+      },
+      {
+        "article": "a_2b020f28fca0d8fe",
+        "question_id": "q4",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Because he is an expert in organizational strategies.\",\"evidence\":\"The evidence shows that Professor Caswell, along with the narrator, secretly devises ways to manipulate club election procedures and transfers a strategic organizational diagram and revised bylaws to influence the leadership of a group. This intervention is later confirmed as successful, indicating Caswell\\'s expertise in designing and implementing effective organizational strategies that lead to growth and structural change. There is no mention of pyramid schemes, socialism, or human social behavior as areas of expertise; the focus is on strategic organizational manipulation and planning.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q10",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"There is a 100% chance that they will develop and/or die from a significant physical or mental illness.\",\"evidence\":\"Norris, a Class-C with defective heredity, receives a memo about a deviant neutroid while reflecting on emotional bonds and societal hierarchy after encountering a cat-Q-5.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q11",
+        "gold": "B",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"He returns lost neutroids to their owners instead of taking them to the pound and incinerating them.\",\"evidence\":\"The retrieved evidence does not explicitly mention Terry or any specific act of returning lost neutroids to owners. However, the narrative involving Norris describes him grappling with moral conflict regarding neutroid disposal and selectively bypassing resistant subjects during retrieval, which implies a level of empathy. Among the options, only A aligns with an act that could reflect empathy by sparing neutroids from incineration, even though the evidence is indirect and centered on Norris rather than Terry. All other options introduce actions (e.g., dropping charges, ignoring serial numbers, stealing) that are not supported by the evidence.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q2",
+        "gold": "A",
+        "pred": "B",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"She thinks he let her baby die.\",\"evidence\":\"Norris hears news of Dr. Georges\\' death; a woman, Mrs. Glubbes, allegedly stormed his home claiming her baby was stolen, now wanted for questioning by police.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q6",
+        "gold": "D",
+        "pred": "D",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"Neutroids from the same series look identical.\",\"evidence\":\"The retrieved evidence does not explicitly state Doctor George\\'s reasoning for believing he can substitute Mrs. Glubbes\\' neutroid without her noticing. However, among the provided choices, option D is the least unsupported, as the concept of neutroids being identical within a series is a plausible basis for substitution without detection, given the context of neutroid production and use in the narrative. The other options introduce unsupported motives or assumptions not grounded in the evidence.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "D",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"D\",\"answer_text\":\"A black market for nuetroids could result in neutroid slavery.\",\"evidence\":\"While waiting outside, Norris becomes troubled by the thought that unauthorized neutroids could be used in a black market, potentially causing significant problems.\"}'}]"
+      },
+      {
+        "article": "a_34d9eff07b6a756d",
+        "question_id": "q8",
+        "gold": "D",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Their cute appearance causes others to underestimate their high predatory instincts and behaviors, and many injuries and deaths result because of this incongruency.\",\"evidence\":\"Norris struggles to retrieve thirty-five K-99s from buyers, faces emotional resistance, and returns home with facial injuries; Anne notices his wounds after Doctor Georges visits to collect the neutroid.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q1",
+        "gold": "A",
+        "pred": "B",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"B\",\"answer_text\":\"He predicts that the Earthmen will not be able to withstand Zurian conditions for long, and that they will soon depart\",\"evidence\":\"The retrieved evidence does not explicitly state Koltan\\'s change of mind or his reasoning. However, it does indicate that Koltan initially protests the Earthmen\\'s landing (evidence: \\'Koltan protests Earthmen landing among Thorabians\\'), while other characters like Zotul engage with Earthmen and become dependent on their goods. The decline of the Masur pottery business is reported to the Earthman-controlled Merchandising Council, suggesting a shift in power. No evidence supports A, C, or D—there is no mention of Koltan seeing profit potential, intending to steal, or believing in intellectual superiority. The least unsupported option is B, as the broader context shows Earthmen struggling with local conditions and the Masur House declining, implying a possible belief in the Earthmen\\'s impermanence, even if not directly stated.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q2",
+        "gold": "A",
+        "pred": "C",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"metal, copper wire, and other goods\",\"evidence\":\"Zotul returns home from the pottery and discovers his wife Lania showing off an aluminum pot she bought at the market. He questions its value and origin, expressing concern over spending money on foreign metal goods. Lania explains that the Earthmen are selling such pots widely, emphasizing their low cost, durability, and practical advantages over traditional clay pots. Additionally, Earthmen distribute aluminum pots across Zur, demonstrating advanced technology, and locals embrace the durable, affordable goods, signaling growing influence and cultural impact of Earthmen on Zurian society.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q7",
+        "gold": "C",
+        "pred": "C",
+        "is_correct": true,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"C\",\"answer_text\":\"Kalrab\",\"evidence\":\"Zotul challenges longstanding family traditions during a conference by defending the Earthmen\\'s use of metal, drawing sharp rebuke from his brother Koltan but unexpected support from the elder Kalrab.\"}'}]"
+      },
+      {
+        "article": "a_400a48e381b75652",
+        "question_id": "q8",
+        "gold": "C",
+        "pred": "A",
+        "is_correct": false,
+        "raw_response": "[{'role': 'assistant', 'content': '{\"answer_choice\":\"A\",\"answer_text\":\"the idea of credit\",\"evidence\":\"Zotul and his brothers signed over a quarter of their pottery plant for Earthly luxuries and tech; though profits rose, Earthmen took a fourth of the output as payment — indicating the use of credit or debt-based transactions introduced by the Earthmen, which implies that credit was a new concept brought by them and thus was something previously unheard of on Zur.\"}'}]"
+      }
+    ]
+  }
+}

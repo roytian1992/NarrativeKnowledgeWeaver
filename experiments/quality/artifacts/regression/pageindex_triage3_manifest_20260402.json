@@ -1,0 +1,26 @@
+{
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0914f0cae2712b97.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0914f0cae2712b97.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0914f0cae2712b97.json",
+      "title": "a_0914f0cae2712b97"
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1691cfb0ed0b829e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1691cfb0ed0b829e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1691cfb0ed0b829e.json",
+      "title": "a_1691cfb0ed0b829e"
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_4e6f78a888d294ee.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_4e6f78a888d294ee.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_4e6f78a888d294ee.json",
+      "title": "a_4e6f78a888d294ee"
+    }
+  ]
+}

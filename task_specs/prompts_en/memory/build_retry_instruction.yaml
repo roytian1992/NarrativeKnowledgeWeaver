@@ -1,0 +1,42 @@
+id: build_retry_instruction
+category: memory
+name: Build Retry Instruction
+description: >
+  Compress failure reflection into a short retry instruction.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: missed_fact
+    type: string
+    required: true
+  - name: next_action
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  Convert the failure reflection into a short instruction for the retrieval agent.
+
+  Question:
+  {question}
+
+  Missed fact:
+  {missed_fact}
+
+  Next action:
+  {next_action}
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "retry_instruction": "string"
+    }}
+  - `retry_instruction` must be short and actionable, ideally no more than two sentences.
+  - It should state:
+    1. what must be recovered in the retry;
+    2. which retrieval path should be tried first.
+  - No markdown. No extra explanation.

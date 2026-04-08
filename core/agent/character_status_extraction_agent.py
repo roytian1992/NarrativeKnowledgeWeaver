@@ -66,12 +66,9 @@ class CharacterStatusExtractionAgent:
         prompt_loader: Optional[PromptLoader] = None,
         min_score: float = 7.0,
         max_retries: int = 3,
-        enable_thinking: bool = True,
     ):
         self.config = config
         self.llm = llm
-        self.enable_thinking = enable_thinking
-
         if prompt_loader is None:
             prompt_dir = self.config.knowledge_graph_builder.prompt_dir
             prompt_loader = PromptLoader(prompt_dir)
@@ -172,7 +169,6 @@ class CharacterStatusExtractionAgent:
                 scene_contents=scene_contents,
                 character_list=clist_str,
                 feedbacks=feedbacks_for_prompt,
-                enable_thinking=self.enable_thinking,
             )
             extraction_data = self._parse_extraction_output(extraction_raw)
             raw_extractions.append(extraction_data)
@@ -189,7 +185,6 @@ class CharacterStatusExtractionAgent:
                 extracted_results=extracted_text,
                 character_list=clist_str,
                 scene_contents=scene_contents,
-                enable_thinking=self.enable_thinking,
             )
             reflection_data = self._parse_reflection_output(reflection_raw)
             raw_reflections.append(reflection_data)

@@ -1,0 +1,24 @@
+{
+  "narrative": {
+    "description": "Extract explicit factual points from narrative text (novels or screenplays). Focus on what the text clearly states.",
+    "guidelines": [
+      "Capture concrete facts: actions taken, states, events, decisions, outcomes.",
+      "Include important named entities and what the text explicitly says about them.",
+      "Include salient events that change the situation or state.",
+      "Include stable or clearly stated relationships if present.",
+      "Include document-specific terms or names if they carry meaning in this text.",
+      "Do NOT infer motivations, themes, symbolism, or future developments."
+    ]
+  },
+  "general": {
+    "description": "Extract explicit factual points from general documents (papers, technical docs, reports) for retrieval and QA.",
+    "guidelines": [
+      "Capture concrete statements: definitions, claims, constraints, assumptions, comparisons.",
+      "Capture methods, components, or procedures explicitly described.",
+      "Capture results, findings, or conclusions if stated.",
+      "Capture limitations or caveats only if explicitly mentioned.",
+      "Include document-specific terms, systems, datasets, or abbreviations.",
+      "Do NOT summarize broadly or add interpretation."
+    ]
+  }
+}

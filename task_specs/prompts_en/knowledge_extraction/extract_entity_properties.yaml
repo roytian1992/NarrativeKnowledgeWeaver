@@ -1,0 +1,144 @@
+id: extract_entity_properties
+category: problem_solving
+name: Extract Entity Properties
+description: >
+  Extract GLOBAL, reusable properties for a single entity from a chunk of text.
+  The reference property schema is loaded from default_entity_schema.json by entity_type.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input chunk text.
+
+  - name: entity_name
+    type: string
+    required: true
+    description: The entity name to extract properties for.
+
+  - name: entity_type
+    type: string
+    required: true
+    description: Entity type (Character, Event, Location, Occasion, TimePoint, Object, Concept).
+
+static_variables:
+  - name: property_schema
+    type: string
+    required: true
+    description: Rendered reference property schema (preferred keys and meanings) for this entity_type.
+
+template: |
+  You are extracting GLOBAL, reusable PROPERTIES for a single entity from a chunk of text.
+
+  --------------------------------
+  INPUTS
+  --------------------------------
+
+  [Entity Name]
+  {entity_name}
+
+  [Entity Type]
+  {entity_type}
+
+  [Reference Property Schema]
+  This schema provides preferred property keys and their intended meanings.
+  It is a SOFT GUIDE: prefer these keys when applicable.
+
+  {property_schema}
+
+  [Text Chunk]
+  {text}
+
+  --------------------------------
+  GOAL
+  --------------------------------
+
+  Extract ONLY properties that are likely to remain true across the narrative (global/stable),
+  not properties that are specific to a single scene, single interaction, or temporary situation.
+
+  You must output:
+  1) new_description: a short paragraph introducing the entity (2–5 sentences).
+  2) properties: a dictionary of global properties.
+
+  --------------------------------
+  GLOBAL vs LOCAL (CRITICAL)
+  --------------------------------
+
+  A property is GLOBAL if it describes:
+  - Identity: what/who the entity is (profession, role in society, species/type, canonical identity)
+  - Stable affiliations: membership/employment/long-term association with an organization/faction
+  - Stable traits: personality, long-term disposition, enduring physical conditions
+  - Persistent abilities or limitations: skills, disabilities, chronic conditions
+  - Enduring background: origin, family relation types (e.g., "niece of X" if it's a stable fact)
+  - Long-term possessions or resources (only if repeatedly indicated or clearly enduring)
+
+  A property is LOCAL and MUST be excluded if it describes:
+  - A momentary emotional state in a scene (fear, panic in one moment)
+  - A single event role (witness/target in an investigation, participant in one incident)
+  - A one-off interaction with another named person (comforted by X, led by Y in this scene)
+  - Temporary location or immediate situation ("currently hiding", "in this room now")
+  - Fine-grained relationship snapshots that may change (trusting; threatened; unwanted advance)
+  - Scene-specific action details ("reads Braille" is OK only if it indicates a stable capability/habit)
+
+  If you are unsure whether a fact is global or local, DO NOT include it.
+
+  --------------------------------
+  PROPERTY KEY RULES
+  --------------------------------
+
+  1) Prefer keys from the reference schema.
+  2) You may introduce a new key only if it captures an important GLOBAL dimension not covered by the schema.
+  3) Keys should be reusable across entities and narrative contexts:
+     - snake_case
+     - neutral noun or noun_phrase
+     - do NOT encode specific counterpart names in keys
+
+  4) Sparsity:
+  - ONLY include keys that you can fill with a non-empty value.
+  - NEVER output empty strings.
+  - If not stated as a global fact in this chunk, omit the key.
+
+  --------------------------------
+  PROPERTY VALUE RULES
+  --------------------------------
+
+  - Values can be short phrases (not necessarily single keywords).
+  - Keep them concise and canonical.
+  - Avoid long sentences.
+  - If multiple values apply, join them with "; " (semicolon + space).
+  - Do not include “yes/no/true/false” style values. Use a categorical/state value instead.
+
+  --------------------------------
+  new_description RULES
+  --------------------------------
+
+  - MUST NOT be empty.
+  - 2–5 sentences, fluent English.
+  - Only include global/stable facts supported by this chunk.
+  - Do not mention “the text” or “this chunk”.
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+
+  Return JSON ONLY:
+
+  {
+    "new_description": "Final entity description (must not be empty)",
+    "properties": {
+      "property_key": "property value",
+      "another_key": "another value"
+    }
+  }
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+
+  - Output JSON only.
+  - No markdown, no commentary.
+  - Do NOT invent facts.
+  - Exclude local/scene-specific properties.
+  - Exclude relationship snapshots; only keep stable relationship facts if they define identity
+    (e.g., spouse/parent-child) and are explicitly stated.

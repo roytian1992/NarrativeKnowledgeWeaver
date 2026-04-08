@@ -1,96 +1,133 @@
-from typing import Dict, Any, List
+from __future__ import annotations
+
 import json
 import logging
-from core.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
+from typing import Any, Dict, List
+
+from core.utils.general_utils import safe_str
+from core.utils.function_manager import process_with_format_guarantee
 from core.utils.general_text import general_repair_template
 from core.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
 
+def _valid_abbreviations(x: Any) -> bool:
+    if not isinstance(x, list):
+        return False
+    # allow empty list
+    for it in x:
+        if not isinstance(it, dict):
+            return False
+        # name is required and must be non-empty
+        name = it.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return False
+        # description must be a string (empty is allowed)
+        desc = it.get("description")
+        if desc is not None and not isinstance(desc, str):
+            return False
+        # optional fields if present must be strings (empty allowed)
+        for opt in ("abbr", "full", "zh"):
+            if opt in it:
+                v = it.get(opt)
+                if v is not None and not isinstance(v, str):
+                    return False
+    return True
+
+
 class AbbreviationParser:
     """
-    确保最终返回的是correct_json_format处理后的结果
+    YAML-driven document-specific term extractor.
+
+    Prompt YAML:
+      - text_processing/parse_abbreviations
+
+    Input params JSON:
+      {
+        "text": "...",
+        "current_background": "... (optional) ..."
+      }
+
+    Output JSON:
+      {
+        "abbreviations": [
+          { "name": "...", "description": "...", "abbr": "...", "full": "...", "zh": "..." }
+        ]
+      }
     """
-    
-    def __init__(self, prompt_loader=None, llm=None):
+
+    def __init__(
+        self,
+        prompt_loader,
+        llm,
+        prompt_id: str = "text_processing/parse_abbreviations",
+    ):
+        if llm is None:
+            raise ValueError("llm must be provided")
+        if prompt_loader is None:
+            raise ValueError("prompt_loader must be provided")
+
         self.prompt_loader = prompt_loader
         self.llm = llm
-        
-        # 定义验证规则
+        self.prompt_id = prompt_id
+
         self.required_fields = ["abbreviations"]
-        self.field_validators = {}
-        
-        # 修复提示词模板
+        self.field_validators = {"abbreviations": _valid_abbreviations}
         self.repair_template = general_repair_template
-    
+
     def call(self, params: str, **kwargs) -> str:
-        """
-        调用实体提取，保证返回correct_json_format处理后的结果
-        
-        Args:
-            params: 参数字符串
-            **kwargs: 其他参数
-            
-        Returns:
-            str: 经过correct_json_format处理的JSON字符串
-        """
+        # 1) parse params
         try:
-            # 解析参数
-            params_dict = json.loads(params)
-            text = params_dict.get("text", "")
-            current_background = params_dict.get("current_background", "")
-            
+            params_dict = json.loads(params) if isinstance(params, str) else (params or {})
+            text = safe_str(params_dict.get("text", "")).strip()
+            current_background = safe_str(params_dict.get("current_background", "")).strip()
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
-            # 即使是错误结果，也要经过correct_json_format处理
-            error_result = {"error": f"参数解析失败: {str(e)}", "abbreviations": []}
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-                
+            return correct_json_format(
+                json.dumps({"error": f"参数解析失败: {str(e)}", "abbreviations": []}, ensure_ascii=False)
+            )
+
+        if not text:
+            return correct_json_format(
+                json.dumps({"error": "missing required field: text", "abbreviations": []}, ensure_ascii=False)
+            )
+
+        if not current_background:
+            current_background = "None"
+
+        # 2) render YAML prompt (text is part of the prompt, no extra messages)
         try:
-            # 构造初始消息
-            messages = []
-            if not current_background:
-                current_background = "无"
-            
-            messages.append({"role": "user", "content": f"这是一些相关的阅读洞见：\n{text}"})
- 
-            prompt_id = "parse_abbreviations_prompt"
-            variables = {
-                "current_background": current_background   
-            }
-                
-            prompt_text = self.prompt_loader.render_prompt(
-                prompt_id=prompt_id,
-                variables=variables
+            user_prompt = self.prompt_loader.render(
+                self.prompt_id,
+                static_values={},
+                task_values={
+                    "text": text,
+                    "current_background": current_background,
+                },
+                strict=True,
             )
-
-            messages.append({"role": "user", "content": prompt_text})
-            
-            # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json, status = process_with_format_guarantee(
-                llm_client=self.llm,
-                messages=messages,
-                required_fields=self.required_fields,
-                field_validators=self.field_validators,
-                max_retries=2,
-                repair_template=self.repair_template
-            )
-            if status == "success":
-                # logger.info("术语信息提取完成，返回格式化后的JSON")
-                return corrected_json
-            else:
-                error_result = {
-                    "error": f"术语信息提取失败",
-                    "abbreviations": []
-                }
-                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-            
         except Exception as e:
-            logger.error(f"术语信息提取过程中出现异常: {e}")
-            error_result = {
-                "error": f"术语信息提取失败: {str(e)}",
-                "abbreviations": []
-            }
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
+            logger.error(f"parse_abbreviations prompt render failed: {e}")
+            return correct_json_format(
+                json.dumps({"error": f"prompt render failed: {str(e)}", "abbreviations": []}, ensure_ascii=False)
+            )
 
+        messages = [{"role": "user", "content": user_prompt}]
+
+        # 3) LLM call with format guarantee
+        corrected_json, status = process_with_format_guarantee(
+            llm_client=self.llm,
+            messages=messages,
+            required_fields=self.required_fields,
+            field_validators=self.field_validators,
+            max_retries=2,
+            repair_template=self.repair_template,
+        )
+
+        if status == "success":
+            return correct_json_format(corrected_json)
+
+        return correct_json_format(
+            json.dumps({"error": "术语信息提取失败", "abbreviations": []}, ensure_ascii=False)
+        )

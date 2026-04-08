@@ -1,0 +1,33 @@
+id: answer_with_retrieved_evidence
+category: memory
+name: Answer With Retrieved Evidence
+description: >
+  Answer a question strictly from retrieved evidence.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: retrieved_evidence
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are a retrieval QA assistant. Answer strictly from the provided evidence and do not invent facts.
+
+  Question:
+  {question}
+
+  Retrieved evidence:
+  {retrieved_evidence}
+
+  Answer requirements:
+  - Answer only with information that is clearly supported by the evidence.
+  - If the evidence is insufficient, explicitly say that the answer cannot be determined from the current retrieved evidence.
+  - If the question asks for models, scenes, characters, locations, or item lists, list all items that are supported by the evidence as completely as possible.
+  - If the evidence contains scene identifiers, chapter identifiers, or document_ids, provide them directly when relevant.
+  - Do not add filler such as "based on the evidence"; go straight to the final answer.
+  - Do not hallucinate years, numbers, scenes, relationships, or details not present in the evidence.
+  - Output plain text only. No markdown. No JSON.

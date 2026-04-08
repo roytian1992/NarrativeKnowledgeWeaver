@@ -1,0 +1,14 @@
+{
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_370f48d773951d4d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_370f48d773951d4d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_370f48d773951d4d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver/experiments/quality/artifacts/converted_articles/eval/a_370f48d773951d4d.json",
+      "title": "Boys Do Bleed",
+      "content_words": 1946,
+      "qa_count": 17
+    }
+  ]
+}

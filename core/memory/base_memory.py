@@ -1,58 +1,52 @@
-# kag/memory/base_memory.py
+"""
+core/memory/base_memory.py
+
+Abstract base class for all memory implementations.
+Concrete subclasses:
+  - ExtractionMemoryStore  (core/memory/extraction_store.py)
+  - (future) ToolCallMemoryStore
+"""
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from core.utils.config import KAGConfig, MemoryConfig
 
-class BaseMemory(ABC):
-    """记忆模块基类
-    
-    所有记忆实现都应该继承这个基类，提供统一的接口。
+class BaseMemoryStore(ABC):
     """
-    
-    def __init__(self, config: MemoryConfig):
-        """初始化记忆模块
-        
-        Args:
-            config: 记忆配置
+    Minimal ABC for a persistent memory store.
+
+    Every subclass must implement:
+      - add(entry)   → str        insert/merge an entry, return its id
+      - query(text)  → str        retrieve relevant entries as a formatted hint string
+      - flush()                   persist in-memory state to disk
+    """
+
+    @abstractmethod
+    def add(self, entry: Dict[str, Any]) -> str:
+        """Add (or merge) a memory entry. Returns the assigned id."""
+
+    @abstractmethod
+    def query(self, text: str, **kwargs) -> str:
         """
-        self.config = config
-    
-    @abstractmethod
-    def add(self, item: Dict[str, Any]) -> None:
-        """添加记忆项
-        
-        Args:
-            item: 记忆项，包含任意键值对
+        Retrieve relevant memory entries for the given text.
+        Returns a formatted string suitable for injecting into a prompt.
+        Returns empty string when no relevant entries exist.
         """
-        pass
-    
+
     @abstractmethod
-    def get(self, query: Optional[str] = None, k: int = 5) -> List[Dict[str, Any]]:
-        """获取记忆项
-        
-        Args:
-            query: 查询字符串，用于检索相关记忆
-            k: 返回的记忆项数量
-            
-        Returns:
-            记忆项列表
-        """
-        pass
-    
-    @abstractmethod
-    def clear(self) -> None:
-        """清空记忆"""
-        pass
-    
-    @abstractmethod
-    def save(self) -> None:
-        """保存记忆到磁盘"""
-        pass
-    
-    @abstractmethod
-    def load(self) -> None:
-        """从磁盘加载记忆"""
+    def flush(self) -> None:
+        """Persist any in-memory dirty state to the backing store."""
+
+    # Optional convenience helpers with default no-op implementations
+    def delete(self, entry_id: str) -> None:
         pass
 
+    def update(self, entry_id: str, **fields: Any) -> None:
+        pass
+
+    def mark_doc_processed(self) -> None:
+        pass
+
+    def load_from_disk(self) -> None:
+        pass

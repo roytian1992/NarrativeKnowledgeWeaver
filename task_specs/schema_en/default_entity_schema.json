@@ -1,0 +1,187 @@
+[
+  {
+    "type": "Character",
+    "category": "referential",
+    "default_scope": null,
+    "description": "A concrete individual entity that participates in the narrative (human or anthropomorphized agent).",
+    "properties": {
+      "name": "Canonical name or form of address for this character node.",
+      "gender": "Gender (optional, if explicitly stated).",
+      "age": "Age or age range (optional, if explicitly stated).",
+      "identity": "Identity/occupation (optional, if explicitly stated).",
+      "affiliation": "Affiliated organization/faction (optional; should reference a Concept if extracted)."
+    },
+    "samples": [
+      {
+        "type": "Character",
+        "name": "Benny",
+        "description": "A man speaking at an AA meeting who describes his struggle with alcohol and his attempts at recovery.",
+        "scope": "global"
+      },
+      {
+        "type": "Character",
+        "name": "The Old Librarian",
+        "description": "A cautious keeper of forbidden records who guides others through restricted archives.",
+        "scope": "local"
+      }
+    ]
+  },
+  {
+    "type": "Event",
+    "category": "induced",
+    "default_scope": "local",
+    "description": "A concrete narrative occurrence that can be described as who did what to whom or what, when and where, and with what consequence. Includes actions, dialogue acts, mental/emotional changes, transactions, movements, and state changes.",
+    "properties": {
+      "name": "A short, content-centered title for the event.",
+      "description": "A complete description of the event in 1–2 sentences grounded in the text.",
+      "event_subtype": "Subtype (optional): physical_action / speech / mental / transaction / movement / state_change.",
+      "cause": "Cause or trigger (optional, text-grounded).",
+      "result": "Result or impact (optional, text-grounded).",
+      "polarity": "Event polarity (optional): positive / negative / neutral.",
+      "emotion_type": "Emotion category if applicable (optional).",
+      "emotion_intensity": "Emotion intensity if applicable (optional): low / medium / high."
+    },
+    "samples": [
+      {
+        "type": "Event",
+        "name": "Power outage plunges apartment building into darkness",
+        "description": "The electricity suddenly cuts out in a high-rise building, shutting off lights and elevators and leaving residents in darkness.",
+        "scope": "local"
+      },
+      {
+        "type": "Event",
+        "name": "Train doors close as the protagonist is left behind on the platform",
+        "description": "The doors slide shut just as the protagonist reaches the train, leaving them behind as it departs.",
+        "scope": "local"
+      }
+    ]
+  },
+  {
+    "type": "Location",
+    "category": "referential",
+    "default_scope": null,
+    "description": "A physical setting where events occur, expressed as a clean noun phrase (no leading prepositions).",
+    "properties": {
+      "name": "Canonical location name used as the node label.",
+      "loc_type": "Location type (optional): city / room / building / planet / virtual space, etc.",
+      "description": "Brief definition or identifying note (optional)."
+    },
+    "samples": [
+      {
+        "type": "Location",
+        "name": "Church of St. Peter, Los Angeles",
+        "scope": "global",
+        "description": "A named church in Los Angeles that serves as the setting for the meeting."
+      },
+      {
+        "type": "Location",
+        "name": "apartment hallway",
+        "scope": "local",
+        "description": "A corridor outside the apartments where characters move and speak during the scene."
+      }
+    ]
+  },
+  {
+    "type": "Occasion",
+    "category": "induced",
+    "default_scope": "global",
+    "description": "A structured, socially or institutionally recognized event container that people or organizations can participate in. An Occasion may span a period of time, have multiple participants, and contain multiple atomic Events. It represents the fact that an organized activity or gathering takes place, rather than a single action.",
+    "properties": {
+      "name": "Canonical name of the occasion instance (e.g., a specific summit, conference, ceremony, or meeting).",
+      "description": "A brief explanation of what the occasion is, grounded in the text.",
+      "occasion_type": "Type of occasion (optional): summit / conference / meeting / ceremony / trial / election / tournament / class / hearing / ritual / other.",
+      "host": "Hosting organization or authority (optional; should reference a Concept or Character if extracted).",
+      "time_range": "Time span of the occasion (optional; may reference one or more TimePoint nodes).",
+      "location": "Primary location of the occasion (optional; should reference a Location if extracted).",
+      "series": "Abstract series or institutional framework this occasion belongs to (optional; should reference a Concept)."
+    },
+    "samples": [
+      {
+        "type": "Occasion",
+        "name": "United Nations Climate Summit 2026",
+        "description": "A formal international summit where delegates from multiple countries gather to discuss climate policy and agreements.",
+        "scope": "global"
+      },
+      {
+        "type": "Occasion",
+        "name": "Alcoholics Anonymous evening meeting",
+        "description": "A local AA meeting where participants gather to share personal experiences and support recovery.",
+        "scope": "global"
+      }
+    ]
+  },
+  {
+    "type": "TimePoint",
+    "category": "time",
+    "default_scope": null,
+    "description": "A specific time reference (precise, vague, or relative) that directly answers 'when does the event occur?' It must denote an identifiable time point or short time span that can anchor an event on a timeline. Do NOT extract conditional, hypothetical, or trigger-based clauses (e.g., 'once...', 'when...', 'after...', 'before...', 'until...', 'as soon as...') unless they contain a standalone canonical time expression. Expressions that describe conditions for an event rather than a concrete time reference must NOT be treated as TimePoint.",
+    "properties": {
+      "description": "Canonical time expression stored on the node (often identical to extracted name).",
+      "time_type": "Time type (optional): precise / vague / relative."
+    },
+    "samples": [
+      {
+        "type": "TimePoint",
+        "name": "2084-07-16 18:00",
+        "scope": "global",
+        "description": "An explicit date and clock time anchoring when the scene’s events occur."
+      },
+      {
+        "type": "TimePoint",
+        "name": "the following morning",
+        "scope": "local",
+        "description": "A relative time reference indicating the next morning compared to the prior context."
+      }
+    ]
+  },
+  {
+    "type": "Object",
+    "category": "referential",
+    "default_scope": null,
+    "description": "A concrete physical item that can be held, used, hidden, damaged, or exchanged, and is narratively relevant.",
+    "properties": {
+      "name": "Canonical object name.",
+      "obj_type": "Object category (optional): weapon / document / device / vehicle / other.",
+      "description": "Brief definition or identifying note (optional)."
+    },
+    "samples": [
+      {
+        "type": "Object",
+        "name": "buried bottle of alcohol",
+        "description": "A bottle that Benny hides under the lawn to avoid bringing it into the house.",
+        "scope": "local"
+      },
+      {
+        "type": "Object",
+        "name": "encrypted data chip",
+        "description": "A small storage device containing classified mission logs that others try to obtain.",
+        "scope": "global"
+      }
+    ]
+  },
+  {
+    "type": "Concept",
+    "category": "general_semantic",
+    "default_scope": null,
+    "description": "An abstract, collective, or institutional entity such as an organization, faction, ideology, system, or social group.",
+    "properties": {
+      "name": "Canonical concept or organization name.",
+      "category": "Category (optional): organization / faction / ideology / technology / social_group / other.",
+      "definition": "Brief definition or description (optional)."
+    },
+    "samples": [
+      {
+        "type": "Concept",
+        "name": "Alcoholics Anonymous",
+        "description": "A recovery organization whose meeting provides a social framework for confessions and support.",
+        "scope": "global"
+      },
+      {
+        "type": "Concept",
+        "name": "Memory Suppression Protocol",
+        "description": "A procedural or technological system used to suppress or alter memories in the story world.",
+        "scope": "global"
+      }
+    ]
+  }
+]

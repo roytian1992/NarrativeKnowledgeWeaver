@@ -1,0 +1,86 @@
+{
+  "bm25_search_docs": {
+    "name": "bm25_search_docs",
+    "description": "BM25 lexical retrieval over raw text chunks. Useful for exact names, aliases, abbreviations, object names, repeated actions, quotations, and appearance details.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Keywords, names, aliases, or exact phrases to match.",
+        "required": true
+      },
+      {
+        "name": "k",
+        "type": "integer",
+        "description": "Maximum number of hits. Default 10.",
+        "required": false
+      }
+    ]
+  },
+  "lookup_document_ids_by_title": {
+    "name": "lookup_document_ids_by_title",
+    "description": "Map section or chapter titles to backing document_ids.",
+    "parameters": [
+      {
+        "name": "title",
+        "type": "string",
+        "description": "Section or chapter title.",
+        "required": false
+      },
+      {
+        "name": "subtitle",
+        "type": "string",
+        "description": "Optional subtitle or sub-scene title.",
+        "required": false
+      },
+      {
+        "name": "fuzzy",
+        "type": "boolean",
+        "description": "Whether to allow fuzzy title matching. Default true.",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "Maximum number of matched document_ids. Default 10.",
+        "required": false
+      }
+    ]
+  },
+  "lookup_titles_by_document_ids": {
+    "name": "lookup_titles_by_document_ids",
+    "description": "Map document_ids to readable section or chapter titles.",
+    "parameters": [
+      {
+        "name": "document_ids",
+        "type": "array",
+        "description": "List of document_ids.",
+        "required": true
+      }
+    ]
+  },
+  "search_related_content": {
+    "name": "search_related_content",
+    "description": "Given document_ids and a query, read those documents and extract directly relevant text.",
+    "parameters": [
+      {
+        "name": "document_ids",
+        "type": "array",
+        "description": "List of document_ids to inspect.",
+        "required": true
+      },
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Question or extraction goal.",
+        "required": true
+      },
+      {
+        "name": "max_length",
+        "type": "integer",
+        "description": "Maximum extracted text length per document. Default 300.",
+        "required": false
+      }
+    ]
+  }
+}

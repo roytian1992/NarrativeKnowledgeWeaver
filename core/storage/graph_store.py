@@ -1,318 +1,321 @@
 """
-Graph database storage module
-
-Neo4j-based knowledge graph storage.
+Local graph storage module backed by NetworkX.
 """
 
-from typing import List, Dict, Any, Optional
-from neo4j import GraphDatabase
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional
 import json
 import logging
-import re
+import os
+import pickle
+import tempfile
 
-from ..models.data import KnowledgeGraph, Entity, Relation
+import networkx as nx
+
+from ..models.data import Entity, KnowledgeGraph, Relation
 from ..utils.config import KAGConfig
 
 logger = logging.getLogger(__name__)
 
 
-def _quote_label(name: str) -> str:
-    """
-    Safely quote a label or relationship type for Cypher by backtick-escaping backticks.
-    Works for labels and relationship types in modern Neo4j.
-    """
-    if name is None:
-        return "`Unknown`"
-    return f"`{str(name).replace('`', '``')}`"
+def _as_list_str(value: Any) -> List[str]:
+    if isinstance(value, list):
+        out: List[str] = []
+        seen = set()
+        for item in value:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            out.append(text)
+        return out
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    return []
 
+
+def _merge_unique_list(left: Any, right: Any) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for seq in (_as_list_str(left), _as_list_str(right)):
+        for item in seq:
+            if item in seen:
+                continue
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _safe_properties(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.startswith("{") and raw.endswith("}"):
+            try:
+                obj = json.loads(raw)
+                return obj if isinstance(obj, dict) else {}
+            except Exception:
+                return {}
+    return {}
 
 class GraphStore:
-    """Graph database storage backed by Neo4j."""
+    """Local runtime graph storage backed by a pickled NetworkX MultiDiGraph."""
 
     def __init__(self, config: KAGConfig) -> None:
-        """
-        Initialize the GraphStore.
-
-        Args:
-            config: Global configuration object containing Neo4j connection info.
-        """
         self.config = config
-        self.driver = None
-        self._connect()
+        self.path = self._resolve_store_path()
+        self.graph: nx.MultiDiGraph = nx.MultiDiGraph()
+        self._load()
 
-    def _connect(self) -> None:
-        """Connect to the Neo4j database and verify connectivity."""
-        try:
-            self.driver = GraphDatabase.driver(
-                self.config.storage.neo4j_uri,
-                auth=(
-                    self.config.storage.neo4j_username,
-                    self.config.storage.neo4j_password,
-                ),
-            )
-            # Smoke test the connection
-            with self.driver.session() as session:
-                session.run("RETURN 1")
-            logger.info("Neo4j connection established successfully.")
-        except Exception as e:
-            logger.exception("Failed to connect to Neo4j: %s", str(e))
-            self.driver = None
+    def _resolve_store_path(self) -> str:
+        raw = str(getattr(getattr(self.config, "storage", None), "graph_store_path", "") or "").strip()
+        if raw:
+            return raw
+        kg_dir = str(getattr(getattr(self.config, "knowledge_graph_builder", None), "file_path", "") or "").strip()
+        if not kg_dir:
+            kg_dir = "data/knowledge_graph"
+        return os.path.join(kg_dir, "graph_runtime.pkl")
 
-    def reset_knowledge_graph(self) -> None:
-        """
-        Reset the knowledge graph by deleting all nodes and relationships.
-        """
-        if not self.driver:
-            logger.warning("Neo4j is not connected; skipping graph reset.")
+    def _load(self) -> None:
+        path = Path(self.path)
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.graph = nx.MultiDiGraph()
+            logger.info("Initialized empty local graph store at %s", self.path)
             return
-
-        with self.driver.session() as session:
-            session.run("MATCH (n) DETACH DELETE n")
-            logger.info("Knowledge graph has been reset (all nodes and relationships deleted).")
-
-    def store_knowledge_graph(self, kg: KnowledgeGraph) -> None:
-        """
-        Store a full knowledge graph (entities and relations).
-
-        Args:
-            kg: KnowledgeGraph object containing entities and relations to upsert.
-        """
-        if not self.driver:
-            logger.warning("Neo4j is not connected; skipping graph storage.")
-            return
-
-        with self.driver.session() as session:
-            # Entities
-            logger.info("Storing entities: count=%d", len(kg.entities.values()))
-            for entity in kg.entities.values():
-                self._store_entity(session, entity)
-
-            # Relations
-            logger.info("Storing relations: count=%d", len(kg.relations.values()))
-            for relation in kg.relations.values():
-                self._store_relation(session, relation)
-
-    def _store_entity(self, session, entity: Entity) -> None:
-        """
-        Upsert a single entity as a node.
-
-        Behavior:
-        - If `entity.type` is a list, the first element is the primary label,
-          the rest are added as extra labels.
-        - Always adds a super label `:Entity` for consistent querying.
-        - Stores a `types` property (list) for downstream compatibility.
-        - `properties` are stored as a JSON string to keep structure intact.
-        """
         try:
-            # Normalize types to a unique ordered list
-            if isinstance(entity.type, list):
-                seen = set()
-                types: List[str] = []
-                for t in entity.type:
-                    if t and t not in seen:
-                        seen.add(t)
-                        types.append(t)
+            with path.open("rb") as f:
+                obj = pickle.load(f)
+            if isinstance(obj, nx.MultiDiGraph):
+                self.graph = obj
+            elif isinstance(obj, nx.DiGraph):
+                self.graph = nx.MultiDiGraph(obj)
             else:
-                types = [entity.type] if entity.type else ["Concept"]
-
-            primary = types[0]
-            others = [t for t in types[1:] if t]
-
-            # Build MERGE with primary label; set core attributes
-            q_primary = _quote_label(primary)
-            query_merge = f"""
-            MERGE (e:{q_primary} {{id: $id}})
-            SET e:Entity,
-                e.name = $name,
-                e.aliases = $aliases,
-                e.description = $description,
-                e.scope = $scope,
-                e.types = $types,
-                e.version = $version,
-                e.properties = $properties,
-                e.source_chunks = $source_chunks
-            """
-            session.run(
-                query_merge,
-                {
-                    "id": entity.id,
-                    "name": entity.name,
-                    "aliases": entity.aliases,
-                    "description": entity.description,
-                    "version": entity.version,
-                    "scope": getattr(entity, "scope", None) or "local",
-                    "types": types,
-                    "properties": json.dumps(entity.properties, ensure_ascii=False),
-                    "source_chunks": entity.source_chunks,
-                },
-            )
-
-            # Add extra labels if any
-            if others:
-                extra_labels = ":".join(_quote_label(t) for t in others)
-                query_add_labels = f"""
-                MATCH (e {{id: $id}})
-                SET e:{extra_labels}
-                """
-                session.run(query_add_labels, {"id": entity.id})
-
-        except Exception as e:
-            logger.exception("[Neo4j] MERGE Entity failed: %s | entity=%s", e, entity)
-
-    def _store_relation(self, session, relation: Relation) -> None:
-        """
-        Upsert a single relationship.
-
-        Notes:
-        - Relationship type is taken from `relation.predicate` and quoted safely.
-        - `properties` are stored as a JSON string.
-        - Assumes both subject and object nodes already exist (created by _store_entity).
-        """
-        try:
-            rel_type = _quote_label(relation.predicate)
-            query = f"""
-            MATCH (s {{id: $subject_id}})
-            MATCH (o {{id: $object_id}})
-            MERGE (s)-[r:{rel_type} {{id: $id}}]->(o)
-            SET r.predicate = $predicate,
-                r.properties = $properties,
-                r.source_chunks = $source_chunks
-            """
-            session.run(
-                query,
-                {
-                    "id": relation.id,
-                    "subject_id": relation.subject_id,
-                    "object_id": relation.object_id,
-                    "predicate": relation.predicate,
-                    "properties": json.dumps(relation.properties, ensure_ascii=False),
-                    "source_chunks": relation.source_chunks,
-                },
+                raise TypeError(f"Unsupported graph object type: {type(obj)!r}")
+            logger.info(
+                "Loaded local graph store from %s (nodes=%d edges=%d)",
+                self.path,
+                self.graph.number_of_nodes(),
+                self.graph.number_of_edges(),
             )
         except Exception as e:
-            logger.exception("[Neo4j] MERGE Relation failed: %s | relation=%s", e, relation)
+            logger.exception("Failed to load local graph store %s: %s", self.path, e)
+            self.graph = nx.MultiDiGraph()
 
-    def search_entities(self, query: str, limit: int = 10) -> List[Entity]:
-        """
-        Search entities by name or aliases using a CONTAINS substring match.
-
-        Args:
-            query: Substring to search in `name` or any `aliases`.
-            limit: Max number of entities to return.
-
-        Returns:
-            A list of `Entity` dataclass instances.
-        """
-        if not self.driver:
-            return []
-
-        with self.driver.session() as session:
-            cypher_query = """
-            MATCH (e:Entity)
-            WHERE e.name CONTAINS $query OR any(alias IN coalesce(e.aliases, []) WHERE alias CONTAINS $query)
-            RETURN e
-            LIMIT $limit
-            """
-            result = session.run(cypher_query, {"query": query, "limit": limit})
-            entities: List[Entity] = []
-
-            for record in result:
-                node = record["e"]
-                # Read structured properties
-                props_raw = node.get("properties", "{}")
-                try:
-                    props = json.loads(props_raw) if isinstance(props_raw, str) else (props_raw or {})
-                except Exception:
-                    props = {}
-
-                # Prefer the `types` list; fall back to single `type` if present
-                node_types = node.get("types")
-                if node_types is None:
-                    # legacy fallback
-                    node_types = node.get("type")
-
-                entity = Entity(
-                    id=node["id"],
-                    name=node.get("name"),
-                    type=node_types,
-                    aliases=node.get("aliases", []),
-                    description=node.get("description"),
-                    properties=props,
-                    source_chunks=node.get("source_chunks", []),
-                )
-                entities.append(entity)
-
-            return entities
-
-    def search_relations(self, entity_name: str, limit: int = 10) -> List[Relation]:
-        """
-        Search relations connected to an entity by its exact `name` on either side.
-
-        Args:
-            entity_name: Exact entity name (subject or object).
-            limit: Max number of relations to return.
-
-        Returns:
-            A list of `Relation` dataclass instances.
-        """
-        if not self.driver:
-            return []
-
-        with self.driver.session() as session:
-            cypher_query = """
-            MATCH (s:Entity)-[r]->(o:Entity)
-            WHERE s.name = $entity_name OR o.name = $entity_name
-            RETURN r, s.id AS subject_id, o.id AS object_id
-            LIMIT $limit
-            """
-            result = session.run(cypher_query, {"entity_name": entity_name, "limit": limit})
-            relations: List[Relation] = []
-
-            for record in result:
-                r = record["r"]
-                props_raw = r.get("properties", "{}")
-                try:
-                    props = json.loads(props_raw) if isinstance(props_raw, str) else (props_raw or {})
-                except Exception:
-                    props = {}
-
-                relation = Relation(
-                    id=r.get("id"),
-                    subject_id=record["subject_id"],
-                    object_id=record["object_id"],
-                    predicate=r.get("predicate"),
-                    properties=props,
-                    source_chunks=r.get("source_chunks", []),
-                )
-                relations.append(relation)
-
-            return relations
-
-    def get_stats(self) -> Dict[str, Any]:
-        """
-        Get simple graph statistics.
-
-        Returns:
-            A dict with connection status and counts of nodes and relationships.
-        """
-        if not self.driver:
-            return {"status": "disconnected"}
-
-        with self.driver.session() as session:
-            try:
-                entity_count = session.run("MATCH (e) RETURN count(e) AS count").single()["count"]
-                relation_count = session.run("MATCH ()-[r]->() RETURN count(r) AS count").single()["count"]
-                return {
-                    "status": "connected",
-                    "entities": entity_count,
-                    "relations": relation_count,
-                }
-            except Exception as e:
-                logger.exception("Failed to get stats: %s", str(e))
-                return {"status": "error", "error": str(e)}
+    def persist(self) -> None:
+        path = Path(self.path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("wb", delete=False, dir=str(path.parent), prefix=path.name + ".", suffix=".tmp") as f:
+            pickle.dump(self.graph, f)
+            tmp_path = f.name
+        os.replace(tmp_path, self.path)
 
     def close(self) -> None:
-        """Close the Neo4j driver."""
-        if self.driver:
-            self.driver.close()
-            logger.info("Neo4j driver closed.")
+        self.persist()
+        logger.info("Local graph store persisted to %s", self.path)
+
+    def get_graph(self) -> nx.MultiDiGraph:
+        return self.graph
+
+    def reset_knowledge_graph(self) -> None:
+        self.graph = nx.MultiDiGraph()
+        self.persist()
+        logger.info("Local graph store reset.")
+
+    def _entity_to_attrs(self, entity: Entity, default_type: str = "Concept") -> Dict[str, Any]:
+        raw_types = entity.type if getattr(entity, "type", None) is not None else default_type
+        types = _as_list_str(raw_types)
+        if not types:
+            types = [default_type]
+        attrs = {
+            "id": entity.id,
+            "name": str(getattr(entity, "name", "") or ""),
+            "type": types,
+            "aliases": _as_list_str(getattr(entity, "aliases", []) or []),
+            "properties": _safe_properties(getattr(entity, "properties", {}) or {}),
+            "description": str(getattr(entity, "description", "") or ""),
+            "scope": str(getattr(entity, "scope", "") or ""),
+            "source_documents": _as_list_str(getattr(entity, "source_documents", []) or []),
+        }
+        version = getattr(entity, "version", None)
+        if version is not None:
+            attrs["version"] = version
+        return attrs
+
+    def _relation_to_attrs(self, relation: Relation) -> Dict[str, Any]:
+        attrs = {
+            "id": relation.id,
+            "subject_id": relation.subject_id,
+            "object_id": relation.object_id,
+            "predicate": str(getattr(relation, "predicate", "") or ""),
+            "relation_name": getattr(relation, "relation_name", None),
+            "persistence": getattr(relation, "persistence", None),
+            "description": getattr(relation, "description", None),
+            "confidence": float(getattr(relation, "confidence", 1.0) or 1.0),
+            "properties": _safe_properties(getattr(relation, "properties", {}) or {}),
+            "source_documents": _as_list_str(getattr(relation, "source_documents", []) or []),
+        }
+        return attrs
+
+    def _merge_node_attrs(self, existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(existing)
+        for key, value in incoming.items():
+            if key in {"aliases", "source_documents", "type"}:
+                merged[key] = _merge_unique_list(existing.get(key), value)
+                continue
+            if key == "properties":
+                props = _safe_properties(existing.get("properties", {}))
+                props.update(_safe_properties(value))
+                merged["properties"] = props
+                continue
+            if value in (None, "", [], {}, ()):
+                if key not in merged:
+                    merged[key] = value
+                continue
+            merged[key] = value
+        return merged
+
+    def _merge_edge_attrs(self, existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(existing)
+        for key, value in incoming.items():
+            if key == "source_documents":
+                merged[key] = _merge_unique_list(existing.get(key), value)
+                continue
+            if key == "properties":
+                props = _safe_properties(existing.get("properties", {}))
+                props.update(_safe_properties(value))
+                merged["properties"] = props
+                continue
+            if value in (None, "", [], {}, ()):
+                if key not in merged:
+                    merged[key] = value
+                continue
+            merged[key] = value
+        return merged
+
+    def _store_entity(self, _session: Any, entity: Entity, default_type: str = "Concept") -> None:
+        attrs = self._entity_to_attrs(entity, default_type=default_type)
+        node_id = attrs["id"]
+        existing = dict(self.graph.nodes[node_id]) if self.graph.has_node(node_id) else {}
+        self.graph.add_node(node_id, **self._merge_node_attrs(existing, attrs))
+
+    def _store_relation(self, _session: Any, relation: Relation) -> None:
+        attrs = self._relation_to_attrs(relation)
+        subject_id = attrs["subject_id"]
+        object_id = attrs["object_id"]
+        if not self.graph.has_node(subject_id):
+            self.graph.add_node(subject_id, id=subject_id, name=subject_id, type=["Entity"], aliases=[], properties={}, description="", scope="", source_documents=[])
+        if not self.graph.has_node(object_id):
+            self.graph.add_node(object_id, id=object_id, name=object_id, type=["Entity"], aliases=[], properties={}, description="", scope="", source_documents=[])
+        edge_key = attrs["id"]
+        existing = dict(self.graph.get_edge_data(subject_id, object_id, edge_key, default={}) or {})
+        self.graph.add_edge(subject_id, object_id, key=edge_key, **self._merge_edge_attrs(existing, attrs))
+
+    def store_knowledge_graph(self, kg: KnowledgeGraph) -> None:
+        for entity in kg.entities.values():
+            self._store_entity(None, entity)
+        for relation in kg.relations.values():
+            self._store_relation(None, relation)
+        self.persist()
+
+    def upsert_entities(
+        self,
+        entities: Iterable[Entity],
+        *,
+        default_type: str = "Concept",
+        verbose: bool = False,
+    ) -> int:
+        count = 0
+        for entity in entities or []:
+            if not isinstance(getattr(entity, "id", None), str) or not entity.id.strip():
+                continue
+            self._store_entity(None, entity, default_type=default_type)
+            count += 1
+        if count:
+            self.persist()
+        if verbose:
+            logger.info("[LocalGraph] upsert_entities=%d", count)
+        return count
+
+    def upsert_relations(
+        self,
+        relations: Iterable[Relation],
+        *,
+        default_confidence: float = 1.0,
+        verbose: bool = False,
+    ) -> int:
+        count = 0
+        for relation in relations or []:
+            if not isinstance(getattr(relation, "id", None), str) or not relation.id.strip():
+                continue
+            if getattr(relation, "confidence", None) is None:
+                relation.confidence = float(default_confidence)
+            self._store_relation(None, relation)
+            count += 1
+        if count:
+            self.persist()
+        if verbose:
+            logger.info("[LocalGraph] upsert_relations=%d", count)
+        return count
+
+    def search_entities(self, query: str, limit: int = 10) -> List[Entity]:
+        raw = str(query or "").strip().lower()
+        out: List[Entity] = []
+        for _, data in self.graph.nodes(data=True):
+            name = str(data.get("name", "") or "").lower()
+            aliases = [str(x or "").lower() for x in _as_list_str(data.get("aliases", []))]
+            if raw and raw not in name and not any(raw in alias for alias in aliases):
+                continue
+            out.append(
+                Entity(
+                    id=str(data.get("id") or ""),
+                    name=str(data.get("name") or ""),
+                    type=data.get("type") or ["Entity"],
+                    aliases=_as_list_str(data.get("aliases", [])),
+                    properties=_safe_properties(data.get("properties", {})),
+                    description=str(data.get("description", "") or ""),
+                    scope=str(data.get("scope", "") or ""),
+                    source_documents=_as_list_str(data.get("source_documents", [])),
+                )
+            )
+            if len(out) >= max(1, int(limit)):
+                break
+        return out
+
+    def search_relations(self, entity_name: str, limit: int = 10) -> List[Relation]:
+        target = str(entity_name or "").strip()
+        out: List[Relation] = []
+        for src, dst, key, data in self.graph.edges(keys=True, data=True):
+            s_name = str(self.graph.nodes[src].get("name", "") or "")
+            o_name = str(self.graph.nodes[dst].get("name", "") or "")
+            if target not in {s_name, o_name}:
+                continue
+            out.append(
+                Relation(
+                    id=str(data.get("id") or key),
+                    subject_id=str(data.get("subject_id") or src),
+                    object_id=str(data.get("object_id") or dst),
+                    predicate=str(data.get("predicate") or ""),
+                    relation_name=data.get("relation_name"),
+                    persistence=data.get("persistence"),
+                    description=data.get("description"),
+                    source_documents=_as_list_str(data.get("source_documents", [])),
+                    confidence=float(data.get("confidence", 1.0) or 1.0),
+                    properties=_safe_properties(data.get("properties", {})),
+                )
+            )
+            if len(out) >= max(1, int(limit)):
+                break
+        return out
+
+    def get_stats(self) -> Dict[str, Any]:
+        return {
+            "status": "connected",
+            "entities": self.graph.number_of_nodes(),
+            "relations": self.graph.number_of_edges(),
+            "path": self.path,
+        }

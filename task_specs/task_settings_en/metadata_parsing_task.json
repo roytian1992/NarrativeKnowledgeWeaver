@@ -1,0 +1,91 @@
+{
+  "novel": {
+    "description": "Extract high-level metadata from a novel chapter.",
+    "fields": [
+      {
+        "key": "space",
+        "description": "Space type of the story world (e.g., real world, virtual space, fantasy). Multiple values may be present."
+      },
+      {
+        "key": "region",
+        "description": "Geographic or regional setting(s) explicitly mentioned. Multiple values may be present."
+      },
+      {
+        "key": "main_location",
+        "description": "Primary location(s) where the chapter mainly takes place. Multiple values may be present."
+      },
+      {
+        "key": "time_period",
+        "description": "Time information such as night, season, historical era, or future. Multiple values may be present."
+      },
+      {
+        "key": "summary",
+        "description": "Concise summary of the chapter content, focusing on major events and context."
+      }
+    ]
+  },
+
+  "screenplay": {
+    "description": "Extract standardized metadata from a screenplay scene title (and optional text).",
+    "fields": [
+      {
+        "key": "scene_id",
+        "description": "Scene number, possibly composite like 17-13."
+      },
+      {
+        "key": "scene_category",
+        "description": "Interior or exterior category, standardized as INT or EXT."
+      },
+      {
+        "key": "lighting",
+        "description": "Lighting condition such as Day, Night, or No Day-Night."
+      },
+      {
+        "key": "space",
+        "description": "Scene space type such as real world, digital space, or dream. Multiple values may be present."
+      },
+      {
+        "key": "region",
+        "description": "Larger geographic or facility-level region(s). Multiple values may be present."
+      },
+      {
+        "key": "main_location",
+        "description": "Main scene location(s), such as a room or facility. Multiple values may be present."
+      },
+      {
+        "key": "sub_location",
+        "description": "More fine-grained sub-location(s), if explicitly specified."
+      },
+      {
+        "key": "summary",
+        "description": "Concise summary of the scene purpose, atmosphere, or key action."
+      }
+    ]
+  },
+
+  "general": {
+    "description": "Extract high-level metadata from a general document or text section.",
+    "fields": [
+      {
+        "key": "topic",
+        "description": "Main topic(s) or subject area(s) of the document. Multiple values may be present."
+      },
+      {
+        "key": "domain",
+        "description": "Domain or context of the document, such as technology, business, education, or policy."
+      },
+      {
+        "key": "time_reference",
+        "description": "Any explicit or implicit time reference(s) mentioned, such as dates, periods, or phases."
+      },
+      {
+        "key": "location",
+        "description": "Relevant location(s) discussed or referenced in the document, if any."
+      },
+      {
+        "key": "summary",
+        "description": "Concise summary of the document content, focusing on key points and intent."
+      }
+    ]
+  }
+}

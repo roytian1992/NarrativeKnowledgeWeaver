@@ -1,0 +1,54 @@
+id: select_candidate_answers
+category: memory
+name: Select Candidate Answers
+description: >
+  Compare multiple sub-agent candidate answers and return the best final answer with the selected candidate ids.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: query_abstract
+    type: string
+    required: false
+  - name: candidate_answers_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are a retrieval QA candidate-answer selector.
+
+  Question:
+  {question}
+
+  Query abstraction:
+  {query_abstract}
+
+  Candidate answers (JSON):
+  {candidate_answers_json}
+
+  Your task:
+  - Compare the candidate answers and choose the most reliable, complete, and question-relevant one.
+  - You may use the attached template information, tool chains, tool-output summaries, and final answers.
+  - If two candidates are complementary and non-conflicting, you may combine them into a stronger final answer.
+  - Exclude unsupported, off-topic, or clearly mismatched content.
+
+  Decision principles:
+  - Prefer answers that directly satisfy the core requirement of the question.
+  - For list-style questions such as scenes, models, or entities, prefer candidates with broader but non-conflicting coverage.
+  - If one candidate uses a clearly better retrieval path but contains some extra noise, keep the correct core content and remove the noise in the final answer.
+  - Do not prefer longer answers by default. Accuracy, completeness, and evidence alignment matter more.
+
+  Output requirements:
+  - Output exactly one JSON object.
+  - The JSON schema must be:
+    {{
+      "selected_candidate_ids": ["candidate_1"],
+      "final_answer": "string",
+      "reason": "string"
+    }}
+  - `selected_candidate_ids` may contain one or more candidate ids.
+  - `final_answer` must be the final user-facing answer text. Do not output Markdown and do not output anything outside JSON.
+  - `reason` should briefly explain why these candidates were selected.

@@ -3,26 +3,77 @@
 提供实体查询、实体编辑和关系编辑功能
 """
 
-import gradio as gr
 import json
 from typing import List, Dict, Any, Optional, Tuple
-from pyvis.network import Network
 import tempfile
 import os
 import base64
+
+try:
+    import gradio as gr
+except ModuleNotFoundError:
+    gr = None
+
+try:
+    from pyvis.network import Network
+except ModuleNotFoundError:
+    Network = None
 
 
 class KnowledgeGraphEditor:
     """知识图谱编辑器核心类"""
     
-    def __init__(self, neo4j_utils):
+    def __init__(self, graph_query_utils):
         """
         初始化编辑器
         
         Args:
-            neo4j_utils: Neo4jUtils 实例
+            graph_query_utils: GraphQueryUtils 实例
         """
-        self.neo4j_utils = neo4j_utils
+        self.graph_query_utils = graph_query_utils
+
+    def _graph(self):
+        return self.graph_query_utils.graph_store.get_graph()
+
+    def _persist(self) -> None:
+        self.graph_query_utils.graph_store.persist()
+
+    def _node_labels(self, node_data: Dict[str, Any]) -> List[str]:
+        if hasattr(self.graph_query_utils, "_node_labels"):
+            labels = list(self.graph_query_utils._node_labels(node_data))
+        else:
+            labels = list(node_data.get("type", []) or [])
+        return [label for label in labels if label and label != "Entity"]
+
+    @staticmethod
+    def _relation_type(rel_data: Dict[str, Any]) -> str:
+        return (
+            str(rel_data.get("predicate") or rel_data.get("relation_type") or rel_data.get("type") or "RELATED_TO")
+            .strip()
+            or "RELATED_TO"
+        )
+
+    @staticmethod
+    def _safe_dict(value: Any) -> Dict[str, Any]:
+        if isinstance(value, dict):
+            return dict(value)
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw.startswith("{") and raw.endswith("}"):
+                try:
+                    obj = json.loads(raw)
+                    if isinstance(obj, dict):
+                        return obj
+                except Exception:
+                    return {}
+        return {}
+
+    @staticmethod
+    def _remove_flattened_props(target: Dict[str, Any], props: Dict[str, Any], reserved: set[str]) -> None:
+        for key in props.keys():
+            if key in reserved:
+                continue
+            target.pop(key, None)
     
     # ==================== 实体查询功能 ====================
     
@@ -38,40 +89,40 @@ class KnowledgeGraphEditor:
             (搜索结果表格HTML, 状态信息)
         """
         try:
-            # 构造查询条件
-            if not keyword and not entity_type:
+            wanted_type = str(entity_type or "").strip()
+            if wanted_type == "全部":
+                wanted_type = ""
+            if not keyword and not wanted_type:
                 return "<p style='color: orange;'>请输入搜索关键词或选择实体类型</p>", "⚠️ 请提供搜索条件"
-            
-            # 构造 MATCH 子句
-            if entity_type and entity_type != "全部":
-                match_clause = f"MATCH (e:{entity_type})"
-            else:
-                match_clause = "MATCH (e)"
-            
-            # 构造 WHERE 子句
-            where_clauses = []
-            params = {}
-            
-            if keyword:
-                where_clauses.append(
-                    "(e.name CONTAINS $kw OR any(alias IN e.aliases WHERE alias CONTAINS $kw))"
+
+            graph = self._graph()
+            kw = str(keyword or "").strip().lower()
+
+            results = []
+            for node_id, data in graph.nodes(data=True):
+                labels = self._node_labels(data)
+                if wanted_type and wanted_type not in labels:
+                    continue
+
+                name = str(data.get("name", "") or "")
+                aliases = [str(alias or "") for alias in data.get("aliases", []) or []]
+                if kw:
+                    haystacks = [name.lower()] + [alias.lower() for alias in aliases]
+                    if not any(kw in item for item in haystacks):
+                        continue
+
+                results.append(
+                    {
+                        "id": str(data.get("id") or node_id),
+                        "name": name or str(node_id),
+                        "types": labels or ["Entity"],
+                        "description": str(data.get("description", "") or ""),
+                    }
                 )
-                params["kw"] = keyword
-            
-            where_clause = ""
-            if where_clauses:
-                where_clause = "WHERE " + " AND ".join(where_clauses)
-            
-            # 完整查询
-            cypher = f"""
-            {match_clause}
-            {where_clause}
-            RETURN e.id as id, e.name as name, labels(e) as types, e.description as description
-            LIMIT 50
-            """
-            
-            results = self.neo4j_utils.execute_query(cypher, params)
-            
+
+            results.sort(key=lambda row: (row["name"], row["id"]))
+            results = results[:50]
+
             if not results:
                 return "<p style='color: gray;'>未找到匹配的实体</p>", "ℹ️ 未找到结果"
             
@@ -148,18 +199,8 @@ class KnowledgeGraphEditor:
     def get_entity_types(self) -> List[str]:
         """获取所有实体类型"""
         try:
-            cypher = """
-            MATCH (e)
-            RETURN DISTINCT labels(e) as types
-            """
-            results = self.neo4j_utils.execute_query(cypher)
-            
-            types = set()
-            for record in results:
-                for label in record.get('types', []):
-                    types.add(label)
-            
-            return ["全部"] + sorted(list(types))
+            types = [label for label in self.graph_query_utils.list_entity_types() if label and label != "Entity"]
+            return ["全部"] + sorted(types)
         except Exception as e:
             print(f"获取实体类型出错: {e}")
             return ["全部"]
@@ -179,29 +220,20 @@ class KnowledgeGraphEditor:
         try:
             if not entity_id or not entity_id.strip():
                 return "", "", "", "", "", "", "⚠️ 请输入实体ID"
-            
-            cypher = """
-            MATCH (e {id: $entity_id})
-            RETURN e
-            """
-            
-            results = self.neo4j_utils.execute_query(cypher, {"entity_id": entity_id.strip()})
-            
-            if not results:
+
+            node_id = entity_id.strip()
+            graph = self._graph()
+            if not graph.has_node(node_id):
                 return "", "", "", "", "", "", f"❌ 未找到实体: {entity_id}"
-            
-            entity_node = results[0]['e']
-            
+
+            entity_node = dict(graph.nodes[node_id])
+
             # 提取实体信息
             entity_name = entity_node.get('name', '')
             entity_description = entity_node.get('description', '')
-            
-            # 处理 labels 属性
-            if hasattr(entity_node, 'labels'):
-                entity_types = ', '.join(entity_node.labels)
-            else:
-                entity_types = 'Unknown'
-            
+
+            entity_types = ', '.join(self._node_labels(entity_node)) or 'Unknown'
+
             # 提取别名
             aliases = entity_node.get('aliases', [])
             aliases_json = json.dumps(aliases, ensure_ascii=False, indent=2)
@@ -332,11 +364,7 @@ class KnowledgeGraphEditor:
 
             neighbor_id = neighbor.get("id", "unknown")
             neighbor_name = neighbor.get("name", "Unknown")
-
-            if hasattr(rel, "type"):
-                rel_type = rel.type
-            else:
-                rel_type = "RELATED_TO"
+            rel_type = self._relation_type(rel or {})
 
             preview = get_properties_preview(rel)
 
@@ -375,11 +403,7 @@ class KnowledgeGraphEditor:
 
             other_id = other.get("id", "unknown")
             other_name = other.get("name", "Unknown")
-
-            if hasattr(rel, "type"):
-                rel_type = rel.type
-            else:
-                rel_type = "RELATED_TO"
+            rel_type = self._relation_type(rel or {})
 
             preview = get_properties_preview(rel)
 
@@ -428,29 +452,29 @@ class KnowledgeGraphEditor:
             (关系列表 HTML, 可视化 HTML(iframe), 状态信息)
         """
         try:
+            if Network is None:
+                return "", "", "❌ 未安装 pyvis，无法生成可视化"
             if not entity_id or not entity_id.strip():
                 # 注意：这里要返回 3 个值，对应 gradio 的 3 个输出
                 return "", "", "⚠️ 请输入实体ID"
 
-            # 查询中心节点和 1-hop 邻居
-            cypher = """
-            MATCH (center {id: $entity_id})
-            OPTIONAL MATCH (center)-[r1]->(neighbor)
-            OPTIONAL MATCH (other)-[r2]->(center)
-            RETURN center, 
-                   collect(DISTINCT {node: neighbor, rel: r1, direction: 'out'}) as outgoing,
-                   collect(DISTINCT {node: other, rel: r2, direction: 'in'}) as incoming
-            """
-
-            results = self.neo4j_utils.execute_query(cypher, {"entity_id": entity_id.strip()})
-
-            if not results:
+            graph = self._graph()
+            center_id = entity_id.strip()
+            if not graph.has_node(center_id):
                 return "", "", f"❌ 未找到实体: {entity_id}"
 
-            result = results[0]
-            center_node = result["center"]
-            outgoing = result.get("outgoing", [])
-            incoming = result.get("incoming", [])
+            center_node = dict(graph.nodes[center_id])
+            center_node.setdefault("id", center_id)
+            outgoing = []
+            incoming = []
+            for _src, dst, _key, data in graph.out_edges(center_id, keys=True, data=True):
+                if not graph.has_node(dst):
+                    continue
+                outgoing.append({"node": dict(graph.nodes[dst]), "rel": dict(data)})
+            for src, _dst, _key, data in graph.in_edges(center_id, keys=True, data=True):
+                if not graph.has_node(src):
+                    continue
+                incoming.append({"node": dict(graph.nodes[src]), "rel": dict(data)})
 
             # 创建网络图，使用 CDN 资源
             net = Network(
@@ -502,10 +526,7 @@ class KnowledgeGraphEditor:
             # 添加中心节点
             center_id = center_node.get("id", entity_id)
             center_name = center_node.get("name", "Unknown")
-            if hasattr(center_node, "labels"):
-                center_type = ", ".join(center_node.labels)
-            else:
-                center_type = "Unknown"
+            center_type = ", ".join(self._node_labels(center_node)) or "Unknown"
 
             net.add_node(
                 center_id,
@@ -526,11 +547,7 @@ class KnowledgeGraphEditor:
 
                 neighbor_id = neighbor.get("id", "unknown")
                 neighbor_name = neighbor.get("name", "Unknown")
-
-                if hasattr(neighbor, "labels"):
-                    neighbor_type = ", ".join(neighbor.labels)
-                else:
-                    neighbor_type = "Unknown"
+                neighbor_type = ", ".join(self._node_labels(neighbor)) or "Unknown"
 
                 net.add_node(
                     neighbor_id,
@@ -541,11 +558,7 @@ class KnowledgeGraphEditor:
                 )
 
                 if rel is not None:
-                    if hasattr(rel, "type"):
-                        rel_type = rel.type
-                    else:
-                        rel_type = "RELATED_TO"
-
+                    rel_type = self._relation_type(rel)
                     net.add_edge(
                         center_id,
                         neighbor_id,
@@ -564,11 +577,7 @@ class KnowledgeGraphEditor:
 
                 other_id = other.get("id", "unknown")
                 other_name = other.get("name", "Unknown")
-
-                if hasattr(other, "labels"):
-                    other_type = ", ".join(other.labels)
-                else:
-                    other_type = "Unknown"
+                other_type = ", ".join(self._node_labels(other)) or "Unknown"
 
                 if other_id not in [node["id"] for node in net.nodes]:
                     net.add_node(
@@ -580,11 +589,7 @@ class KnowledgeGraphEditor:
                     )
 
                 if rel is not None:
-                    if hasattr(rel, "type"):
-                        rel_type = rel.type
-                    else:
-                        rel_type = "RELATED_TO"
-
+                    rel_type = self._relation_type(rel)
                     net.add_edge(
                         other_id,
                         center_id,
@@ -649,61 +654,48 @@ class KnowledgeGraphEditor:
         try:
             if not entity_id or not entity_id.strip():
                 return "⚠️ 请输入实体ID"
-            
+
             # 解析别名JSON
             try:
                 aliases = json.loads(aliases_json) if aliases_json else []
             except json.JSONDecodeError as e:
                 return f"❌ 别名JSON格式错误: {str(e)}"
-            
+            if not isinstance(aliases, list):
+                return "❌ 别名JSON必须是数组"
+
             # 解析属性JSON
             try:
                 properties = json.loads(properties_json) if properties_json else {}
             except json.JSONDecodeError as e:
                 return f"❌ 属性JSON格式错误: {str(e)}"
-            
-            # 构造更新参数
-            params = {"entity_id": entity_id.strip()}
-            set_clauses = []
-            
-            # 更新基本字段
-            if entity_name:
-                set_clauses.append("e.name = $name")
-                params["name"] = entity_name
-            
-            if entity_description:
-                set_clauses.append("e.description = $description")
-                params["description"] = entity_description
-            
-            if aliases:
-                set_clauses.append("e.aliases = $aliases")
-                params["aliases"] = aliases
-            
-            # 更新 properties
-            if properties:
-                set_clauses.append("e.properties = $properties")
-                params["properties"] = json.dumps(properties, ensure_ascii=False)
-                
-                # 同时将 properties 中的字段直接设置到节点上
-                for key, value in properties.items():
-                    param_name = f"prop_{key}"
-                    set_clauses.append(f"e.{key} = ${param_name}")
-                    params[param_name] = value
-            
-            if not set_clauses:
-                return "⚠️ 没有要更新的内容"
-            
-            cypher = f"""
-            MATCH (e {{id: $entity_id}})
-            SET {', '.join(set_clauses)}
-            RETURN e
-            """
-            
-            results = self.neo4j_utils.execute_query(cypher, params)
-            
-            if not results:
+            if not isinstance(properties, dict):
+                return "❌ 属性JSON必须是对象"
+
+            node_id = entity_id.strip()
+            graph = self._graph()
+            if not graph.has_node(node_id):
                 return f"❌ 未找到实体: {entity_id}"
-            
+
+            entity_node = graph.nodes[node_id]
+            reserved_fields = {
+                "id", "name", "description", "aliases", "embedding", "source_chunks",
+                "additional_chunks", "scope", "version", "types", "type", "labels",
+                "source_documents", "community_id", "community_path", "pagerank",
+                "degree", "betweenness",
+            }
+            old_properties = self._safe_dict(entity_node.get("properties", {}))
+            self._remove_flattened_props(entity_node, old_properties, reserved_fields)
+
+            entity_node["name"] = entity_name
+            entity_node["description"] = entity_description
+            entity_node["aliases"] = aliases
+            entity_node["properties"] = properties
+            for key, value in properties.items():
+                if key in reserved_fields:
+                    continue
+                entity_node[key] = value
+
+            self._persist()
             return f"✅ 实体更新成功: {entity_id}"
             
         except Exception as e:
@@ -722,28 +714,15 @@ class KnowledgeGraphEditor:
         try:
             if not entity_id or not entity_id.strip():
                 return "⚠️ 请输入实体ID"
-            
-            # 先检查实体是否存在
-            check_cypher = """
-            MATCH (e {id: $entity_id})
-            RETURN e.name as name
-            """
-            
-            results = self.neo4j_utils.execute_query(check_cypher, {"entity_id": entity_id.strip()})
-            
-            if not results:
+
+            node_id = entity_id.strip()
+            graph = self._graph()
+            if not graph.has_node(node_id):
                 return f"❌ 未找到实体: {entity_id}"
-            
-            entity_name = results[0].get('name', entity_id)
-            
-            # 删除实体及其所有关系
-            delete_cypher = """
-            MATCH (e {id: $entity_id})
-            DETACH DELETE e
-            """
-            
-            self.neo4j_utils.execute_query(delete_cypher, {"entity_id": entity_id.strip()})
-            
+
+            entity_name = graph.nodes[node_id].get('name', entity_id)
+            graph.remove_node(node_id)
+            self._persist()
             return f"✅ 实体已删除: {entity_name} ({entity_id})"
             
         except Exception as e:
@@ -762,27 +741,17 @@ class KnowledgeGraphEditor:
         try:
             if not entity_id or not entity_id.strip():
                 return "", "⚠️ 请输入实体ID"
-            
-            # 加载实体
-            cypher = """
-            MATCH (e {id: $entity_id})
-            RETURN e
-            """
-            
-            results = self.neo4j_utils.execute_query(cypher, {"entity_id": entity_id.strip()})
-            
-            if not results:
+
+            node_id = entity_id.strip()
+            graph = self._graph()
+            if not graph.has_node(node_id):
                 return "", f"❌ 未找到实体: {entity_id}"
-            
-            entity_node = results[0]['e']
-            
+
+            entity_node = dict(graph.nodes[node_id])
             # 提取实体类型
-            if hasattr(entity_node, 'labels'):
-                entity_types = list(entity_node.labels)
-                node_type = entity_types[0] if entity_types else ""
-            else:
-                node_type = ""
-            
+            entity_types = self._node_labels(entity_node)
+            node_type = entity_types[0] if entity_types else ""
+
             # 构造节点数据用于编码
             node_data = {
                 "name": entity_node.get('name', ''),
@@ -798,23 +767,13 @@ class KnowledgeGraphEditor:
                 except:
                     node_data["properties"] = {}
             
-            # 调用 neo4j_utils 的 encode_node_embedding 方法
-            if not hasattr(self.neo4j_utils, 'encode_node_embedding'):
-                return "", "❌ Neo4jUtils 不支持 encode_node_embedding 方法"
+            # 调用 graph_query_utils 的 encode_node_embedding 方法
+            if not hasattr(self.graph_query_utils, 'encode_node_embedding'):
+                return "", "❌ 当前图后端不支持 encode_node_embedding 方法"
             
-            embedding = self.neo4j_utils.encode_node_embedding(node_data)
-            
-            # 更新 embedding
-            update_cypher = """
-            MATCH (e {id: $entity_id})
-            SET e.embedding = $embedding
-            RETURN e
-            """
-            
-            self.neo4j_utils.execute_query(update_cypher, {
-                "entity_id": entity_id.strip(),
-                "embedding": embedding
-            })
+            embedding = self.graph_query_utils.encode_node_embedding(node_data)
+
+            self.graph_query_utils.update_node_embedding(node_id, embedding)
             
             embedding_status = f"✅ 已计算 (维度: {len(embedding)})"
             return embedding_status, f"✅ Embedding 重新计算成功: {entity_id}"
@@ -838,23 +797,42 @@ class KnowledgeGraphEditor:
         try:
             if not src_entity_id or not tgt_entity_id:
                 return "<p style='color: orange;'>请输入源实体ID和目标实体ID</p>", "⚠️ 请输入完整的实体ID", "", "{}"
-            
-            # 双向查询：查找 src->tgt 和 tgt->src 的关系
-            cypher = """
-            MATCH (src {id: $src_id})-[r]->(tgt {id: $tgt_id})
-            RETURN src.name as src_name, src.id as src_id, type(r) as rel_type, 
-                   properties(r) as rel_props, tgt.name as tgt_name, tgt.id as tgt_id, 'forward' as direction
-            UNION
-            MATCH (tgt {id: $src_id})<-[r]-(src {id: $tgt_id})
-            RETURN src.name as src_name, src.id as src_id, type(r) as rel_type, 
-                   properties(r) as rel_props, tgt.name as tgt_name, tgt.id as tgt_id, 'reverse' as direction
-            """
-            
-            results = self.neo4j_utils.execute_query(cypher, {
-                "src_id": src_entity_id.strip(),
-                "tgt_id": tgt_entity_id.strip()
-            })
-            
+
+            src_id = src_entity_id.strip()
+            tgt_id = tgt_entity_id.strip()
+            graph = self._graph()
+            results = []
+
+            if graph.has_node(src_id) and graph.has_node(tgt_id):
+                for _src, _dst, _key, data in graph.out_edges(src_id, keys=True, data=True):
+                    if _dst != tgt_id:
+                        continue
+                    results.append(
+                        {
+                            "src_name": graph.nodes[src_id].get("name", src_id),
+                            "src_id": src_id,
+                            "rel_type": self._relation_type(data),
+                            "rel_props": dict(data),
+                            "tgt_name": graph.nodes[tgt_id].get("name", tgt_id),
+                            "tgt_id": tgt_id,
+                            "direction": "forward",
+                        }
+                    )
+                for _src, _dst, _key, data in graph.out_edges(tgt_id, keys=True, data=True):
+                    if _dst != src_id:
+                        continue
+                    results.append(
+                        {
+                            "src_name": graph.nodes[tgt_id].get("name", tgt_id),
+                            "src_id": tgt_id,
+                            "rel_type": self._relation_type(data),
+                            "rel_props": dict(data),
+                            "tgt_name": graph.nodes[src_id].get("name", src_id),
+                            "tgt_id": src_id,
+                            "direction": "reverse",
+                        }
+                    )
+
             if not results:
                 return "<p style='color: gray;'>未找到这两个实体之间的关系</p>", "ℹ️ 未找到关系", "", "{}"
             
@@ -960,78 +938,55 @@ class KnowledgeGraphEditor:
         try:
             if not src_entity_id or not tgt_entity_id or not rel_type:
                 return "⚠️ 请输入完整的实体ID和关系类型"
-            
+
             # 解析属性JSON
             try:
                 properties = json.loads(properties_json)
             except json.JSONDecodeError as e:
                 return f"❌ 属性JSON格式错误: {str(e)}"
-            
-            # 判断是否需要修改关系类型
-            if new_rel_type and new_rel_type.strip() and new_rel_type.strip() != rel_type.strip():
-                # 需要修改关系类型：删除旧关系，创建新关系
-                new_type = new_rel_type.strip()
-                
-                params = {
-                    "src_id": src_entity_id.strip(),
-                    "tgt_id": tgt_entity_id.strip(),
-                    "properties": json.dumps(properties, ensure_ascii=False)
-                }
-                
-                # 添加属性参数
-                for key, value in properties.items():
-                    param_name = f"prop_{key}"
-                    params[param_name] = value
-                
-                # 构造属性设置子句
-                prop_assignments = ["properties: $properties"]
-                for key in properties.keys():
-                    prop_assignments.append(f"{key}: $prop_{key}")
-                
-                cypher = f"""
-                MATCH (src {{id: $src_id}})-[old_r:{rel_type}]->(tgt {{id: $tgt_id}})
-                CREATE (src)-[new_r:{new_type}]->(tgt)
-                SET new_r = {{{', '.join(prop_assignments)}}}
-                DELETE old_r
-                RETURN new_r
-                """
-                
-                results = self.neo4j_utils.execute_query(cypher, params)
-                
-                if not results:
-                    return f"❌ 未找到指定的关系: {rel_type}"
-                
-                return f"✅ 关系类型已修改: {src_entity_id} -[{rel_type}]-> {tgt_entity_id} → {src_entity_id} -[{new_type}]-> {tgt_entity_id}"
-            
-            else:
-                # 只更新属性，不修改关系类型
-                params = {
-                    "src_id": src_entity_id.strip(),
-                    "tgt_id": tgt_entity_id.strip(),
-                    "properties": json.dumps(properties, ensure_ascii=False)
-                }
-                
-                # 将属性保存到 properties 字段
-                set_clauses = ["r.properties = $properties"]
-                
-                # 同时也将属性展开到关系的顶层（保持兼容性）
-                for key, value in properties.items():
-                    param_name = f"prop_{key}"
-                    set_clauses.append(f"r.{key} = ${param_name}")
-                    params[param_name] = value
-                
-                cypher = f"""
-                MATCH (src {{id: $src_id}})-[r:{rel_type}]->(tgt {{id: $tgt_id}})
-                SET {', '.join(set_clauses)}
-                RETURN r
-                """
-                
-                results = self.neo4j_utils.execute_query(cypher, params)
-                
-                if not results:
-                    return f"❌ 未找到指定的关系: {rel_type}"
-                
-                return f"✅ 关系更新成功: {src_entity_id} -[{rel_type}]-> {tgt_entity_id}"
+            if not isinstance(properties, dict):
+                return "❌ 属性JSON必须是对象"
+
+            src_id = src_entity_id.strip()
+            tgt_id = tgt_entity_id.strip()
+            current_type = rel_type.strip()
+            target_type = (new_rel_type or "").strip() or current_type
+            graph = self._graph()
+            if not graph.has_node(src_id) or not graph.has_node(tgt_id):
+                return f"❌ 未找到指定的关系: {rel_type}"
+
+            matched = []
+            for _src, _dst, key, data in graph.out_edges(src_id, keys=True, data=True):
+                if _dst != tgt_id or self._relation_type(data) != current_type:
+                    continue
+                matched.append((key, data))
+
+            if not matched:
+                return f"❌ 未找到指定的关系: {rel_type}"
+
+            reserved_fields = {
+                "id", "subject_id", "object_id", "predicate", "relation_type", "type",
+                "relation_name", "persistence", "description", "confidence",
+                "properties", "source_documents", "embedding",
+            }
+            for key, rel_data in matched:
+                old_properties = self._safe_dict(rel_data.get("properties", {}))
+                self._remove_flattened_props(rel_data, old_properties, reserved_fields)
+                rel_data["id"] = rel_data.get("id") or key
+                rel_data["subject_id"] = src_id
+                rel_data["object_id"] = tgt_id
+                rel_data["predicate"] = target_type
+                rel_data["relation_type"] = target_type
+                rel_data["properties"] = properties
+                for prop_key, prop_value in properties.items():
+                    if prop_key in reserved_fields:
+                        continue
+                    rel_data[prop_key] = prop_value
+
+            self._persist()
+            if target_type != current_type:
+                return f"✅ 关系类型已修改: {src_entity_id} -[{current_type}]-> {tgt_entity_id} → {src_entity_id} -[{target_type}]-> {tgt_entity_id}"
+            return f"✅ 关系更新成功: {src_entity_id} -[{current_type}]-> {tgt_entity_id}"
             
         except Exception as e:
             return f"❌ 更新出错: {str(e)}"
@@ -1051,35 +1006,28 @@ class KnowledgeGraphEditor:
         try:
             if not src_entity_id or not tgt_entity_id or not rel_type:
                 return "⚠️ 请输入完整的实体ID和关系类型"
-            
-            # 先检查关系是否存在
-            check_cypher = f"""
-            MATCH (src {{id: $src_id}})-[r:{rel_type}]->(tgt {{id: $tgt_id}})
-            RETURN src.name as src_name, tgt.name as tgt_name
-            """
-            
-            results = self.neo4j_utils.execute_query(check_cypher, {
-                "src_id": src_entity_id.strip(),
-                "tgt_id": tgt_entity_id.strip()
-            })
-            
-            if not results:
+
+            src_id = src_entity_id.strip()
+            tgt_id = tgt_entity_id.strip()
+            target_type = rel_type.strip()
+            graph = self._graph()
+            if not graph.has_node(src_id) or not graph.has_node(tgt_id):
                 return f"❌ 未找到指定的关系: {rel_type}"
-            
-            src_name = results[0].get('src_name', src_entity_id)
-            tgt_name = results[0].get('tgt_name', tgt_entity_id)
-            
-            # 删除关系
-            delete_cypher = f"""
-            MATCH (src {{id: $src_id}})-[r:{rel_type}]->(tgt {{id: $tgt_id}})
-            DELETE r
-            """
-            
-            self.neo4j_utils.execute_query(delete_cypher, {
-                "src_id": src_entity_id.strip(),
-                "tgt_id": tgt_entity_id.strip()
-            })
-            
+
+            matched_keys = []
+            for _src, _dst, key, data in graph.out_edges(src_id, keys=True, data=True):
+                if _dst != tgt_id or self._relation_type(data) != target_type:
+                    continue
+                matched_keys.append(key)
+
+            if not matched_keys:
+                return f"❌ 未找到指定的关系: {rel_type}"
+
+            src_name = graph.nodes[src_id].get('name', src_entity_id)
+            tgt_name = graph.nodes[tgt_id].get('name', tgt_entity_id)
+            for key in matched_keys:
+                graph.remove_edge(src_id, tgt_id, key)
+            self._persist()
             return f"✅ 关系已删除: {src_name} -[{rel_type}]-> {tgt_name}"
             
         except Exception as e:
@@ -1090,34 +1038,39 @@ class KnowledgeGraphEditor:
         try:
             if not src_entity_id or not tgt_entity_id:
                 return [""]
-            
-            cypher = """
-            MATCH (src {id: $src_id})-[r]->(tgt {id: $tgt_id})
-            RETURN DISTINCT type(r) as rel_type
-            """
-            
-            results = self.neo4j_utils.execute_query(cypher, {
-                "src_id": src_entity_id.strip(),
-                "tgt_id": tgt_entity_id.strip()
-            })
-            
-            return [record['rel_type'] for record in results]
+
+            src_id = src_entity_id.strip()
+            tgt_id = tgt_entity_id.strip()
+            graph = self._graph()
+            if not graph.has_node(src_id) or not graph.has_node(tgt_id):
+                return [""]
+
+            relation_types = []
+            for _src, _dst, _key, data in graph.out_edges(src_id, keys=True, data=True):
+                if _dst != tgt_id:
+                    continue
+                rel_name = self._relation_type(data)
+                if rel_name not in relation_types:
+                    relation_types.append(rel_name)
+            return relation_types or [""]
         except Exception as e:
             print(f"获取关系类型出错: {e}")
             return [""]
 
 
-def create_gradio_interface(neo4j_utils):
+def create_gradio_interface(graph_query_utils):
     """
     创建Gradio界面
     
     Args:
-        neo4j_utils: Neo4jUtils 实例
+        graph_query_utils: GraphQueryUtils 实例
         
     Returns:
         Gradio应用实例
     """
-    editor = KnowledgeGraphEditor(neo4j_utils)
+    if gr is None:
+        raise ModuleNotFoundError("gradio is required to launch the knowledge graph editor UI.")
+    editor = KnowledgeGraphEditor(graph_query_utils)
     
     # 获取实体类型列表
     entity_types = editor.get_entity_types()
@@ -1379,16 +1332,16 @@ def create_gradio_interface(neo4j_utils):
 
 # ==================== 主程序入口 ====================
 
-def launch_editor(neo4j_utils, share=False, server_port=7860):
+def launch_editor(graph_query_utils, share=False, server_port=7860):
     """
     启动知识图谱编辑器
     
     Args:
-        neo4j_utils: Neo4jUtils 实例
+        graph_query_utils: GraphQueryUtils 实例
         share: 是否创建公共链接
         server_port: 服务器端口
     """
-    app = create_gradio_interface(neo4j_utils)
+    app = create_gradio_interface(graph_query_utils)
     
     # 确保静态文件目录存在
     static_dir = "./kg_editor/static"

@@ -5,19 +5,15 @@ Extractor Module
 
 This module provides a unified **information extraction interface** that connects
 to multiple LLM-backed function tools. It serves as the central entry point for
-entity, relation, attribute, and CMP (Costume/Makeup/Props) extraction tasks,
-with optional reflection for iterative improvement.
+entity, relation, attribute extraction tasks.
 
 Supported tasks:
 ----------------
 - Entity extraction
 - Relation extraction
-- Extraction reflection (quality audit)
-- Attribute extraction & reflection
-- Prop item extraction
-- Wardrobe (costume) extraction
-- Styling (makeup/hair) extraction
-- CMP reflection
+- Property Extraction
+- Property Merging
+
 
 Class:
 ------
@@ -30,12 +26,7 @@ Usage example:
     >>> from core.utils.prompt_loader import PromptLoader
     >>> config = KAGConfig.load("config.yaml")
     >>> extractor = InformationExtractor(config, llm)
-    >>> entities = extractor.extract_entities(
-    ...     text="John picked up the sword and left the castle.",
-    ...     entity_type_description_text="Character, Object, Location",
-    ...     system_prompt="Extract entities from text",
-    ...     reflection_results={}
-    ... )
+    >>> entities = extractor.extract_entities(text, entity_type="Character")
 """
 
 import json
@@ -44,17 +35,12 @@ from core.utils.config import KAGConfig
 from core.functions.regular_functions import (
     EntityExtractor,
     RelationExtractor,
-    ExtractionReflector,
-    AttributeExtractor,
-    AttributeReflector,
-    AttributeUpdater,
-    PropItemExtractor,
-    WardrobeExtractor,
-    StylingExtractor,
-    CMPReflector,
-    CharacterStatusExtractor
+    PropertyExtractor,
+    PropertyFinalizer,
+    InteractionExtractor,
 )
-from core.utils.prompt_loader import PromptLoader
+
+from core.utils.prompt_loader import JSONPromptLoader, YAMLPromptLoader
 import os
 
 
@@ -62,249 +48,130 @@ class InformationExtractor:
     """
     High-level information extractor facade.
 
-    Wraps multiple tool interfaces (entity, relation, attribute, CMP) and
-    exposes them as easy-to-use methods. Supports optional reflection
-    for iterative quality improvements.
+    Wraps multiple tool interfaces (entity, relation, property) and
+    exposes them as easy-to-use methods.
     """
 
-    def __init__(self, config: KAGConfig, llm, prompt_loader: PromptLoader = None):
+    def __init__(self, config: KAGConfig, llm):
         self.config = config
         self.llm = llm
-        if not prompt_loader:
-            prompt_dir = self.config.knowledge_graph_builder.prompt_dir
-            self.prompt_loader = PromptLoader(prompt_dir)
-        else:
-            self.prompt_loader = prompt_loader
+        prompt_dir = self.config.global_config.prompt_dir
+        self.prompt_loader = YAMLPromptLoader(prompt_dir)
+        schema_dir = self.config.global_config.schema_dir
+        task_dir = self.config.global_config.task_dir
 
-        # Wrapped function tools
-        self.entity_extraction = EntityExtractor(self.prompt_loader, self.llm)
-        self.relation_extraction = RelationExtractor(self.prompt_loader, self.llm)
-        self.extraction_reflection = ExtractionReflector(self.prompt_loader, self.llm)
-        self.attribute_extraction = AttributeExtractor(self.prompt_loader, self.llm)
-        self.attribute_updater = AttributeUpdater(self.prompt_loader, self.llm)
-        self.attribute_reflection = AttributeReflector(self.prompt_loader, self.llm)
-        self.propitem_extraction = PropItemExtractor(self.prompt_loader, self.llm)
-        self.styling_extraction = StylingExtractor(self.prompt_loader, self.llm)
-        self.wardrobe_extraction = WardrobeExtractor(self.prompt_loader, self.llm)
-        self.costume_reflection = CMPReflector(self.prompt_loader, self.llm)
-        self.character_status_extraction = CharacterStatusExtractor(self.prompt_loader, self.llm)
+        entity_schema_path = os.path.join(schema_dir, "default_entity_schema.json")
+        relation_schema_path = os.path.join(schema_dir, "default_relation_schema.json")
+        interaction_schema_path = os.path.join(schema_dir, "default_interaction_schema.json")
+        entity_task_path = os.path.join(task_dir, "entity_extraction_task.json")
+        relation_task_path = os.path.join(task_dir, "relation_extraction_task.json")
+        interaction_task_path = os.path.join(task_dir, "interaction_extraction_task.json")
 
+        self.entity_extraction = EntityExtractor(llm=self.llm, prompt_loader=self.prompt_loader, task_schema_path=entity_task_path, entity_schema_path=entity_schema_path)
+        self.relation_extraction = RelationExtractor(llm=self.llm, prompt_loader=self.prompt_loader, task_schema_path=relation_task_path, relation_schema_path=relation_schema_path)
+        self.interaction_extraction = InteractionExtractor(
+            llm=self.llm,
+            prompt_loader=self.prompt_loader,
+            task_schema_path=interaction_task_path,
+            interaction_schema_path=interaction_schema_path,
+        )
+
+        self.property_extraction = PropertyExtractor(llm=self.llm, prompt_loader=self.prompt_loader, schema_path=entity_schema_path)
+        self.property_merger = PropertyFinalizer(llm=self.llm, prompt_loader=self.prompt_loader)
     # ---------------- Entity & Relation ----------------
 
     def extract_entities(
         self,
         text: str,
-        entity_type_description_text: str,
-        system_prompt: str,
-        reflection_results: dict,
-        previous_results: dict,
-        enable_thinking: bool = True,
+        entity_group: str,
+        previous_results: str = None,
+        extracted_entities: str = None,
+        feedbacks: str = None,
+        memory_context: str = "",
     ) -> str:
         """Extract entities from text."""
         params = {
             "text": text,
-            "entity_type_description_text": entity_type_description_text,
-            "system_prompt": system_prompt,
-            "reflection_results": reflection_results,
+            "entity_group": entity_group,
             "previous_results": previous_results,
+            "extracted_entities": extracted_entities,
+            "feedbacks": feedbacks,
+            "memory_context": memory_context,
         }
-        result = self.entity_extraction.call(params=json.dumps(params), enable_thinking=enable_thinking)
+        result = self.entity_extraction.call(params=json.dumps(params))
         return result
-
+    
     def extract_relations(
         self,
         text: str,
-        entity_list: str,
-        relation_type_description_text: str,
-        system_prompt: str,
-        reflection_results: dict | str,
-        previous_results: dict,
-        enable_thinking: bool = True,
+        previous_results: str = None,
+        extracted_entities: str = None,
+        extracted_relations: str = None,
+        relation_group: str = None,
+        feedbacks: str = None,
+        memory_context: str = "",
     ) -> str:
         """Extract relations from text."""
         params = {
             "text": text,
-            "entity_list": entity_list,
-            "relation_type_description_text": relation_type_description_text,
-            "reflection_results": reflection_results,
             "previous_results": previous_results,
-            "system_prompt": system_prompt,
+            "extracted_entities": extracted_entities,
+            "extracted_relations": extracted_relations,
+            "relation_group": relation_group,
+            "feedbacks": feedbacks,
+            "memory_context": memory_context,
         }
-        result = self.relation_extraction.call(params=json.dumps(params), enable_thinking=enable_thinking)
+        result = self.relation_extraction.call(params=json.dumps(params))
         return result
 
-    def reflect_extractions(
+    def extract_interactions(
         self,
-        logs: str,
-        entity_type_description_text: str,
-        relation_type_description_text: str,
-        system_prompt: str,
-        original_text: str = None,
-        previous_reflection: dict | str = None,
-        enable_thinking: bool = True,
-        version: str = "default",
+        text: str,
+        extracted_entities: str = None,
+        extracted_interactions: str = None,
+        interaction_group: str = None,
+        previous_results: str = None,
+        feedbacks: str = None,
     ) -> str:
-        """Reflect on extraction quality and produce feedback."""
+        """Extract interaction records from text."""
         params = {
-            "logs": logs,
-            "entity_type_description_text": entity_type_description_text,
-            "relation_type_description_text": relation_type_description_text,
-            "original_text": original_text,
-            "system_prompt": system_prompt,
-            "previous_reflection": previous_reflection,
-            "version": version,
+            "text": text,
+            "extracted_entities": extracted_entities,
+            "extracted_interactions": extracted_interactions,
+            "interaction_group": interaction_group,
+            "previous_results": previous_results,
+            "feedbacks": feedbacks,
         }
-        result = self.extraction_reflection.call(params=json.dumps(params), enable_thinking=enable_thinking)
+        result = self.interaction_extraction.call(params=json.dumps(params))
         return result
 
     # ---------------- Attributes ----------------
-
-    def extract_entity_attributes(
+    def extract_entity_properties(
         self,
         text: str,
         entity_name: str,
-        description: str,
-        entity_type: str,
-        attribute_definitions: str,
-        system_prompt: str = "",
-        previous_results: str = None,
-        feedbacks: str = None,
-        enable_thinking: bool = True,
+        entity_type: str
     ) -> str:
-        """Extract structured attributes for a given entity."""
         params = {
             "text": text,
-            "description": description,
             "entity_name": entity_name,
-            "entity_type": entity_type,
-            "attribute_definitions": attribute_definitions,
-            "system_prompt": system_prompt,
-            "previous_results": previous_results,
-            "feedbacks": feedbacks,
-            "enable_thinking": enable_thinking,
+            "entity_type": entity_type
         }
-        result = self.attribute_extraction.call(params=json.dumps(params))
+        result = self.property_extraction.call(params=json.dumps(params))
         return result
-
-
-    def reflect_entity_attributes(
+    
+    def merge_entity_properties(
         self,
-        entity_type: str,
-        description: str,
-        attribute_definitions: str,
-        attributes: str,
-        system_prompt: str = "",
-        enable_thinking: bool = True,
-    ) -> str:
-        """Reflect on attribute extraction quality (completeness, correctness, retry needs)."""
-        params = {
-            "entity_type": entity_type,
-            "description": description,
-            "attribute_definitions": attribute_definitions,
-            "attributes": attributes,
-            "system_prompt": system_prompt,
-            "enable_thinking": enable_thinking,
-        }
-        result = self.attribute_reflection.call(params=json.dumps(params))
-        return result
-
-    def update_entity_attributes(
-        self,
-        text: str,
         entity_name: str,
-        description: str,
-        entity_type: str,
-        attribute_definitions: str,
-        prev_attributes: Any = None,
-        prev_description: str = "",
-        system_prompt: str = "",
-        feedbacks: str = None,
-        enable_thinking: bool = True,
+        properties: str,
+        full_description: str,
+        num_properties: int = 5
     ) -> str:
-        """
-        基于 IncrementalAttributeExtractor 的增量属性抽取接口。
-
-        Args:
-            text: 当前 chunk 的文本
-            entity_name: 实体名称
-            description: 实体类型描述
-            entity_type: 实体类型
-            attribute_definitions: 初始/推荐属性定义
-            prev_attributes: 上一轮 attributes（可为 dict / str）
-            prev_description: 上一轮描述
-            system_prompt: 系统提示词
-            feedbacks: 外部反馈
-            enable_thinking: 是否启用 llm 的思考模式
-
-        Returns:
-            str: 处理后的 JSON 字符串（符合 new_description + attributes）
-        """
         params = {
-            "text": text,
-            "description": description,
             "entity_name": entity_name,
-            "entity_type": entity_type,
-            "attribute_definitions": attribute_definitions,
-            "system_prompt": system_prompt,
-            "feedbacks": feedbacks,
-            "prev_attributes": prev_attributes,
-            "prev_description": prev_description,
-            "enable_thinking": enable_thinking,
+            "properties": properties,
+            "num_properties": num_properties,
+            "full_description": full_description
         }
-
-        result = self.attribute_updater.call(params=json.dumps(params))
+        result = self.property_merger.call(params=json.dumps(params))
         return result
-
-
-    # ---------------- CMP (Costume / Makeup / Props) ----------------
-
-    def extract_propitem(self, content: str, system_prompt: str, reflection_results: dict) -> str:
-        """Extract prop items from text."""
-        params = {"content": content, "system_prompt": system_prompt, "reflection_results": reflection_results}
-        result = self.propitem_extraction.call(params=json.dumps(params))
-        return result
-
-    def extract_wardrobe(self, content: str, system_prompt: str, reflection_results: dict) -> str:
-        """Extract wardrobe (costume) items from text."""
-        params = {"content": content, "system_prompt": system_prompt, "reflection_results": reflection_results}
-        result = self.wardrobe_extraction.call(params=json.dumps(params))
-        return result
-
-    def extract_styling(self, content: str, system_prompt: str, reflection_results: dict) -> str:
-        """Extract styling (makeup/hair) details from text."""
-        params = {"content": content, "system_prompt": system_prompt, "reflection_results": reflection_results}
-        result = self.styling_extraction.call(params=json.dumps(params))
-        return result
-
-    def reflect_cmp_extractions(
-        self,
-        logs: str,
-        content: str,
-        system_prompt: str,
-        previous_reflection: dict | str = None,
-    ) -> str:
-        """Reflect on the overall quality of CMP (Costume/Makeup/Props) extractions."""
-        params = {
-            "logs": logs,
-            "content": content,
-            "system_prompt": system_prompt,
-            "previous_reflection": previous_reflection,
-        }
-        result = self.costume_reflection.call(params=json.dumps(params))
-        return result
-
-    def extract_character_status(
-        self,
-        scene_contents: str,
-        timelines: str,
-        character_list: str,
-        enable_thinking: bool = True,
-    ) -> str:
-        """Extract character status over time from scene contents."""
-        params = {
-            "scene_contents": scene_contents,
-            "timelines": timelines,
-            "character_list": character_list,
-        }
-        result = self.character_status_extraction.call(params=json.dumps(params), enable_thinking=enable_thinking)
-        return result   

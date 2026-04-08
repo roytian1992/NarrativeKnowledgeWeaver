@@ -52,7 +52,7 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 from core.models.data import Document
 
-_SENT_ID_RE = re.compile(r"^(?P<parent>.+?)<->(?P<idx>\d+)$")
+_SENT_ID_RE = re.compile(r"^(?P<parent>.+?)(?:<->|__s)(?P<idx>\d+)$")
 
 
 class ParentChildRetriever:
@@ -125,8 +125,12 @@ class ParentChildRetriever:
             return ""
         start = max(1, sent_idx - window)
         end = sent_idx + window
-        ids = [f"{parent_id}-{i}" for i in range(start, end + 1)]
+        ids = [f"{parent_id}<->{i}" for i in range(start, end + 1)]
         neighbors: List[Document] = self.sent_vs.search_by_ids(ids)
+        if not neighbors:
+            # backward compatibility for old sentence ids
+            legacy_ids = [f"{parent_id}__s{i}" for i in range(start, end + 1)]
+            neighbors = self.sent_vs.search_by_ids(legacy_ids)
         pairs = []
         for d in neighbors or []:
             parsed = self._parse_sentence_id(d.id)

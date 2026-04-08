@@ -1,0 +1,115 @@
+id: fix_relation_error
+category: problem_solving
+name: Fix Relation Error
+description: >
+  Fix a constraint violation in relation extraction by either rewriting the relation_type to an allowed one
+  or dropping the relation if no valid rewrite is supported. Strict JSON-only output.
+
+task_variables:
+  - name: content
+    type: string
+    required: true
+    description: The original scene text.
+
+  - name: extracted_relation
+    type: string
+    required: false
+    description: The extracted relation string/object representation (may be empty).
+
+  - name: allowed_relation_types
+    type: string
+    required: true
+    description: Allowed relation types between the entity types, computed from the schema.
+
+  - name: feedback
+    type: string
+    required: false
+    description: Feedback describing the constraint violation (may be empty).
+
+static_variables: []
+
+template: |
+  You are fixing a constraint violation error in a narrative knowledge graph relation extraction.
+
+  TASK
+  You are given:
+  1) The original scene text.
+  2) A feedback item describing the constraint violation.
+  3) Allowed relation types between the two entity types, computed from the schema
+
+  Your goal is to FIX the relation by choosing exactly ONE of:
+  - "rewrite": rewrite ONLY the relation_type to a valid one (do NOT change subject/object).
+  - "drop": drop the relation if no valid rewrite is supported by the text.
+
+  CRITICAL CONSTRAINTS
+  - Do NOT invent information that is not in the text.
+  - Do NOT add new entities. Only fix this relation.
+  - Do NOT change subject or object strings (except trivial cleanup like trimming spaces).
+  - If you choose "rewrite", the new relation_type MUST be one of the allowed relations (see inputs).
+  - If no allowed relation is clearly supported by the Scene Text, you MUST choose "drop".
+  - If there are multiple plausible allowed relations and you cannot confidently pick one, choose "drop".
+
+  INPUTS
+  [Scene Text]
+  {content}
+
+  [Extracted Relation]
+  {extracted_relation}
+
+  [Allowed Relations]
+  {allowed_relation_types}
+
+  [Feedback]
+  {feedback}
+
+  DECISION RULES
+  1) "rewrite"
+  - Choose "rewrite" ONLY IF:
+    (a) the original relation_type is NOT allowed, AND
+    (b) you can select EXACTLY ONE new relation_type from Allowed Relations.
+  - Use the Scene Text as the sole ground truth.
+  - Prefer a relation that matches the clearest, most direct statement in the text.
+
+  2) "drop"
+  - Choose "drop" if:
+    - the original relation_type is not allowed and no valid rewrite is supported by the text, OR
+    - the text is ambiguous among multiple allowed relations, OR
+    - the relation seems implied but not explicitly grounded.
+
+  OUTPUT INSTRUCTIONS
+  1) Relation semantics:
+  - The relation_type MUST be exactly one of the allowed relation types.
+  - The relation_name MUST:
+    - Be a natural-language predicate.
+    - Be specific (not generic like "related_to").
+    - Allow the phrase: "subject relation_name object" to read as a fluent English statement.
+  2) Relation persistence (temporal stability):
+  You MUST assign a persistence label to each extracted relation.
+  - "stable": the relation is enduring and expected to remain true across the narrative unless explicitly changed
+    Examples: kinship_with, affiliated_with, subordinate_to, possesses (long-term custody), long-running hostility.
+  - "phase": the relation holds for a meaningful period but may change later (e.g., friends become enemies, alliance breaks).
+    Use when the text suggests a relationship state rather than a single action.
+  - "momentary": the relation is transient, tied to a single interaction, action, or immediate situation.
+    Examples: pursues in one scene, threatens in a moment, briefly cooperates in a specific event.
+
+  OUTPUT FORMAT
+  Return ONLY one JSON object, with no extra text.
+
+  If decision is "rewrite":
+  {{
+    "decision": "rewrite",
+    "output": {{
+      "subject": "<string, cleaned>",
+      "relation_type": "<one of allowed_forward or allowed_backward>",
+      "object": "<string, cleaned>",
+      "relation_name": "<natural-language predicate>",
+      "persistence": "stable | phase | momentary",
+      "description": "Brief extraction rationale grounded in the text"
+    }}
+  }}
+
+  If decision is "drop":
+  {{
+    "decision": "drop",
+    "output": {{}}
+  }}

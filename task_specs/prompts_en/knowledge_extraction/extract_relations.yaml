@@ -1,0 +1,114 @@
+id: relation_extraction
+category: knowledge_extraction
+name: Relation Extraction
+description: >
+  Extract relations between already-extracted entities with strict JSON output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input chunk text.
+
+  - name: entities
+    type: string
+    required: true
+    description: Already-extracted entity list. Relations must only use these entity names.
+
+  - name: relation_group
+    type: string
+    required: true
+    description: >
+      Relation group key used to select schema content from default_relation_schema.json,
+      e.g., event_occasion_relations, social_relations,
+      spatiotemporal_relations, semantic_relations.
+
+  - name: memory_context
+    type: string
+    required: false
+    description: >
+      Optional extraction memory hints from previous documents.
+      Each line is a past correction or rule that may apply to this chunk.
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+    description: Short name of the extraction task, shown in the prompt header.
+
+  - name: task_goal
+    type: string
+    required: true
+    description: Precise description of what the relation extraction task should accomplish.
+
+  - name: global_constraints
+    type: string
+    required: true
+    description: Global rules and constraints that must always be followed during extraction.
+
+  - name: output_fields_block
+    type: string
+    required: true
+    description: Specification of required output fields for each extracted relation.
+
+  - name: group_name
+    type: string
+    required: true
+    description: Human-readable title of the selected relation group.
+
+  - name: group_constraints_block
+    type: string
+    required: false
+    description: Optional extra constraints specific to the selected relation group.
+
+  - name: relation_schema
+    type: string
+    required: true
+    description: Rendered schema text for the selected relation group. Must be deterministic and compact.
+
+  - name: few_shot_samples
+    type: string
+    required: false
+    description: Optional few-shot examples for the selected group, as a JSON string.
+
+template: |
+  You are performing knowledge graph relation extraction.
+  Task:
+  {task_name}
+
+  Goal:
+  {task_goal}
+
+  Global constraints:
+  {global_constraints}
+
+  Relation group:
+  {relation_group}
+  {group_name}
+
+  Group-specific constraints:
+  {group_constraints_block}
+
+  Allowed relation schema:
+  {relation_schema}
+
+  Output format:
+  Return a JSON array.
+  Each element must include exactly:
+  {output_fields_block}
+
+  Do NOT include any additional fields.
+  Do NOT include explanations, commentary, or additional text outside the JSON.
+
+  Examples:
+  {few_shot_samples}
+
+  Extraction Memory Hints (from past corrections — apply where relevant):
+  {memory_context}
+
+  Input Text:
+  {text}
+
+  Extracted Entities:
+  Relations may ONLY use entity names from this list.
+  {entities}

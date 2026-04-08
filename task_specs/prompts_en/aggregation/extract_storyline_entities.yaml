@@ -1,0 +1,134 @@
+id: extract_storyline_card
+category: aggregation
+name: Extract Storyline Card from Episode Chain
+description: >
+  Summarize a causally ordered episode chain into a single Storyline card with
+  long-form description and structured anchors.
+  Strict JSON-only output.
+
+task_variables:
+  - name: chain_information
+    type: string
+    required: true
+    description: >
+      A natural-language list of episode summaries/descriptions connected by EPISODE_CAUSAL_LINK edges,
+      already ordered by the chain.
+
+static_variables:
+  - name: entity_definitions_text
+    type: string
+    required: true
+    description: Rendered definitions for Episode and Storyline.
+
+  - name: storyline_output_fields_text
+    type: string
+    required: true
+    description: Rendered Storyline output field schema.
+
+  - name: storyline_construction_constraints_text
+    type: string
+    required: true
+    description: Schema-derived structural constraints for Storyline extraction.
+
+  - name: storyline_writing_constraints_text
+    type: string
+    required: true
+    description: Schema-derived writing constraints for Storyline writing.
+
+  - name: storyline_sample_json_text
+    type: string
+    required: true
+    description: A compact sample Storyline object from schema.
+
+template: |
+  You are an information extraction assistant for narrative knowledge graphs.
+  Your task is to convert a causally ordered episode chain into ONE Storyline card and output STRICTLY VALID JSON.
+
+  ====================
+  Definitions
+  ====================
+  {entity_definitions_text}
+
+  ====================
+  Task
+  ====================
+  Given chain_information (a sequence of episode summaries/descriptions connected by EPISODE_CAUSAL_LINK edges),
+  extract a single Storyline card.
+
+  Storyline Output Fields:
+  {storyline_output_fields_text}
+
+  ====================
+  Important Clarifications
+  ====================
+  {storyline_construction_constraints_text}
+  - Avoid thematic or emotional analysis. Focus on causal/temporal reasoning structure.
+  - key_characters and key_locations must be extracted only from chain_information.
+
+  ====================
+  Writing Guidelines
+  ====================
+  {storyline_writing_constraints_text}
+  1) name:
+     - 4 to 10 words
+     - Title Case
+     - Should capture the overall progression (not a single moment)
+  2) description:
+     - 3 to 6 sentences
+     - Fluent, self-contained narrative summary of the whole chain
+     - Must cover the initiating trigger, progression, and terminal outcome
+     - Must read like a human-written plot synopsis
+     - Must not enumerate steps or mirror the structure headings
+  3) impact:
+     - 1 to 2 sentences
+     - State the reusable downstream consequence or state produced by the chain
+     - Phrase it so it can connect to later reasoning (what new constraint/risk/condition now holds)
+  4) key_characters:
+     - JSON array of strings
+     - 0 to 8 items
+     - Use canonical names only (no descriptions)
+  5) key_locations:
+     - JSON array of strings
+     - 0 to 8 items
+     - Use canonical location names only (no descriptions)
+
+  ====================
+  Prohibited Output Patterns (CRITICAL)
+  ====================
+  - Do NOT copy phrases like "the chain shows" / "this storyline centers on" / "this constitutes".
+  - Do NOT invent motivations, intentions, or psychological states not supported by chain_information.
+  - Do NOT add new events or causal links not implied by the chain.
+
+  ====================
+  STRICT JSON OUTPUT RULES (MANDATORY)
+  ====================
+  - Output MUST be valid JSON parseable by standard JSON parsers (e.g., json.loads).
+  - Output MUST contain JSON only. Do NOT include explanations, markdown, or code fences.
+  - Every string value MUST be enclosed in double quotes.
+  - Do NOT include any unescaped double quote (") inside a string value.
+    - If quoted speech appears in chain_information, rewrite as indirect speech OR escape quotes using \".
+  - Use UTF-8 characters directly; do NOT escape normal punctuation.
+  - All fields must be present.
+  - name/description/impact must be strings.
+  - key_characters/key_locations must be arrays of strings (never null).
+
+  ====================
+  Output Schema
+  ====================
+  Example Storyline object:
+  {storyline_sample_json_text}
+
+  {{
+    "name": "...",
+    "description": "...",
+    "impact": "...",
+    "key_characters": ["..."],
+    "key_locations": ["..."]
+  }}
+
+  ====================
+  Now process the following input.
+  ====================
+
+  chain_information:
+  {chain_information}

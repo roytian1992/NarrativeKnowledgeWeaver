@@ -1,0 +1,128 @@
+{
+  "get_interactions_by_document_ids": {
+    "name": "get_interactions_by_document_ids",
+    "description": "按 document_id 列表批量获取交互记录，可按交互类型过滤。",
+    "parameters": [
+      {
+        "name": "document_ids",
+        "type": "array",
+        "required": true,
+        "description": "document_id 列表"
+      },
+      {
+        "name": "interaction_type",
+        "type": "string",
+        "required": false,
+        "description": "可选: dialogue 或 interaction；不填表示返回全部"
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "description": "返回条数，默认 100"
+      }
+    ]
+  },
+  "search_dialogues": {
+    "name": "search_dialogues",
+    "description": "检索对白交互记录，支持按说话方、对象、章节/场景、文档ID和内容过滤。",
+    "parameters": [
+      {
+        "name": "subject",
+        "type": "string",
+        "required": false,
+        "description": "按 subject_name 模糊匹配"
+      },
+      {
+        "name": "object",
+        "type": "string",
+        "required": false,
+        "description": "按 object_name 模糊匹配"
+      },
+      {
+        "name": "section",
+        "type": "string",
+        "required": false,
+        "description": "按章节/场景标题模糊匹配"
+      },
+      {
+        "name": "subsection",
+        "type": "string",
+        "required": false,
+        "description": "按子章节/子场景标题模糊匹配"
+      },
+      {
+        "name": "content",
+        "type": "string",
+        "required": false,
+        "description": "按 content 模糊匹配"
+      },
+      {
+        "name": "document_id",
+        "type": "string",
+        "required": false,
+        "description": "按 document_id 精确匹配"
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "description": "返回条数，默认 20"
+      }
+    ]
+  },
+  "search_interactions": {
+    "name": "search_interactions",
+    "description": "检索非对白交互记录，支持按主客体、章节/场景、情感极性、文档ID和内容过滤。",
+    "parameters": [
+      {
+        "name": "subject",
+        "type": "string",
+        "required": false,
+        "description": "按 subject_name 模糊匹配"
+      },
+      {
+        "name": "object",
+        "type": "string",
+        "required": false,
+        "description": "按 object_name 模糊匹配"
+      },
+      {
+        "name": "section",
+        "type": "string",
+        "required": false,
+        "description": "按章节/场景标题模糊匹配"
+      },
+      {
+        "name": "subsection",
+        "type": "string",
+        "required": false,
+        "description": "按子章节/子场景标题模糊匹配"
+      },
+      {
+        "name": "content",
+        "type": "string",
+        "required": false,
+        "description": "按 content 模糊匹配"
+      },
+      {
+        "name": "polarity",
+        "type": "string",
+        "required": false,
+        "description": "positive/negative/neutral"
+      },
+      {
+        "name": "document_id",
+        "type": "string",
+        "required": false,
+        "description": "按 document_id 精确匹配"
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "description": "返回条数，默认 20"
+      }
+    ]
+  }
+}

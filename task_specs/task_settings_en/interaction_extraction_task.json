@@ -1,0 +1,39 @@
+[
+  {
+    "task": "interaction_extraction",
+    "task_name": "Interaction Extraction",
+    "task_goal": "Extract dialogue and interaction signals between Character/Object entities from the input text. Results must only use entities provided in the entity list.",
+    "global_constraints": [
+      "Do NOT invent entities that are not in the provided entity list.",
+      "Only use interaction_type values defined in the interaction schema.",
+      "Both dialogue and interaction details must be written into the content field.",
+      "When interaction_type=dialogue and it is monologue/self-talk, object can be an empty string.",
+      "When object is of type Object, only use interactive/agentive objects (e.g., robot/AI/system agents); do not use passive props or background items (curtain, door, table, etc.) as object.",
+      "When interaction_type=interaction, polarity is required and must be one of positive/negative/neutral.",
+      "Output JSON array only, without commentary or extra text."
+    ],
+    "output_fields": [
+      "subject",
+      "object",
+      "interaction_type",
+      "polarity",
+      "content"
+    ],
+    "few_shot": {
+      "per_type_k": 1,
+      "max_total": 8,
+      "strategy": "per_interaction_type_first_k"
+    },
+    "interaction_groups": [
+      {
+        "group": "interaction_relations",
+        "group_name": "Interaction Relations",
+        "group_goal": "Extract dialogue and interaction records.",
+        "group_constraints": [
+          "Only extract when the text explicitly expresses speech or interaction behavior; avoid speculation.",
+          "If the interaction target is an Object, ensure it has interaction capability (robot/AI/system entity); otherwise skip the record."
+        ]
+      }
+    ]
+  }
+]

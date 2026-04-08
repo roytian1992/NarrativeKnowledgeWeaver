@@ -65,7 +65,7 @@ def generate_strict_chain_html(
                     "scene_id": "scene_1",
                     "scene_title": "...",
                     "summary": "...",
-                    "cmp_info": "...",
+                    "interaction_info": "...",
                     "version": "Part_1"   # 可选字段
                 },
                 ...
@@ -351,7 +351,7 @@ def generate_strict_chain_html(
             overflow-y: auto;
         }
         
-        .scene-cmp {
+        .scene-details {
             background: #ecf0f1;
             padding: 12px;
             border-radius: 8px;
@@ -361,7 +361,7 @@ def generate_strict_chain_html(
             overflow-y: auto;
         }
         
-        .scene-cmp-title {
+        .scene-details-title {
             font-weight: bold;
             color: #34495e;
             margin-bottom: 5px;
@@ -518,31 +518,31 @@ def generate_strict_chain_html(
 
             # 转义 & 截断
             summary_raw = scene.get('summary', '') or ''
-            cmp_raw = scene.get('cmp_info', '') or ''
+            details_raw = scene.get('interaction_info', '') or ''
 
             summary_text = summary_raw[:150].replace('<', '&lt;').replace('>', '&gt;')
             if len(summary_raw) > 150:
                 summary_text += '...'
 
-            cmp_text = (
-                cmp_raw[:500]
+            details_text = (
+                details_raw[:500]
                 .replace('<', '&lt;')
                 .replace('>', '&gt;')
                 .replace('\n', '<br>')
             )
-            if len(cmp_raw) > 500:
-                cmp_text += '...'
+            if len(details_raw) > 500:
+                details_text += '...'
 
             html_content += f'''
                 <div class="scene-card">
                     <div class="scene-title">{scene.get('scene_title', '')}</div>
                     <div class="scene-id">{scene_id}</div>
                     <div class="scene-summary"><strong>剧情:</strong> {summary_text}</div>
-                    <button class="toggle-details" onclick="toggleDetails('{scene_id}_{chain_idx}')">查看服化道详情</button>
+                    <button class="toggle-details" onclick="toggleDetails('{scene_id}_{chain_idx}')">查看补充详情</button>
                     <div id="details-{scene_id}_{chain_idx}" class="details-content">
-                        <div class="scene-cmp">
-                            <div class="scene-cmp-title">服化道信息:</div>
-                            {cmp_text}
+                        <div class="scene-details">
+                            <div class="scene-details-title">交互信息:</div>
+                            {details_text}
                         </div>
                     </div>
                 </div>

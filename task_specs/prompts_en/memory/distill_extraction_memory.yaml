@@ -1,0 +1,40 @@
+id: distill_extraction_memory
+category: memory
+name: Distill Extraction Memory
+description: >
+  Distill raw extraction memory entries into reusable guidance memories.
+  Return strict JSON only.
+
+task_variables:
+  - name: source_payload
+    type: string
+    required: true
+    description: JSON string containing memory entries and optional runtime stats.
+
+  - name: requested_max
+    type: string
+    required: true
+    description: Upper bound for total generated memories.
+
+static_variables: []
+
+template: |
+  You are distilling knowledge-graph extraction memories into reusable guidance.
+
+  INPUT PAYLOAD (JSON string)
+  {source_payload}
+
+  HARD REQUIREMENTS
+  - Return strict JSON object only. No markdown, no commentary.
+  - The output must follow this schema exactly:
+    {{
+      "guidelines": [{{"content": "string", "keywords": ["string"], "confidence": 0.0}}],
+      "anti_patterns": [{{"content": "string", "keywords": ["string"], "confidence": 0.0}}],
+      "canonical_maps": [{{"content": "string", "keywords": ["string"], "confidence": 0.0}}]
+    }}
+  - confidence must be in [0, 1].
+  - Keep total number of generated items across all lists <= {requested_max}.
+  - Keep each `content` short, actionable, and non-duplicative.
+  - `keywords` should be short anchor terms (0 to 8 items).
+
+  OUTPUT ONLY JSON.

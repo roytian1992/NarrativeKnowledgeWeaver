@@ -1,0 +1,164 @@
+{
+  "community_graphrag_search": {
+    "name": "community_graphrag_search",
+    "description": "按高层 Community report 逐层下钻到更细社区，再回到原文抽取证据，适合 GraphRAG 风格的主题级检索、跨事件聚合问答和高层语义导航。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "需要检索的自然语言问题。",
+        "required": true
+      },
+      {
+        "name": "community_top_k",
+        "type": "integer",
+        "description": "每层保留多少个 community，默认 3。",
+        "required": false
+      },
+      {
+        "name": "start_level",
+        "type": "integer",
+        "description": "从指定 community 层级开始检索；默认自动使用最高层。",
+        "required": false
+      },
+      {
+        "name": "max_depth",
+        "type": "integer",
+        "description": "最多向下细化多少层，默认 2。",
+        "required": false
+      },
+      {
+        "name": "child_limit_per_parent",
+        "type": "integer",
+        "description": "每个父 community 最多展开多少个子 community，默认 8。",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "是否对 community 候选做 LLM 相关性过滤。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM 相关性保留阈值，默认 0.35。",
+        "required": false
+      },
+      {
+        "name": "document_top_k",
+        "type": "integer",
+        "description": "最多抽取多少个 document_id 的证据，默认 6。",
+        "required": false
+      },
+      {
+        "name": "max_evidence_length",
+        "type": "integer",
+        "description": "每个文档证据片段最大长度，默认 240。",
+        "required": false
+      },
+      {
+        "name": "member_preview_limit",
+        "type": "integer",
+        "description": "每个最终 community 展示多少个代表成员，默认 5。",
+        "required": false
+      }
+    ]
+  },
+  "narrative_hierarchical_search": {
+    "name": "narrative_hierarchical_search",
+    "description": "沿 Storyline -> Episode -> Event -> source_documents 的叙事层级检索证据，适合剧情推进、事件关联和跨章节叙事问题。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "剧情问题或自然语言查询。",
+        "required": true
+      },
+      {
+        "name": "storyline_top_k",
+        "type": "integer",
+        "description": "保留多少个 Storyline 候选，默认 4。",
+        "required": false
+      },
+      {
+        "name": "episode_top_k",
+        "type": "integer",
+        "description": "保留多少个 Episode 候选，默认 5。",
+        "required": false
+      },
+      {
+        "name": "event_top_k",
+        "type": "integer",
+        "description": "保留多少个 Event 候选，默认 8。",
+        "required": false
+      },
+      {
+        "name": "document_top_k",
+        "type": "integer",
+        "description": "最多保留多少个 source document，默认 6。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "层级过滤的相关性阈值，默认 0.35。",
+        "required": false
+      },
+      {
+        "name": "max_evidence_length",
+        "type": "integer",
+        "description": "每个文档返回的最大证据长度，默认 240。",
+        "required": false
+      }
+    ]
+  },
+  "section_evidence_search": {
+    "name": "section_evidence_search",
+    "description": "章节级证据检索。先定位相关场次或章节，再抽取可回答问题的关键原文，适合局部事实、场次定位、台词、动作、物品和直接证据核对。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "需要在章节中定位证据的问题。",
+        "required": true
+      },
+      {
+        "name": "section_top_k",
+        "type": "integer",
+        "description": "保留多少个相关章节，默认 8。",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "是否对章节候选做 LLM 过滤。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "integer",
+        "description": "送入 LLM 过滤的章节候选数量，默认 12。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM 相关性保留阈值，默认 0.35。",
+        "required": false
+      },
+      {
+        "name": "max_length",
+        "type": "integer",
+        "description": "每个章节返回的最大证据长度，默认 320。",
+        "required": false
+      },
+      {
+        "name": "related_entity_limit",
+        "type": "integer",
+        "description": "每种实体类型最多展示多少个关联实体，默认 3。",
+        "required": false
+      }
+    ]
+  }
+}

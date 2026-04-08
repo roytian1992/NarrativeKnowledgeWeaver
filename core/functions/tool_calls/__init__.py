@@ -8,14 +8,20 @@ Expose tool classes so they can be imported directly via:
 from .graphdb_tools import (
     EntityRetrieverName,
     EntityRetrieverID,
+    SearchCommunities,
+    SearchEpisodes,
+    SearchStorylines,
+    SearchSections,
     SearchRelatedEntities,
+    GetEntitySections,
+    GetRelationsBetweenEntities,
     GetRelationSummary,
     GetCommonNeighbors,
     QuerySimilarEntities,
+    QuerySimilarFacts,
     FindPathsBetweenNodes,
     TopKByCentrality,
     GetCoSectionEntities,
-    FindRelatedEventsAndPlots,
     GetKHopSubgraph,
 )
 
@@ -23,46 +29,69 @@ from .graphdb_tools import (
 from .vectordb_tools import (
     VDBHierdocsSearchTool,
     VDBDocsSearchTool,
-    VDBGetDocsByChunkIDsTool,
+    VDBGetDocsByDocumentIDsTool,
     VDBSentencesSearchTool,
 )
 
 from .sqldb_tools import (
-    Search_By_Character,
-    Search_By_Scene,
-    Chunk_To_Scene,
-    Scene_To_Chunks,
-    NLP2SQL_Query,
+    SQLSearchDialogues,
+    SQLSearchInteractions,
+    SQLGetInteractionsByDocumentIDs,
+)
+
+from .composite_tools import (
+    CommunityGraphRAGSearch,
+    NarrativeHierarchicalSearch,
+    SectionEvidenceSearch,
+    ChoiceGroundedEvidenceSearch,
+    EntityEventTraceSearch,
+    FactTimelineResolutionSearch,
 )
 
 from .native_tools import (
-    BM25SearchDocsTool
+    BM25SearchDocsTool,
+    LookupTitlesByDocumentIDsTool,
+    LookupDocumentIDsByTitleTool,
+    SearchRelatedContentTool,
 )
 
 __all__ = [
     # graphdb_tools
     "EntityRetrieverName",
     "EntityRetrieverID",
+    "SearchCommunities",
+    "SearchEpisodes",
+    "SearchStorylines",
+    "SearchSections",
     "SearchRelatedEntities",
+    "GetEntitySections",
+    "GetRelationsBetweenEntities",
     "GetRelationSummary",
     "GetCommonNeighbors",
     "QuerySimilarEntities",
+    "QuerySimilarFacts",
     "FindPathsBetweenNodes",
     "TopKByCentrality",
     'GetCoSectionEntities',
-    'FindRelatedEventsAndPlots',
     'GetKHopSubgraph',
     # vectordb_tools
     "VDBHierdocsSearchTool",
     "VDBDocsSearchTool",
-    "VDBGetDocsByChunkIDsTool",
+    "VDBGetDocsByDocumentIDsTool",
     "VDBSentencesSearchTool",
     # sqldb_tools
-    "Search_By_Character",
-    "Search_By_Scene",
-    "Chunk_To_Scene",
-    "Scene_To_Chunks",
-    "NLP2SQL_Query",
+    "SQLSearchDialogues",
+    "SQLSearchInteractions",
+    "SQLGetInteractionsByDocumentIDs",
+    "CommunityGraphRAGSearch",
+    "NarrativeHierarchicalSearch",
+    "SectionEvidenceSearch",
+    "ChoiceGroundedEvidenceSearch",
+    "EntityEventTraceSearch",
+    "FactTimelineResolutionSearch",
     # keyword search tools
-    "BM25SearchDocsTool"
+    "BM25SearchDocsTool",
+    "LookupTitlesByDocumentIDsTool",
+    "LookupDocumentIDsByTitleTool",
+    "SearchRelatedContentTool",
 ]

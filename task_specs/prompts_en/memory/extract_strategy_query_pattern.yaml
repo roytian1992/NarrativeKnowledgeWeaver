@@ -1,0 +1,61 @@
+id: extract_strategy_query_pattern
+category: memory
+name: Extract Strategy Query Pattern
+description: >
+  Extract a non-text-specific strategy-matching pattern from the original question.
+
+task_variables:
+  - name: original_query
+    type: string
+    required: true
+  - name: rule_abstract
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are extracting a reusable query pattern for retrieval strategy matching.
+
+  Original question:
+  {original_query}
+
+  Rule-based abstract:
+  {rule_abstract}
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "query_abstract": "string",
+      "problem_type": "string",
+      "target_category": "string",
+      "answer_shape": "string",
+      "retrieval_goals": ["string", "string"],
+      "notes": "string"
+    }}
+  - Remove story-specific names, locations, document names, and ids.
+  - `query_abstract` must be a generic task description, not a restatement with story entities.
+  - `problem_type` must be exactly one of:
+    1. `section_localization`
+    2. `content_span_lookup`
+    3. `entity_attribute_lookup`
+    4. `relation_or_interaction_lookup`
+    5. `causal_or_explanatory_lookup`
+    6. `fact_retrieval`
+  - `target_category` must be exactly one of:
+    1. `character`
+    2. `object_or_device`
+    3. `section`
+    4. `place`
+    5. `event`
+    6. `narrative_fact`
+  - `answer_shape` must be exactly one of:
+    1. `mcq_option`
+    2. `short_fact`
+    3. `explanation`
+    4. `list`
+  - If the question contains explicit answer options, output `mcq_option`.
+  - `retrieval_goals` should list up to 4 retrieval objectives and must describe retrieval targets, not answer formatting.
+  - Do not use values such as `section_names`, `json`, `with_evidence`, `quote/span`, `single_choice_with_text`.
+  - No markdown. No extra explanation.

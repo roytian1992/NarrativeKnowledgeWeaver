@@ -1,1142 +1,1928 @@
-# narrative_graph_builder.py
 # -*- coding: utf-8 -*-
+# core/builder/narrative_graph_builder.py
+from __future__ import annotations
 
-import json
-import pickle
-import glob
 import hashlib
+import json
 import logging
 import os
-from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from tqdm import tqdm
-from core.builder.manager.document_manager import DocumentParser
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from core.model_providers.openai_llm import OpenAILLM
-from core.utils.neo4j_utils import Neo4jUtils
-from core.models.data import Entity
-from core.builder.manager.graph_manager import GraphManager
-from core.storage.graph_store import GraphStore
-from core.storage.vector_store import VectorStore
-from core.utils.prompt_loader import PromptLoader
-from core.utils.format import correct_json_format, format_event_card
-from core.builder.graph_builder import DOC_TYPE_META
-from core.utils.function_manager import run_with_soft_timeout_and_retries
 
-# Event chain preprocessing and deduplication
-from core.builder.event_processor import (
-    segment_trunks_and_branches,
-    remove_subset_paths,
-    remove_similar_paths,
+from core import KAGConfig
+from core.builder.manager.narrative_analysis_manager import NarrativeManager
+from core.model_providers.openai_llm import OpenAILLM
+from core.storage.graph_store import GraphStore
+from core.utils.graph_query_utils import GraphQueryUtils
+from core.utils.format import DOC_TYPE_META
+from core.utils.general_utils import (
+    _is_none_relation,
+    _to_vec_list,
+    cosine_sim,
+    dedupe_list,
+    ensure_dir,
+    filter_entities_by_part,
+    format_entities_brief,
+    get_doc_text,
+    json_dump_atomic,
+    load_json,
+    safe_dict,
+    safe_list,
+    safe_str,
+    stable_relation_id,
 )
 
-PER_TASK_TIMEOUT = 900.0
-MAX_RETRIES = 3
-RETRY_BACKOFF = 30
+from core.algorithms.cycle_break import (
+    export_relations_from_graph,
+    load_causal_graph_cfg,
+    load_cycle_break_cfg,
+    run_heuristic,
+    run_saber,
+)
+from core.algorithms.chain_extraction import extract_storyline_candidates
+
+logger = logging.getLogger(__name__)
+
+# Episode / Storyline support predicates
+P_EP_CONTAINS = "EPISODE_CONTAINS"
+P_STORYLINE_CONTAINS = "STORYLINE_CONTAINS"
 
 
-# ============ 小工具：JSONL ============
-def write_jsonl(path: str, rows: List[Dict[str, Any]]):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-
-
-def read_jsonl(path: str) -> List[Dict[str, Any]]:
-    if not os.path.exists(path):
-        return []
-    out = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            out.append(json.loads(line))
-    return out
-
-
-class EventCausalityBuilder:
+class NarrativeGraphBuilder:
     """
-    两阶段（产物/落库）合并为 6 个高层方法：
-      1) initialize(keep_event_cards=True)
-      2) produce_causality_artifacts(limit_events=None)
-      3) materialize_causality_graph()
-      4) produce_plot_artifacts()
-      5) materialize_plot_graph()
-      6) prepare_graph_embeddings()
+    JSON-first narrative graph builder.
+
+    Phase 1 outputs:
+      - episodes/episodes_by_document/{doc_id}.json
+      - global/episodes.json
+      - global/episode_support_edges.json
+      - global/episode_packs.json
+
+    Phase 2 outputs:
+      - episodes/candidate_pairs.json
+      - episodes/episode_pairs/pair_*.json (optional)
+      - global/episode_relations.json
+
+    Cycle break output:
+      - global/episode_relations_dag.json
     """
 
-    def __init__(self, config):
+    def __init__(self, config: KAGConfig, *, doc_type: Optional[str] = None) -> None:
         self.config = config
+
+        self.doc_type = (
+            doc_type
+            or safe_str(getattr(getattr(config, "global_config", None), "doc_type", ""))
+            or "screenplay"
+        )
+
+        self.kg_dir = (
+            safe_str(getattr(getattr(config, "knowledge_graph_builder", None), "file_path", ""))
+            or "data/knowledge_graph"
+        )
+        self.base_dir = (
+            safe_str(getattr(getattr(config, "narrative_graph_builder", None), "file_path", ""))
+            or "data/narrative_graph"
+        )
+
+        self.max_workers = max(
+            1,
+            int(safe_str(getattr(getattr(config, "narrative_graph_builder", None), "max_workers", "32")) or "32"),
+        )
+        chain_cfg = getattr(getattr(config, "narrative_graph_builder", None), "chain_extraction", None)
+        default_method = safe_str(getattr(chain_cfg, "method", "") or "trie").strip().lower()
+        if default_method == "tri":
+            default_method = "trie"
+        if default_method not in {"trie", "mpc"}:
+            default_method = "trie"
+        self.storyline_method_default = default_method
+
+        raw_enable_storyline_rel = getattr(getattr(config, "narrative_graph_builder", None), "enable_storyline_relations", True)
+        if isinstance(raw_enable_storyline_rel, bool):
+            self.enable_storyline_relations_default = raw_enable_storyline_rel
+        else:
+            self.enable_storyline_relations_default = safe_str(raw_enable_storyline_rel).strip().lower() not in {
+                "",
+                "0",
+                "false",
+                "no",
+                "off",
+            }
+
         self.llm = OpenAILLM(config)
         self.graph_store = GraphStore(config)
-        self.vector_store = VectorStore(config, "documents")
-        self.doc_type = config.knowledge_graph_builder.doc_type
-        if self.doc_type not in DOC_TYPE_META:
-            raise ValueError(f"Unsupported doc_type: {self.doc_type}")
-        self.meta = DOC_TYPE_META[self.doc_type]
-        self.neo4j_utils = Neo4jUtils(self.graph_store.driver, self.doc_type)
-        # print("****", self.neo4j_utils)
-        self.neo4j_utils.load_embedding_model(config.graph_embedding)
-        prompt_dir = config.knowledge_graph_builder.prompt_dir
-        self.prompt_loader = PromptLoader(prompt_dir)
+        self.graph_query_utils = GraphQueryUtils(self.graph_store, doc_type=self.doc_type)
+        self.narrative_manager = NarrativeManager(config, self.llm)
 
-        # settings for prompt
-        settings_path = os.path.join(self.config.storage.graph_schema_path, "settings.json")
-        if not os.path.exists(settings_path):
-            settings_path = self.config.probing.default_background_path
-        settings = json.load(open(settings_path, "r", encoding="utf-8"))
-        self.system_prompt_text = self.construct_system_prompt(
-            background=settings.get("background"),
-            abbreviations=settings.get("abbreviations", []),
-        )
-        self.graph_analyzer = GraphManager(config, self.llm)
+        self.doc2chunks_path = os.path.join(self.kg_dir, "doc2chunks.json")
 
-        # params
-        self.causality_threshold = "Medium"
-        self.logger = logging.getLogger(__name__)
-        self.event_fallback = []
-        self.sorted_sections = []
-        self.event_list: List[Entity] = []
-        self.event2section_map: Dict[str, str] = {}
-        self.max_depth = config.event_plot_graph_builder.max_depth
-        self.check_weakly_connected_components = config.event_plot_graph_builder.check_weakly_connected_components
-        self.min_component_size = config.event_plot_graph_builder.min_connected_component_size
-        self.max_workers = config.event_plot_graph_builder.max_workers
-        self.max_iteration = config.event_plot_graph_builder.max_iterations
-        self.max_num_triangles = config.event_plot_graph_builder.max_num_triangles
-        self.chain_similarity_threshold = 0.75
-        self.min_edge_confidence = config.event_plot_graph_builder.min_confidence
+        self.out_episodes_dir = ensure_dir(os.path.join(self.base_dir, "episodes"))
+        self.out_episodes_by_doc_dir = ensure_dir(os.path.join(self.out_episodes_dir, "episodes_by_document"))
+        self.out_rel_pairs_dir = ensure_dir(os.path.join(self.out_episodes_dir, "episode_pairs"))
 
-        self.event_cards: Dict[str, Dict[str, Any]] = {}
-        self.base_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=config.document_processing.chunk_size,
-            chunk_overlap=config.document_processing.chunk_overlap,
-        )
-        self.document_parser = DocumentParser(config, self.llm)
+        self.out_global_dir = ensure_dir(os.path.join(self.base_dir, "global"))
+        self.global_episodes_path = os.path.join(self.out_global_dir, "episodes.json")
+        self.global_ep_support_edges_path = os.path.join(self.out_global_dir, "episode_support_edges.json")
+        self.global_ep_packs_path = os.path.join(self.out_global_dir, "episode_packs.json")
+        self.global_ep_ep_edges_path = os.path.join(self.out_global_dir, "episode_relations.json")
+        self.dag_path = os.path.join(self.out_global_dir, "episode_relations_dag.json")
+        self.global_storyline_candidates_path = os.path.join(self.out_global_dir, "storyline_candidates.json")
+        self.global_storylines_path = os.path.join(self.out_global_dir, "storylines.json")
+        self.global_storyline_support_edges_path = os.path.join(self.out_global_dir, "storyline_support_edges.json")
+        self.global_storyline_relations_path = os.path.join(self.out_global_dir, "storyline_relations.json")
 
-        self.logger.info("EventCausalityBuilder initialized")
+    # ================================================================
+    # Phase 1
+    # ================================================================
+    def extract_episodes(
+        self,
+        *,
+        document_node_types: Optional[List[str]] = None,
+        limit_documents: Optional[int] = None,
+        document_concurrency: Optional[int] = None,
+        store_episode_support_edges: bool = True,
+        ensure_episode_embeddings: bool = True,
+        per_document_retries: int = 2,
+        per_part_retries: int = 2,
+        backoff_seconds: float = 0.8,
+        jitter_seconds: float = 0.2,
+        per_document_timeout: Optional[float] = None,  # kept for API compatibility, no hard-kill
+        save_episodes_by_document: bool = True,
+        merge_global_episodes: bool = True,
+        save_global_support_edges: bool = True,
+        save_global_packs: bool = True,
+        embedding_text_field: str = "name_desc",
+        embedding_batch_size: int = 256,
+    ) -> List[Dict[str, Any]]:
+        user_specified_doc_types = document_node_types is not None
+        if document_node_types is None:
+            meta = DOC_TYPE_META.get(self.doc_type, DOC_TYPE_META.get("general", {}))
+            section_label = safe_str(meta.get("section_label", "Document")).strip() or "Document"
+            document_node_types = [section_label]
 
-    # ---------------- Prompt ----------------
-    def construct_system_prompt(self, background, abbreviations):
-        background_info = self.get_background_info(background, abbreviations)
-        system_prompt_id = "agent_prompt_screenplay" if self.doc_type == "screenplay" else "agent_prompt_novel"
-        return self.prompt_loader.render_prompt(system_prompt_id, {"background_info": background_info})
+        try:
+            obj = load_json(self.doc2chunks_path)
+            doc2chunks: Dict[str, Any] = obj if isinstance(obj, dict) else {}
+        except Exception:
+            logger.exception("[NarrativeGraph][P1] failed to load doc2chunks: %s", self.doc2chunks_path)
+            doc2chunks = {}
 
-    def get_background_info(self, background, abbreviations):
-        bg_block = f"**Background**: {background}\n" if background else ""
+        documents = self.graph_query_utils.fetch_all_nodes(node_types=document_node_types) or []
+        if not documents:
+            fallback_types: List[str] = []
+            for v in (DOC_TYPE_META or {}).values():
+                lb = safe_str((v or {}).get("section_label"))
+                if lb and lb not in fallback_types:
+                    fallback_types.append(lb)
+            for lb in ["Document", "Scene", "Chapter"]:
+                if lb not in fallback_types:
+                    fallback_types.append(lb)
 
-        def fmt(item: dict) -> str:
-            if not isinstance(item, dict):
-                return ""
-            abbr = item.get("abbr") or item.get("full") or next(
-                (v for k, v in item.items() if isinstance(v, str) and v.strip()), "N/A"
-            )
-            parts = []
-            for k, v in item.items():
-                if k in ("abbr", "full"):
-                    continue
-                if isinstance(v, str) and v.strip():
-                    parts.append(v.strip())
-            return f"- **{abbr}**: " + " - ".join(parts) if parts else f"- **{abbr}**"
-
-        abbr_block = "\n".join(fmt(item) for item in abbreviations if isinstance(item, dict))
-        return f"{bg_block}\n{abbr_block}" if (background and abbr_block) else (bg_block or abbr_block)
-
-    # ---------------- High-level API (6 methods) ----------------
-
-    def initialize(self, keep_event_cards: bool = True):
-        """
-        清理旧因果边/投影，创建工作子图 & Louvain；清理输出目录（可保留卡片）。
-        """
-        for relation_type in ["EVENT_CAUSES", "EVENT_INDIRECT_CAUSES", "EVENT_PART_OF"]:
-            self.neo4j_utils.delete_relation_type(relation_type)
-
-        self.neo4j_utils.create_subgraph(
-            graph_name="knowledge_graph",
-            exclude_entity_types=[self.meta["section_label"]],
-            exclude_relation_types=[self.meta["contains_pred"]],
-            force_refresh=True,
-        )
-        self.neo4j_utils.run_louvain(
-            graph_name="knowledge_graph", write_property="community", force_run=True
-        )
-
-        self._clear_directory(self.config.storage.event_plot_graph_path, keep_event_cards)
-
-    def produce_causality_artifacts(self, limit_events: Optional[int] = None):
-        """
-        计算 & 落 JSON（事件清单/候选对/因果检测）：
-          - sections_sorted.json
-          - event2section.json
-          - events.jsonl
-          - event_cards.json
-          - candidate_pairs.jsonl
-          - causality_results.jsonl
-        """
-        base = self.config.storage.event_plot_graph_path
-        os.makedirs(base, exist_ok=True)
-
-        # 1) 事件清单
-        event_list = self._build_event_list()
-        if limit_events and limit_events < len(event_list):
-            event_list = event_list[:limit_events]
-
-        sections_meta = [
-            {"id": s.id, "name": s.name, "order": int(s.properties.get("order", 99999))}
-            for s in self.sorted_sections
-        ]
-        with open(os.path.join(base, "sections_sorted.json"), "w", encoding="utf-8") as f:
-            json.dump(sections_meta, f, ensure_ascii=False, indent=2)
-        with open(os.path.join(base, "event2section.json"), "w", encoding="utf-8") as f:
-            json.dump(self.event2section_map, f, ensure_ascii=False, indent=2)
-        write_jsonl(
-            os.path.join(base, "events.jsonl"),
-            [{"id": e.id, "name": e.name, "type": e.type, "source_chunks": e.source_chunks} for e in event_list],
-        )
-
-        # 2) 事件卡片（缓存）
-        cards_path = os.path.join(base, "event_cards.json")
-        if os.path.exists(cards_path):
-            try:
-                self.event_cards = json.load(open(cards_path, "r", encoding="utf-8"))
-                if not isinstance(self.event_cards, dict):
-                    self.event_cards = {}
-            except Exception:
-                self.event_cards = {}
-        if not self.event_cards:
-            self._precompute_event_cards(event_list)
-        with open(cards_path, "w", encoding="utf-8") as f:
-            json.dump(self.event_cards, f, ensure_ascii=False, indent=2)
-
-        # 3) 候选对（社区/距离/相似度）
-        pairs = self._filter_event_pairs_by_community(event_list)
-        pairs = self._filter_pair_by_distance_and_similarity(pairs)
-        pairs = self._sort_event_pairs_by_section_order(pairs)
-        write_jsonl(
-            os.path.join(base, "candidate_pairs.jsonl"),
-            [{"src": p[0].id, "tgt": p[1].id} for p in pairs],
-        )
-
-        # 4) 并行因果检测（结果 JSONL）
-        results_map = self._check_causality_batch(pairs)
-        write_jsonl(
-            os.path.join(base, "causality_results.jsonl"),
-            [
-                {
-                    "src": sid,
-                    "tgt": tid,
-                    "relation": info.get("relation", "NONE"),
-                    "temporal_order": info.get("temporal_order", "Unknown"),
-                    "confidence": float(info.get("confidence", 0.0) or 0.0),
-                    "reason": info.get("reason", ""),
-                    "timeout": bool(info.get("causality_timeout", False)),
-                }
-                for (sid, tid), info in results_map.items()
-            ],
-        )
-
-    def materialize_causality_graph(self):
-        """
-        读取 JSON/JSONL 并将事件-事件因果边写入 Neo4j：
-          - 读取 causality_results.jsonl
-          - 读取（若存在）saber_removed_edges_round_*.json，产出最终边集
-          - 写入 EVENT_* 边
-          - 创建 event_causality_graph 投影
-        """
-        base = self.config.storage.event_plot_graph_path
-        results_rows = read_jsonl(os.path.join(base, "causality_results.jsonl"))
-
-        removed: Set[Tuple[str, str]] = set()
-        for p in glob.glob(os.path.join(base, "saber_removed_edges_round_*.json")):
-            try:
-                removed_list = json.load(open(p, "r", encoding="utf-8"))
-                for u, v in removed_list:
-                    removed.add((u, v))
-            except Exception:
-                pass
-
-        rows_to_write = []
-        for r in results_rows:
-            key = (r["src"], r["tgt"])
-            if key in removed:
-                continue
-            rel = (r.get("relation") or "NONE").upper()
-            if rel == "NONE":
-                continue
-            rows_to_write.append(
-                {
-                    "srcId": r["src"],
-                    "dstId": r["tgt"],
-                    "confidence": float(r.get("confidence", 0.0) or 0.0),
-                    "reason": r.get("reason", ""),
-                    "predicate": r.get("relation", "NONE"),
-                }
-            )
-
-        if rows_to_write:
-            self.neo4j_utils.write_event_causes(rows_to_write)
-        self.neo4j_utils.create_event_causality_graph("event_causality_graph", force_refresh=True, min_confidence=0.5)
-
-
-
-
-    # def produce_plot_artifacts(self):
-    #     """
-    #     计算 & 落 JSON（Plot 节点/与事件的边/Plot-Plot关系）：
-    #       - filtered_event_chains.json
-    #       - plots.jsonl
-    #       - plot_has_event_edges.jsonl
-    #       - plot_relations.jsonl
-    #     仅落盘，不写库。
-    #     """
-    #     base = self.config.storage.event_plot_graph_path
-    #     os.makedirs(base, exist_ok=True)
-
-    #     # 读取/确保 event_cards
-    #     cards_path = os.path.join(base, "event_cards.json")
-    #     with open(cards_path, "r", encoding="utf-8") as f:
-    #         self.event_cards = json.load(f)
-
-    #     # 1) 根据阈值获取事件链
-    #     all_chains = self._get_all_event_chains(min_confidence=self.min_edge_confidence)
-    #     filtered_chains = segment_trunks_and_branches(
-    #         all_chains, min_len=2, include_cutpoint=True, keep_terminal_pairs=True
-    #     )
-    #     before = len(filtered_chains)
-    #     filtered_chains = remove_subset_paths(filtered_chains)
-    #     filtered_chains = remove_similar_paths(filtered_chains, threshold=self.chain_similarity_threshold)
-
-    #     with open(os.path.join(base, "filtered_event_chains.json"), "w", encoding="utf-8") as f:
-    #         json.dump(filtered_chains, f, ensure_ascii=False, indent=2)
-
-    #     # 2) 生成 Plot 节点（JSONL）与 HAS_EVENT 边（JSONL）
-    #     plot_rows: List[Dict[str, Any]] = []
-    #     has_edges: List[Dict[str, Any]] = []
-
-    #     def _stable_plot_id(title: str, chain: List[str]) -> str:
-    #         key = f"{title}||{'->'.join(chain)}"
-    #         return "plot_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
-
-    #     def _to_bool(v) -> bool:
-    #         if isinstance(v, bool):
-    #             return v
-    #         if v is None:
-    #             return False
-    #         return str(v).strip().lower() in ("true", "yes", "1")
-
-    #     def process_chain(chain: List[str]):
-    #         try:
-    #             context = self._prepare_chain_context(chain)
-    #             # 汇聚证据上下文
-    #             chunk_ids = []
-    #             for ent_id in chain:
-    #                 ent = self.neo4j_utils.get_entity_by_id(ent_id)
-    #                 if not ent:
-    #                     continue
-    #                 sc = ent.source_chunks or []
-    #                 if sc:
-    #                     chunk_ids.append(sc[0])
-    #             chunk_ids = list(set(chunk_ids))
-
-    #             related_context = ""
-    #             if chunk_ids:
-    #                 documents = self.vector_store.search_by_ids(chunk_ids)
-    #                 contents = {getattr(doc, "content", "") for doc in documents if getattr(doc, "content", "")}
-    #                 related_context = "\n".join(list(contents))
-
-    #             try:
-    #                 raw = self.graph_analyzer.generate_event_plot(
-    #                     event_chain_info=context,
-    #                     system_prompt=self.system_prompt_text,
-    #                     related_context=related_context,
-    #                     timeout=900.0 - 30.0,
-    #                 )
-    #             except TypeError:
-    #                 raw = self.graph_analyzer.generate_event_plot(
-    #                     event_chain_info=context,
-    #                     system_prompt=self.system_prompt_text,
-    #                     related_context=related_context,
-    #                 )
-    #             result = json.loads(correct_json_format(raw))
-    #             if not _to_bool(result.get("is_plot")):
-    #                 return False
-
-    #             plot_info = result.get("plot_info") or {}
-    #             title = (plot_info.get("title") or "").strip()
-    #             if not title:
-    #                 title = f"Plot chain: {chain[0]}→{chain[-1]}"
-
-    #             plot_id = _stable_plot_id(title, chain)
-    #             plot_rows.append(
-    #                 {
-    #                     "id": plot_id,
-    #                     "title": title,
-    #                     "desc": plot_info.get("description", ""),
-    #                     "event_ids": chain,
-    #                     "reason": result.get("reason", ""),
-    #                     "properties": {k: v for k, v in (plot_info.items()) if k not in {"title", "description"}},
-    #                 }
-    #             )
-    #             for eid in chain:
-    #                 has_edges.append({"plot_id": plot_id, "event_id": eid})
-    #             return True
-    #         except Exception:
-    #             return None
-
-    #     chain_map, chain_failed = run_with_soft_timeout_and_retries(
-    #         filtered_chains,
-    #         work_fn=process_chain,
-    #         key_fn=lambda ch: tuple(ch),
-    #         desc_label="Generate plot artifacts in parallel",
-    #         per_task_timeout=600.0,
-    #         retries=3,
-    #         retry_backoff=60,
-    #         allow_placeholder_first_round=False,
-    #         placeholder_fn=None,
-    #         should_retry=lambda r: r is None,
-    #         max_workers=self.max_workers,
-    #     )
-
-    #     write_jsonl(os.path.join(base, "plots.jsonl"), plot_rows)
-    #     write_jsonl(os.path.join(base, "plot_has_event_edges.jsonl"), has_edges)
-
-    #     # 3) Plot-Plot 关系（只落盘）
-    #     plot_pairs = self.neo4j_utils.get_plot_pairs(threshold=0)  # [{"src":..,"tgt":..},...]
-    #     DIRECTED = {"PLOT_PREREQUISITE_FOR", "PLOT_ADVANCES", "PLOT_BLOCKS", "PLOT_RESOLVES"}
-    #     UNDIRECTED = {"PLOT_CONFLICTS_WITH", "PLOT_PARALLELS"}
-    #     VALID = DIRECTED | UNDIRECTED | {"None", None}
-
-    #     def _work(pair: dict) -> dict:
-    #         try:
-    #             plot_A_info = self.neo4j_utils.get_entity_info(
-    #                 pair["src"], "Plot", contain_properties=True, contain_relations=True
-    #             )
-    #             plot_B_info = self.neo4j_utils.get_entity_info(
-    #                 pair["tgt"], "Plot", contain_properties=True, contain_relations=True
-    #             )
-    #             try:
-    #                 result = self.graph_analyzer.extract_plot_relation(
-    #                     plot_A_info, plot_B_info, self.system_prompt_text, timeout=PER_TASK_TIMEOUT - 30.0
-    #                 )
-    #             except TypeError:
-    #                 result = self.graph_analyzer.extract_plot_relation(
-    #                     plot_A_info, plot_B_info, self.system_prompt_text
-    #                 )
-    #             try:
-    #                 result = json.loads(correct_json_format(result))
-    #             except Exception:
-    #                 if not isinstance(result, dict):
-    #                     raise
-    #             rtype = result.get("relation_type")
-    #             direction = result.get("direction", None)
-    #             confidence = result.get("confidence", 0.0)
-    #             reason = result.get("reason", "")
-    #             if rtype not in VALID:
-    #                 return {"status": "error", "edges": []}
-    #             if rtype in {"None", None}:
-    #                 return {"status": "none", "edges": []}
-    #             if rtype in DIRECTED:
-    #                 if direction == "A->B":
-    #                     edges = [{"src": pair["src"], "tgt": pair["tgt"], "relation_type": rtype, "confidence": confidence, "reason": reason}]
-    #                 elif direction == "B->A":
-    #                     edges = [{"src": pair["tgt"], "tgt": pair["src"], "relation_type": rtype, "confidence": confidence, "reason": reason}]
-    #                 else:
-    #                     return {"status": "error", "edges": []}
-    #             else:
-    #                 edges = [
-    #                     {"src": pair["src"], "tgt": pair["tgt"], "relation_type": rtype, "confidence": confidence, "reason": reason},
-    #                     {"src": pair["tgt"], "tgt": pair["src"], "relation_type": rtype, "confidence": confidence, "reason": reason},
-    #                 ]
-    #             return {"status": "ok", "edges": edges}
-    #         except Exception:
-    #             return {"status": "error", "edges": []}
-
-    #     res_map, still_failed = run_with_soft_timeout_and_retries(
-    #         plot_pairs,
-    #         work_fn=_work,
-    #         key_fn=lambda p: (p["src"], p["tgt"]),
-    #         desc_label="Extract plot relations (artifact phase)",
-    #         per_task_timeout=PER_TASK_TIMEOUT,
-    #         retries=MAX_RETRIES,
-    #         retry_backoff=RETRY_BACKOFF,
-    #         allow_placeholder_first_round=False,
-    #         placeholder_fn=None,
-    #         should_retry=lambda r: (isinstance(r, dict) and r.get("status") == "error"),
-    #         max_workers=self.max_workers,
-    #     )
-
-    #     rel_edges = []
-    #     for out in res_map.values():
-    #         if isinstance(out, dict) and out.get("status") == "ok" and out.get("edges"):
-    #             rel_edges.extend(out["edges"])
-    #     write_jsonl(os.path.join(base, "plot_relations.jsonl"), rel_edges)
-
-    def extract_event_chains(self, min_confidence: Optional[float] = None) -> List[List[str]]:
-        """
-        读取 event 因果图，筛选/分段/去冗余，保存至 filtered_event_chains.json，并返回链表。
-        """
-        base = self.config.storage.event_plot_graph_path
-        os.makedirs(base, exist_ok=True)
-
-        # 确保 cards 在后续链上下文生成里可用
-        cards_path = os.path.join(base, "event_cards.json")
-        with open(cards_path, "r", encoding="utf-8") as f:
-            self.event_cards = json.load(f)
-
-        min_conf = self.min_edge_confidence if min_confidence is None else float(min_confidence)
-        all_chains = self._get_all_event_chains(min_confidence=min_conf)
-
-        filtered_chains = segment_trunks_and_branches(
-            all_chains, min_len=2, include_cutpoint=True, keep_terminal_pairs=True
-        )
-        filtered_chains = remove_subset_paths(filtered_chains)
-        filtered_chains = remove_similar_paths(filtered_chains, threshold=self.chain_similarity_threshold)
-
-        with open(os.path.join(base, "filtered_event_chains.json"), "w", encoding="utf-8") as f:
-            json.dump(filtered_chains, f, ensure_ascii=False, indent=2)
-
-        return filtered_chains
-
-
-    def build_and_save_plot_nodes(self, chains: Optional[List[List[str]]] = None) -> Tuple[List[Dict[str,Any]], List[Dict[str,Any]]]:
-        """
-        给定事件链，调用 LLM 产出 plot_info，保存 Plot 节点与 HAS_EVENT 边到 jsonl 文件。
-        返回 (plot_rows, has_edges) 便于上层测试或后续处理。
-        """
-        base = self.config.storage.event_plot_graph_path
-        os.makedirs(base, exist_ok=True)
-
-        # 如未传入，从磁盘读取（便于分步运行）
-        if chains is None:
-            with open(os.path.join(base, "filtered_event_chains.json"), "r", encoding="utf-8") as f:
-                chains = json.load(f)
-
-        plot_rows: List[Dict[str, Any]] = []
-        has_edges: List[Dict[str, Any]] = []
-
-        def _stable_plot_id(title: str, chain: List[str]) -> str:
-            key = f"{title}||{'->'.join(chain)}"
-            return "plot_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
-
-        def _to_bool(v) -> bool:
-            if isinstance(v, bool):
-                return v
-            if v is None:
-                return False
-            return str(v).strip().lower() in ("true", "yes", "1")
-
-        def process_chain(chain: List[str]):
-            try:
-                context = self._prepare_chain_context(chain)
-                # 汇聚证据上下文（与原版一致）
-                chunk_ids = []
-                for ent_id in chain:
-                    ent = self.neo4j_utils.get_entity_by_id(ent_id)
-                    if ent and (ent.source_chunks or []):
-                        chunk_ids.append(ent.source_chunks[0])
-                chunk_ids = list(set(chunk_ids))
-                related_context = ""
-                if chunk_ids:
-                    documents = self.vector_store.search_by_ids(chunk_ids)
-                    contents = {getattr(doc, "content", "") for doc in documents if getattr(doc, "content", "")}
-                    related_context = "\n".join(list(contents))
-
-                try:
-                    raw = self.graph_analyzer.generate_event_plot(
-                        event_chain_info=context,
-                        system_prompt=self.system_prompt_text,
-                        related_context=related_context,
-                        timeout=900.0 - 30.0,
-                    )
-                except TypeError:
-                    raw = self.graph_analyzer.generate_event_plot(
-                        event_chain_info=context,
-                        system_prompt=self.system_prompt_text,
-                        related_context=related_context,
-                    )
-                result = json.loads(correct_json_format(raw))
-                if not _to_bool(result.get("is_plot")):
-                    return False
-
-                plot_info = result.get("plot_info") or {}
-                title = (plot_info.get("title") or "").strip() or f"Plot chain: {chain[0]}→{chain[-1]}"
-                plot_id = _stable_plot_id(title, chain)
-
-                plot_rows.append(
-                    {
-                        "id": plot_id,
-                        "title": title,
-                        "desc": plot_info.get("description", ""),
-                        "event_ids": chain,
-                        "reason": result.get("reason", ""),
-                        "properties": {k: v for k, v in (plot_info.items()) if k not in {"title", "description"}},
-                    }
+            if fallback_types:
+                logger.warning(
+                    "[NarrativeGraph][P1] no document nodes for node_types=%s (doc_type=%s). fallback labels=%s",
+                    document_node_types,
+                    self.doc_type,
+                    fallback_types,
                 )
-                for eid in chain:
-                    has_edges.append({"plot_id": plot_id, "event_id": eid})
-                return True
-            except Exception:
+                documents = self.graph_query_utils.fetch_all_nodes(node_types=fallback_types) or []
+                if documents:
+                    document_node_types = fallback_types
+                    if user_specified_doc_types:
+                        logger.warning(
+                            "[NarrativeGraph][P1] user-specified document_node_types produced 0 docs; using fallback labels."
+                        )
+                else:
+                    logger.warning(
+                        "[NarrativeGraph][P1] fallback labels also returned 0 docs. check doc_type/node labels in the local graph."
+                    )
+
+        documents = documents[: int(limit_documents)] if limit_documents is not None else documents
+
+        logger.info(
+            "[NarrativeGraph][P1] documents=%d node_types=%s store_support=%s ensure_emb=%s base_dir=%s kg_dir=%s",
+            len(documents),
+            document_node_types,
+            "yes" if store_episode_support_edges else "no",
+            "yes" if ensure_episode_embeddings else "no",
+            self.base_dir,
+            self.kg_dir,
+        )
+
+        def _retry(run_fn, desc: str, n: int) -> Any:
+            last = None
+            for i in range(max(1, int(n))):
+                try:
+                    return run_fn()
+                except Exception as e:
+                    last = e
+                    sleep = float(backoff_seconds) * (2**i)
+                    if jitter_seconds > 0:
+                        sleep += (hash(f"{desc}|{i}") % 1000) / 1000.0 * float(jitter_seconds)
+                    logger.warning("[NarrativeGraph][retry] %s round=%d/%d err=%s", desc, i + 1, n, e)
+                    if sleep > 0:
+                        import time as _t
+
+                        _t.sleep(sleep)
+            raise last or RuntimeError(desc)
+
+        merged_eps: List[Dict[str, Any]] = []
+        merged_edges: List[Dict[str, Any]] = []
+        merged_packs: List[Dict[str, Any]] = []
+
+        workers = max(1, int(document_concurrency or self.max_workers))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = [
+                ex.submit(
+                    self._p1_one_doc,
+                    doc,
+                    doc2chunks,
+                    per_document_retries,
+                    per_part_retries,
+                    _retry,
+                    store_episode_support_edges,
+                    save_episodes_by_document,
+                )
+                for doc in documents
+            ]
+
+            for fut in tqdm(as_completed(futs), total=len(futs), desc="Phase1 docs", unit="doc"):
+                try:
+                    eps, edges, packs = fut.result()
+                    if eps:
+                        merged_eps.extend(eps)
+                    if store_episode_support_edges and edges:
+                        merged_edges.extend(edges)
+                    if packs:
+                        merged_packs.extend(packs)
+                except Exception as e:
+                    logger.exception("[NarrativeGraph][P1] doc failed: %s", e)
+
+        if merge_global_episodes:
+            merged_eps = self._dedupe_entities_by_id(merged_eps)
+            json_dump_atomic(self.global_episodes_path, merged_eps)
+
+        if store_episode_support_edges and save_global_support_edges:
+            merged_edges = self._dedupe_relations(merged_edges)
+            json_dump_atomic(self.global_ep_support_edges_path, merged_edges)
+
+        if save_global_packs:
+            merged_packs = self._dedupe_packs_by_episode_id(merged_packs)
+            json_dump_atomic(self.global_ep_packs_path, merged_packs)
+
+        if ensure_episode_embeddings and merged_eps:
+            try:
+                merged_eps = self._ensure_episode_embeddings(
+                    episodes=merged_eps,
+                    embedding_text_field=embedding_text_field,
+                    batch_size=embedding_batch_size,
+                    save_path=self.global_episodes_path,
+                )
+            except Exception as e:
+                logger.exception("[NarrativeGraph][P1] ensure embeddings failed: %s", e)
+
+        logger.info(
+            "[NarrativeGraph][P1] done: episodes=%d support_edges=%d packs=%d",
+            len(merged_eps),
+            len(merged_edges),
+            len(merged_packs),
+        )
+        return merged_eps
+
+    def _p1_one_doc(
+        self,
+        doc_node: Dict[str, Any],
+        doc2chunks: Dict[str, Any],
+        per_document_retries: int,
+        per_part_retries: int,
+        retry_fn,
+        store_support: bool,
+        save_by_doc: bool,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        doc_id = safe_str(doc_node.get("id"))
+        if not doc_id:
+            return [], [], []
+
+        def _run_once():
+            return self._p1_one_doc_once(doc_node, doc2chunks, per_part_retries, retry_fn, store_support)
+
+        try:
+            eps, edges, packs = retry_fn(_run_once, f"phase1 doc={doc_id}", per_document_retries)
+        except Exception as e:
+            logger.exception("[NarrativeGraph][P1] doc failed after retries: %s err=%s", doc_id, e)
+            return [], [], []
+
+        if save_by_doc and eps:
+            try:
+                json_dump_atomic(os.path.join(self.out_episodes_by_doc_dir, f"{doc_id}.json"), eps)
+            except Exception as e:
+                logger.warning("[NarrativeGraph][P1] save episodes_by_doc failed: %s err=%s", doc_id, e)
+
+        return eps, edges, packs
+
+    def _p1_one_doc_once(
+        self,
+        doc_node: Dict[str, Any],
+        doc2chunks: Dict[str, Any],
+        per_part_retries: int,
+        retry_fn,
+        store_support: bool,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        doc_id = safe_str(doc_node.get("id"))
+        props = safe_dict(doc_node.get("properties"))
+        src_parts = [safe_str(x) for x in safe_list(doc_node.get("source_documents")) if safe_str(x)]
+        if not src_parts:
+            src_parts = [safe_str(x) for x in safe_list(props.get("source_documents")) if safe_str(x)]
+        if not src_parts:
+            src_parts = [safe_str(x) for x in safe_list(doc_node.get("parts")) if safe_str(x)]
+        if not src_parts:
+            src_parts = [safe_str(x) for x in safe_list(props.get("parts")) if safe_str(x)]
+        if not doc_id or not src_parts:
+            return [], [], []
+
+        all_eo = self.graph_query_utils.search_related_entities(source_id=doc_id, entity_types=["Event", "Occasion"]) or []
+        if not all_eo:
+            return [], [], []
+
+        reached: List[Any] = []
+        existing: List[Dict[str, Any]] = []
+
+        for i, part_id in enumerate(src_parts):
+            reached.extend(filter_entities_by_part(all_eo, part_id))
+            text = get_doc_text(doc2chunks, part_id)
+            if not safe_str(text):
+                continue
+
+            def _one_call() -> List[Dict[str, Any]]:
+                entity_info = format_entities_brief(reached)
+                if i == 0 or not existing:
+                    out = self.narrative_manager.extract_episodes(text=text, entities=entity_info, goal="extract")
+                else:
+                    out = self.narrative_manager.extract_episodes(
+                        text=text,
+                        entities=entity_info,
+                        goal="update",
+                        existing_episodes=json.dumps(existing, ensure_ascii=False, indent=2),
+                    )
+                try:
+                    parsed = json.loads(out.strip()) if isinstance(out, str) else out
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, dict) and isinstance(parsed.get("episodes"), list):
+                    return [x for x in parsed["episodes"] if isinstance(x, dict)]
+                return existing
+
+            desc = f"extract_episodes doc={doc_id} part={part_id}"
+            try:
+                existing = retry_fn(_one_call, desc, per_part_retries)
+            except Exception as e:
+                logger.exception("[NarrativeGraph][P1] %s failed: %s", desc, e)
+
+        packs, eps, edges = self._build_episode_entities_and_edges(doc_id, src_parts, existing)
+        return eps, (edges if store_support else []), packs
+
+    def _build_episode_entities_and_edges(
+        self,
+        doc_id: str,
+        source_documents: List[str],
+        episodes: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        eps_out: List[Dict[str, Any]] = []
+        edges: List[Dict[str, Any]] = []
+        packs: List[Dict[str, Any]] = []
+
+        def _ep_id(name: str, desc: str) -> str:
+            key = f"{safe_str(doc_id)}||{safe_str(name)}||{safe_str(desc)}"
+            return "ep_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+
+        def _ctx_ids(ev_id: str) -> Tuple[List[str], List[str], List[str]]:
+            def _ids(xs: List[Any]) -> List[str]:
+                out: List[str] = []
+                for x in xs or []:
+                    if hasattr(x, "id"):
+                        out.append(safe_str(getattr(x, "id", "")))
+                    elif isinstance(x, dict):
+                        out.append(safe_str(x.get("id")))
+                return [y for y in out if y]
+
+            chars = self.graph_query_utils.search_related_entities(ev_id, entity_types=["Character"]) or []
+            locs = self.graph_query_utils.search_related_entities(ev_id, entity_types=["Location"]) or []
+            times = self.graph_query_utils.search_related_entities(ev_id, entity_types=["TimePoint"]) or []
+            return dedupe_list(_ids(chars)), dedupe_list(_ids(locs)), dedupe_list(_ids(times))
+
+        temp: List[Dict[str, Any]] = []
+        all_ref_ids: Set[str] = set()
+
+        for ep in episodes or []:
+            if not isinstance(ep, dict):
+                continue
+            name, desc = safe_str(ep.get("name")), safe_str(ep.get("description"))
+            if not name and not desc:
+                continue
+
+            eid = _ep_id(name, desc)
+            ev_ids = dedupe_list([safe_str(x) for x in safe_list(ep.get("related_events")) if safe_str(x)])
+            oc_ids = dedupe_list([safe_str(x) for x in safe_list(ep.get("related_occasions")) if safe_str(x)])
+
+            ch_ids: List[str] = []
+            loc_ids: List[str] = []
+            tm_ids: List[str] = []
+            for ev_id in ev_ids:
+                c, l, t = _ctx_ids(ev_id)
+                ch_ids.extend(c)
+                loc_ids.extend(l)
+                tm_ids.extend(t)
+
+            ch_ids = dedupe_list([x for x in ch_ids if x])
+            loc_ids = dedupe_list([x for x in loc_ids if x])
+            tm_ids = dedupe_list([x for x in tm_ids if x])
+
+            all_ref_ids.update(ev_ids)
+            all_ref_ids.update(oc_ids)
+            all_ref_ids.update(ch_ids)
+            all_ref_ids.update(loc_ids)
+            all_ref_ids.update(tm_ids)
+
+            temp.append(
+                {
+                    "eid": eid,
+                    "name": name,
+                    "desc": desc,
+                    "ev_ids": ev_ids,
+                    "oc_ids": oc_ids,
+                    "ch_ids": ch_ids,
+                    "loc_ids": loc_ids,
+                    "tm_ids": tm_ids,
+                }
+            )
+
+        ref_map = self.graph_query_utils.get_entities_by_ids(list(all_ref_ids)) or {}
+
+        def _name(_id: str) -> str:
+            v = ref_map.get(_id)
+            if v is None:
+                return ""
+            if hasattr(v, "name"):
+                return safe_str(getattr(v, "name", ""))
+            if isinstance(v, dict):
+                return safe_str(v.get("name"))
+            return ""
+
+        def _edge(pred: str, subj_id: str, obj_id: str, rel_name: str, desc_txt: str, prefix: str) -> Dict[str, Any]:
+            return {
+                "id": stable_relation_id(subj_id, pred, obj_id, prefix=prefix),
+                "subject_id": subj_id,
+                "object_id": obj_id,
+                "predicate": pred,
+                "relation_name": rel_name,
+                "confidence": 1.0,
+                "description": desc_txt,
+                "source_documents": list(source_documents),
+                "properties": {},
+            }
+
+        for item in temp:
+            eid = item["eid"]
+            name = item["name"]
+            desc = item["desc"]
+            ev_ids = item["ev_ids"]
+            oc_ids = item["oc_ids"]
+            ch_ids = item["ch_ids"]
+            loc_ids = item["loc_ids"]
+            tm_ids = item["tm_ids"]
+
+            props: Dict[str, Any] = {}
+            if ev_ids:
+                props["related_events"] = [n for n in (_name(x) for x in ev_ids) if n]
+            if oc_ids:
+                props["related_occasions"] = [n for n in (_name(x) for x in oc_ids) if n]
+            if ch_ids:
+                props["related_characters"] = [n for n in (_name(x) for x in ch_ids) if n]
+            if loc_ids:
+                props["related_locations"] = [n for n in (_name(x) for x in loc_ids) if n]
+            if tm_ids:
+                props["related_timepoints"] = [n for n in (_name(x) for x in tm_ids) if n]
+
+            ep_ent = {
+                "id": eid,
+                "name": name or eid,
+                "type": ["Episode"],
+                "aliases": [],
+                "description": desc,
+                "scope": "global",
+                "source_documents": list(source_documents),
+                "properties": props,
+                "version": "default",
+            }
+            eps_out.append(ep_ent)
+
+            edges.extend(
+                _edge(P_EP_CONTAINS, eid, x, "contains", "Episode contains the related Event.", "rel_ep_ev_")
+                for x in ev_ids
+            )
+            edges.extend(
+                _edge(
+                    P_EP_CONTAINS,
+                    eid,
+                    x,
+                    "contains",
+                    "Episode contains the related Occasion.",
+                    "rel_ep_oc_",
+                )
+                for x in oc_ids
+            )
+            edges.extend(
+                _edge(
+                    P_EP_CONTAINS,
+                    eid,
+                    x,
+                    "contains",
+                    "Episode contains the related Character context.",
+                    "rel_ep_ch_",
+                )
+                for x in ch_ids
+            )
+            edges.extend(
+                _edge(
+                    P_EP_CONTAINS,
+                    eid,
+                    x,
+                    "contains",
+                    "Episode contains the related Location context.",
+                    "rel_ep_loc_",
+                )
+                for x in loc_ids
+            )
+            edges.extend(
+                _edge(
+                    P_EP_CONTAINS,
+                    eid,
+                    x,
+                    "contains",
+                    "Episode contains the related TimePoint context.",
+                    "rel_ep_time_",
+                )
+                for x in tm_ids
+            )
+
+            packs.append(
+                {
+                    "episode_entity": ep_ent,
+                    "related_event_ids": ev_ids,
+                    "related_occasion_ids": oc_ids,
+                    "related_character_ids": ch_ids,
+                    "related_location_ids": loc_ids,
+                    "related_time_ids": tm_ids,
+                    "doc_id": doc_id,
+                    "source_documents": list(source_documents),
+                }
+            )
+
+        return packs, eps_out, edges
+
+    # ================================================================
+    # Phase 2
+    # ================================================================
+    def extract_episode_relations(
+        self,
+        *,
+        episodes_path: Optional[str] = None,
+        packs_path: Optional[str] = None,
+        episode_pair_concurrency: Optional[int] = None,
+        max_episode_pairs_global: int = 200000,
+        cross_document_only: bool = False,
+        similarity_threshold: float = 0.5,
+        ensure_episode_embeddings: bool = True,
+        per_pair_retries: int = 2,
+        backoff_seconds: float = 0.6,
+        jitter_seconds: float = 0.2,
+        save_pair_json: bool = True,
+        show_pair_progress: bool = False,
+        save_candidate_pairs: bool = True,
+        candidate_pairs_path: Optional[str] = None,
+        include_shared_neighbor_ids: bool = True,
+        embedding_text_field: str = "name_desc",
+        embedding_batch_size: int = 256,
+        dynamic_similarity_threshold: Optional[bool] = None,
+        min_candidate_pairs: Optional[int] = None,
+        threshold_floor: Optional[float] = None,
+        threshold_step: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
+        ep_path = episodes_path or self.global_episodes_path
+        pk_path = packs_path or self.global_ep_packs_path
+        cand_path = candidate_pairs_path or os.path.join(self.out_episodes_dir, "candidate_pairs.json")
+
+        try:
+            obj = load_json(ep_path)
+            episodes = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+        except Exception:
+            logger.exception("[NarrativeGraph][P2] failed to load episodes: %s", ep_path)
+            episodes = []
+
+        try:
+            obj = load_json(pk_path)
+            packs = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+        except Exception:
+            logger.exception("[NarrativeGraph][P2] failed to load packs: %s", pk_path)
+            packs = []
+
+        if len(episodes) < 2 or len(packs) < 2:
+            logger.warning(
+                "[NarrativeGraph][P2] insufficient episodes/packs: episodes=%d packs=%d",
+                len(episodes),
+                len(packs),
+            )
+            if save_candidate_pairs:
+                json_dump_atomic(cand_path, [])
+            json_dump_atomic(self.global_ep_ep_edges_path, [])
+            return []
+
+        if ensure_episode_embeddings:
+            try:
+                episodes = self._ensure_episode_embeddings(
+                    episodes=episodes,
+                    embedding_text_field=embedding_text_field,
+                    batch_size=embedding_batch_size,
+                    save_path=ep_path,
+                )
+            except Exception as e:
+                logger.exception("[NarrativeGraph][P2] ensure embeddings failed: %s", e)
+
+        ep_by_id = {safe_str(e.get("id")): e for e in episodes if safe_str(e.get("id"))}
+        pack_by_ep = {
+            safe_str(p.get("episode_entity", {}).get("id")): p
+            for p in packs
+            if safe_str(p.get("episode_entity", {}).get("id"))
+        }
+
+        buckets: Dict[str, List[str]] = {}
+        for ep_id, p in pack_by_ep.items():
+            for k in (
+                "related_event_ids",
+                "related_occasion_ids",
+                "related_character_ids",
+                "related_location_ids",
+                "related_time_ids",
+            ):
+                for nei in safe_list(p.get(k)):
+                    nei = safe_str(nei)
+                    if nei:
+                        buckets.setdefault(nei, []).append(ep_id)
+
+        pair_common: Dict[Tuple[str, str], int] = {}
+        pair_shared: Dict[Tuple[str, str], Set[str]] = {}
+
+        for nei_id, ep_ids in (buckets or {}).items():
+            uniq = dedupe_list([safe_str(x) for x in (ep_ids or []) if safe_str(x)])
+            if len(uniq) < 2:
+                continue
+            for i in range(len(uniq)):
+                for j in range(i + 1, len(uniq)):
+                    a, b = uniq[i], uniq[j]
+                    if not a or not b or a == b:
+                        continue
+                    key = (a, b) if a < b else (b, a)
+                    pa, pb = pack_by_ep.get(key[0]), pack_by_ep.get(key[1])
+                    if not pa or not pb:
+                        continue
+                    if cross_document_only and safe_str(pa.get("doc_id")) == safe_str(pb.get("doc_id")):
+                        continue
+                    pair_common[key] = pair_common.get(key, 0) + 1
+                    if include_shared_neighbor_ids:
+                        pair_shared.setdefault(key, set()).add(nei_id)
+
+        if not pair_common:
+            logger.info("[NarrativeGraph][P2] candidate_pairs_by_neighbors=0")
+            if save_candidate_pairs:
+                json_dump_atomic(cand_path, [])
+            json_dump_atomic(self.global_ep_ep_edges_path, [])
+            return []
+
+        cand_pairs = [
+            k
+            for k, _ in sorted(pair_common.items(), key=lambda kv: kv[1], reverse=True)[
+                : int(max_episode_pairs_global)
+            ]
+        ]
+
+        cfg_ngb = getattr(self.config, "narrative_graph_builder", None)
+        thr = (
+            float(similarity_threshold)
+            if similarity_threshold is not None
+            else float(getattr(cfg_ngb, "episode_relation_similarity_threshold", 0.55) or 0.55)
+        )
+        dynamic_enabled = (
+            bool(dynamic_similarity_threshold)
+            if dynamic_similarity_threshold is not None
+            else bool(getattr(cfg_ngb, "episode_relation_dynamic_threshold", True))
+        )
+        min_pairs_target = (
+            max(0, int(min_candidate_pairs or 0))
+            if min_candidate_pairs is not None
+            else max(0, int(getattr(cfg_ngb, "episode_relation_min_candidate_pairs", 10) or 0))
+        )
+        thr_floor = (
+            float(threshold_floor)
+            if threshold_floor is not None
+            else float(getattr(cfg_ngb, "episode_relation_threshold_floor", 0.20) or 0.20)
+        )
+        thr_step = (
+            float(threshold_step)
+            if threshold_step is not None
+            else float(getattr(cfg_ngb, "episode_relation_threshold_step", 0.05) or 0.05)
+        )
+        backfill_by_similarity = bool(getattr(cfg_ngb, "episode_relation_backfill_by_similarity", True))
+        backfill_max_episodes = max(2, int(getattr(cfg_ngb, "episode_relation_backfill_max_episodes", 500) or 500))
+        thr_step = 0.05 if thr_step <= 0 else abs(thr_step)
+        thr_floor = min(thr_floor, thr)
+
+        def _filter_pairs_by_threshold(threshold: float) -> List[Tuple[str, str]]:
+            out: List[Tuple[str, str]] = []
+            for a, b in cand_pairs:
+                key = (a, b) if a < b else (b, a)
+                sim = pair_sim.get(key)
+                if sim is None:
+                    continue
+                if threshold <= -1.0 or sim >= threshold:
+                    out.append(key)
+            seen_local: Set[Tuple[str, str]] = set()
+            return [p for p in out if not (p in seen_local or seen_local.add(p))]
+
+        precomputed_pair_sim: Dict[Tuple[str, str], float] = {}
+
+        if dynamic_enabled and min_pairs_target > 0 and len(cand_pairs) < min_pairs_target and backfill_by_similarity:
+            episode_ids_for_backfill = [eid for eid in ep_by_id.keys() if eid in pack_by_ep]
+            if len(episode_ids_for_backfill) <= backfill_max_episodes:
+                semantic_candidates: List[Tuple[Tuple[str, str], float]] = []
+                seen_cand_pairs = set(cand_pairs)
+                for i in range(len(episode_ids_for_backfill)):
+                    a = episode_ids_for_backfill[i]
+                    ea = ep_by_id.get(a) or {}
+                    va = ea.get("embedding")
+                    if not isinstance(va, list):
+                        continue
+                    pa = pack_by_ep.get(a) or {}
+                    for j in range(i + 1, len(episode_ids_for_backfill)):
+                        b = episode_ids_for_backfill[j]
+                        key = (a, b) if a < b else (b, a)
+                        if key in seen_cand_pairs:
+                            continue
+                        pb = pack_by_ep.get(b) or {}
+                        if cross_document_only and safe_str(pa.get("doc_id")) == safe_str(pb.get("doc_id")):
+                            continue
+                        eb = ep_by_id.get(b) or {}
+                        vb = eb.get("embedding")
+                        if not isinstance(vb, list):
+                            continue
+                        sim = cosine_sim(va, vb)
+                        if sim is None:
+                            continue
+                        semantic_candidates.append((key, float(sim)))
+                semantic_candidates.sort(key=lambda item: item[1], reverse=True)
+                need = max(0, min_pairs_target - len(cand_pairs))
+                added = 0
+                for key, sim in semantic_candidates:
+                    cand_pairs.append(key)
+                    pair_common.setdefault(key, 0)
+                    if include_shared_neighbor_ids:
+                        pair_shared.setdefault(key, set())
+                    precomputed_pair_sim[key] = sim
+                    added += 1
+                    if added >= need or len(cand_pairs) >= int(max_episode_pairs_global):
+                        break
+                if added > 0:
+                    logger.info(
+                        "[NarrativeGraph][P2] semantic backfill added=%d target=%d cand_total=%d",
+                        added,
+                        min_pairs_target,
+                        len(cand_pairs),
+                    )
+
+        pair_sim: Dict[Tuple[str, str], float] = {}
+
+        for a, b in cand_pairs:
+            ea, eb = ep_by_id.get(a), ep_by_id.get(b)
+            if not ea or not eb:
+                continue
+            key = (a, b) if a < b else (b, a)
+            if key in precomputed_pair_sim:
+                pair_sim[key] = float(precomputed_pair_sim[key])
+                continue
+            va, vb = ea.get("embedding"), eb.get("embedding")
+            if not isinstance(va, list) or not isinstance(vb, list):
+                continue
+            sim = cosine_sim(va, vb)
+            if sim is None:
+                continue
+            pair_sim[key] = float(sim)
+        filtered = _filter_pairs_by_threshold(thr)
+        selected_thr = thr
+
+        if dynamic_enabled and min_pairs_target > 0 and len(filtered) < min_pairs_target and pair_sim:
+            trial_thr = thr
+            while trial_thr - thr_step >= thr_floor - 1e-9:
+                trial_thr = max(thr_floor, trial_thr - thr_step)
+                trial_filtered = _filter_pairs_by_threshold(trial_thr)
+                logger.info(
+                    "[NarrativeGraph][P2] dynamic threshold fallback: base=%.3f try=%.3f filtered=%d target=%d",
+                    thr,
+                    trial_thr,
+                    len(trial_filtered),
+                    min_pairs_target,
+                )
+                filtered = trial_filtered
+                selected_thr = trial_thr
+                if len(filtered) >= min_pairs_target or trial_thr <= thr_floor + 1e-9:
+                    break
+
+        logger.info(
+            "[NarrativeGraph][P2] pairs: cand=%d filtered=%d thr=%.3f base_thr=%.3f cross_doc_only=%s dynamic=%s target=%d",
+            len(cand_pairs),
+            len(filtered),
+            selected_thr,
+            thr,
+            "yes" if cross_document_only else "no",
+            "yes" if dynamic_enabled else "no",
+            min_pairs_target,
+        )
+
+        if not filtered:
+            if save_candidate_pairs:
+                json_dump_atomic(cand_path, [])
+            json_dump_atomic(self.global_ep_ep_edges_path, [])
+            return []
+
+        if save_candidate_pairs:
+            try:
+                to_save: List[Dict[str, Any]] = []
+                for a, b in filtered:
+                    item: Dict[str, Any] = {
+                        "a_id": a,
+                        "b_id": b,
+                        "common_neighbors": int(pair_common.get((a, b), 0)),
+                        "similarity": pair_sim.get((a, b)),
+                        "threshold_used": selected_thr,
+                    }
+                    if include_shared_neighbor_ids:
+                        item["shared_neighbor_ids"] = sorted(list(pair_shared.get((a, b), set())))
+                    to_save.append(item)
+                json_dump_atomic(cand_path, to_save)
+            except Exception as e:
+                logger.exception("[NarrativeGraph][P2] save candidate_pairs failed: %s", e)
+
+        def _ep_info(e: Dict[str, Any]) -> Dict[str, Any]:
+            props = safe_dict(e.get("properties"))
+            compact_props = {
+                "doc_id": safe_str(props.get("doc_id")),
+                "related_events": safe_list(props.get("related_events")),
+                "related_occasions": safe_list(props.get("related_occasions")),
+                "related_characters": safe_list(props.get("related_characters")),
+                "related_locations": safe_list(props.get("related_locations")),
+                "related_timepoints": safe_list(props.get("related_timepoints")),
+            }
+            compact_props = {k: v for k, v in compact_props.items() if v or (isinstance(v, str) and v)}
+            return {
+                "id": safe_str(e.get("id")),
+                "name": safe_str(e.get("name")),
+                "description": safe_str(e.get("description")),
+                "properties": compact_props,
+            }
+
+        def _pair_file(a_id: str, b_id: str) -> str:
+            return "pair_" + hashlib.md5(f"{a_id}||{b_id}".encode("utf-8")).hexdigest()[:16] + ".json"
+
+        def _run_pair_once(a_id: str, b_id: str) -> Optional[Dict[str, Any]]:
+            ea, eb = ep_by_id.get(a_id), ep_by_id.get(b_id)
+            if not ea or not eb:
                 return None
 
-        # 并行执行，与原实现一致
-        chain_map, chain_failed = run_with_soft_timeout_and_retries(
-            chains,
-            work_fn=process_chain,
-            key_fn=lambda ch: tuple(ch),
-            desc_label="Generate plot artifacts in parallel",
-            per_task_timeout=600.0,
-            retries=3,
-            retry_backoff=60,
-            allow_placeholder_first_round=False,
-            placeholder_fn=None,
-            should_retry=lambda r: r is None,
-            max_workers=self.max_workers,
-        )
-
-        write_jsonl(os.path.join(base, "plots.jsonl"), plot_rows)
-        write_jsonl(os.path.join(base, "plot_has_event_edges.jsonl"), has_edges)
-        return plot_rows, has_edges
-
-
-    def build_and_save_plot_relations(self) -> List[Dict[str,Any]]:
-        """
-        基于现有 Plot 节点对，抽取 Plot-Plot 关系，保存至 plot_relations.jsonl。
-        返回 edges 列表便于测试或复用。
-        """
-        base = self.config.storage.event_plot_graph_path
-        os.makedirs(base, exist_ok=True)
-
-        plot_pairs = self.neo4j_utils.get_plot_pairs(threshold=0)  # [{"src":..,"tgt":..},...]
-        print("[CHECK] Plot pairs to process:", len(plot_pairs))
-
-        DIRECTED = {"PLOT_PREREQUISITE_FOR", "PLOT_ADVANCES", "PLOT_BLOCKS", "PLOT_RESOLVES"}
-        UNDIRECTED = {"PLOT_CONFLICTS_WITH", "PLOT_PARALLELS"}
-        VALID = DIRECTED | UNDIRECTED | {"None", None}
-
-        def _work(pair: dict) -> dict:
-            try:
-                plot_A_info = self.neo4j_utils.get_entity_info(
-                    pair["src"], "Plot", contain_properties=True, contain_relations=True
-                )
-                plot_B_info = self.neo4j_utils.get_entity_info(
-                    pair["tgt"], "Plot", contain_properties=True, contain_relations=True
-                )
-                try:
-                    result = self.graph_analyzer.extract_plot_relation(
-                        plot_A_info, plot_B_info, self.system_prompt_text, timeout=PER_TASK_TIMEOUT - 30.0
-                    )
-                except TypeError:
-                    result = self.graph_analyzer.extract_plot_relation(
-                        plot_A_info, plot_B_info, self.system_prompt_text
-                    )
-                try:
-                    result = json.loads(correct_json_format(result))
-                except Exception:
-                    if not isinstance(result, dict):
-                        raise
-                rtype = result.get("relation_type")
-                direction = result.get("direction", None)
-                confidence = result.get("confidence", 0.0)
-                reason = result.get("reason", "")
-                if rtype not in VALID:
-                    return {"status": "error", "edges": []}
-                if rtype in {"None", None}:
-                    return {"status": "none", "edges": []}
-                if rtype in DIRECTED:
-                    if direction == "A->B":
-                        edges = [{"src": pair["src"], "tgt": pair["tgt"], "relation_type": rtype, "confidence": confidence, "reason": reason}]
-                    elif direction == "B->A":
-                        edges = [{"src": pair["tgt"], "tgt": pair["src"], "relation_type": rtype, "confidence": confidence, "reason": reason}]
-                    else:
-                        return {"status": "error", "edges": []}
-                else:
-                    edges = [
-                        {"src": pair["src"], "tgt": pair["tgt"], "relation_type": rtype, "confidence": confidence, "reason": reason},
-                        {"src": pair["tgt"], "tgt": pair["src"], "relation_type": rtype, "confidence": confidence, "reason": reason},
-                    ]
-                return {"status": "ok", "edges": edges}
-            except Exception:
-                return {"status": "error", "edges": []}
-
-        res_map, still_failed = run_with_soft_timeout_and_retries(
-            plot_pairs,
-            work_fn=_work,
-            key_fn=lambda p: (p["src"], p["tgt"]),
-            desc_label="Extract plot relations (artifact phase)",
-            per_task_timeout=PER_TASK_TIMEOUT,
-            retries=MAX_RETRIES,
-            retry_backoff=RETRY_BACKOFF,
-            allow_placeholder_first_round=False,
-            placeholder_fn=None,
-            should_retry=lambda r: (isinstance(r, dict) and r.get("status") == "error"),
-            max_workers=self.max_workers,
-        )
-
-        rel_edges = []
-        for out in res_map.values():
-            if isinstance(out, dict) and out.get("status") == "ok" and out.get("edges"):
-                rel_edges.extend(out["edges"])
-
-        write_jsonl(os.path.join(base, "plot_relations.jsonl"), rel_edges)
-        return rel_edges
-
-
-    
-    def materialize_plot_graph(self):
-        """
-        读取 JSON/JSONL 将 Plot 节点、HAS_EVENT 边、Plot-Plot 关系写入 Neo4j：
-        - plots.jsonl
-        - plot_has_event_edges.jsonl
-        - plot_relations.jsonl
-        这里会将 JSON 规范化为 create_plot_node 期望的结构：
-        id, name(=title), description(=summary)，以及常见字段提升为顶层；
-        properties 作为 map 传入（不转字符串）。
-        """
-        base = self.config.storage.event_plot_graph_path
-        self.neo4j_utils.reset_event_plot_graph()
-
-        # 读取产物
-        plot_nodes = read_jsonl(os.path.join(base, "plots.jsonl"))
-        has_edges  = read_jsonl(os.path.join(base, "plot_has_event_edges.jsonl"))
-        plot_rel_edges = read_jsonl(os.path.join(base, "plot_relations.jsonl"))
-
-        # ---------- 写 Plot 节点 ----------
-        for pn in plot_nodes:
-            props = pn.get("properties", {}) or {}
-
-            # 统一 name / description（summary）映射与兜底
-            name = pn.get("name") or pn.get("title", "")
-            description = (
-                pn.get("summary")
-                or pn.get("description")
-                or pn.get("desc")
-                or props.get("summary")
-                or ""
+            out = self.narrative_manager.extract_narrative_relation(
+                subject_entity_info=_ep_info(ea),
+                object_entity_info=_ep_info(eb),
+                entity_type="Episode",
             )
 
-            # 常见语义字段：优先 properties，其次顶层
-            def pick(key):
-                return props.get(key, pn.get(key))
+            try:
+                parsed = json.loads(out.strip()) if isinstance(out, str) else out
+            except Exception:
+                return None
+            if not isinstance(parsed, dict):
+                return None
 
-            plot_data = {
-                "id": pn["id"],
-                "name": name,
-                "title": name,                       # create_plot_node 期望字段    
-                "description": description,               # create_plot_node 期望字段
-                "reason": pn.get("reason", ""),
-                "event_ids": list(dict.fromkeys(pn.get("event_ids", []) or [])),
-                "main_characters": pick("main_characters"),
-                "locations": pick("locations"),
-                "time": pick("time"),
-                "theme": pick("theme"),
-                "goal": pick("goal"),
-                "conflict": pick("conflict"),
-                "resolution": pick("resolution"),
-                "properties": props,                      # 作为 map 传入，便于 Cypher 展开
+            s_id = safe_str(parsed.get("subject_id") or a_id)
+            o_id = safe_str(parsed.get("object_id") or b_id)
+            rel_type = safe_str(parsed.get("relation_type") or parsed.get("predicate")).strip()
+            if not s_id or not o_id or not rel_type or _is_none_relation(rel_type):
+                return None
+
+            try:
+                conf = float(parsed.get("confidence", 1.0))
+            except Exception:
+                conf = 1.0
+
+            pa, pb = pack_by_ep.get(a_id, {}), pack_by_ep.get(b_id, {})
+            src_docs = dedupe_list(
+                [
+                    safe_str(x)
+                    for x in (safe_list(pa.get("source_documents")) + safe_list(pb.get("source_documents")))
+                    if safe_str(x)
+                ]
+            )
+
+            rid = stable_relation_id(s_id, rel_type, o_id, prefix="rel_ep_ep_")
+            key = (a_id, b_id) if a_id < b_id else (b_id, a_id)
+
+            props = safe_dict(parsed.get("properties"))
+            props.setdefault("similarity", pair_sim.get(key))
+            props.setdefault("common_neighbors", int(pair_common.get(key, 0)))
+            if include_shared_neighbor_ids:
+                props.setdefault("shared_neighbor_ids", sorted(list(pair_shared.get(key, set()))))
+
+            return {
+                "id": rid,
+                "subject_id": s_id,
+                "object_id": o_id,
+                "predicate": rel_type,
+                "relation_name": rel_type,
+                "confidence": conf,
+                "description": safe_str(parsed.get("description")),
+                "source_documents": src_docs,
+                "properties": props,
             }
 
-            # 首选你的专用接口（更贴合你的数据模型）
-            created = False
-            if hasattr(self.neo4j_utils, "create_plot_node"):
+        def _run_pair_with_retries(a_id: str, b_id: str) -> Optional[Dict[str, Any]]:
+            desc = f"ep_pair {a_id}->{b_id}"
+            last = None
+            for i in range(max(1, int(per_pair_retries))):
                 try:
-                    created = bool(self.neo4j_utils.create_plot_node(plot_data))
+                    return _run_pair_once(a_id, b_id)
                 except Exception as e:
-                    print(f"创建 Plot 节点失败(create_plot_node): {e}")
+                    last = e
+                    sleep = float(backoff_seconds) * (2**i)
+                    if jitter_seconds > 0:
+                        sleep += (hash(f"{desc}|{i}") % 1000) / 1000.0 * float(jitter_seconds)
+                    logger.warning(
+                        "[NarrativeGraph][retry] %s round=%d/%d err=%s",
+                        desc,
+                        i + 1,
+                        per_pair_retries,
+                        e,
+                    )
+                    if sleep > 0:
+                        import time as _t
 
-            # 退化方案：用通用 write_plot_to_neo4j（如果存在）
-            if not created and hasattr(self.neo4j_utils, "write_plot_to_neo4j"):
-                try:
-                    # 该接口可能期待 title/summary/description；准备一个兼容 payload
-                    fallback_payload = {
-                        "id": plot_data["id"],
-                        "title": plot_data["name"],
-                        "summary": plot_data["description"],
-                        "description": plot_data["description"],
-                        "reason": plot_data["reason"],
-                        "event_ids": plot_data["event_ids"],
-                        "properties": plot_data["properties"],
-                    }
-                    self.neo4j_utils.write_plot_to_neo4j(fallback_payload)
-                except Exception as e:
-                    print(f"创建 Plot 节点失败(write_plot_to_neo4j): {e}")
+                        _t.sleep(sleep)
+            if last:
+                logger.warning("[NarrativeGraph][P2] pair failed after retries: %s err=%s", desc, last)
+            return None
 
-        # ---------- 写 HAS_EVENT ----------
-        if has_edges:
-            # 优先批量接口（如果你按我前面建议添加了）
-            if hasattr(self.neo4j_utils, "create_plot_has_event_edges"):
+        workers = max(1, int(episode_pair_concurrency or self.max_workers))
+        out_rels: List[Dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            fut2pair = {ex.submit(_run_pair_with_retries, a, b): (a, b) for a, b in filtered}
+            it = as_completed(fut2pair)
+            if show_pair_progress:
+                it = tqdm(it, total=len(fut2pair), desc="Phase2 pairs", unit="pair", leave=False)
+
+            for fut in it:
+                a_id, b_id = fut2pair[fut]
                 try:
-                    self.neo4j_utils.create_plot_has_event_edges(has_edges)
-                except Exception as e:
-                    print(f"批量 HAS_EVENT 写入失败: {e}")
-            else:
-                # 回退：按 plot_id 聚合，再用 create_plot_event_relationships
-                pid2eids = {}
-                for e in has_edges:
-                    pid = e.get("plot_id") or e.get("src") or e.get("from") or e.get("source")
-                    eid = e.get("event_id") or e.get("tgt") or e.get("to") or e.get("target")
-                    if not pid or not eid:
+                    r = fut.result()
+                    if not r:
                         continue
-                    pid2eids.setdefault(pid, set()).add(eid)
-                if hasattr(self.neo4j_utils, "create_plot_event_relationships"):
-                    for pid, eids in pid2eids.items():
-                        try:
-                            self.neo4j_utils.create_plot_event_relationships(pid, list(eids))
-                        except Exception as e:
-                            print(f"写入 HAS_EVENT (plot={pid}) 失败: {e}")
-                else:
-                    # 最保守：逐条 merge（如你没有上述接口）
-                    for e in has_edges:
-                        pid = e.get("plot_id") or e.get("src") or e.get("from") or e.get("source")
-                        eid = e.get("event_id") or e.get("tgt") or e.get("to") or e.get("target")
-                        if not pid or not eid:
-                            continue
-                        try:
-                            cypher = """
-                            MATCH (p:Plot {id: $pid}), (ev:Event {id: $eid})
-                            MERGE (p)-[:HAS_EVENT]->(ev)
-                            """
-                            self.neo4j_utils.execute_query(cypher, {"pid": pid, "eid": eid})
-                        except Exception as ex:
-                            print(f"逐条写入 HAS_EVENT 失败: plot={pid}, event={eid}, err={ex}")
-
-        # ---------- 写 Plot-Plot 关系 ----------
-        if plot_rel_edges:
-            if hasattr(self.neo4j_utils, "create_plot_relations"):
-                try:
-                    self.neo4j_utils.create_plot_relations(plot_rel_edges)
+                    out_rels.append(r)
+                    if save_pair_json:
+                        json_dump_atomic(os.path.join(self.out_rel_pairs_dir, _pair_file(a_id, b_id)), r)
                 except Exception as e:
-                    print(f"写入 Plot-Plot 关系失败: {e}")
-            else:
-                # 兜底：选择一套最常见的关系类型写入
-                for r in plot_rel_edges:
-                    try:
-                        src = r.get("src"); tgt = r.get("tgt")
-                        rtype = r.get("relation_type") or "PLOT_RELATES"
-                        conf = float(r.get("confidence", 0.0) or 0.0)
-                        reason = r.get("reason", "")
-                        cypher = f"""
-                        MATCH (a:Plot {{id: $src}}), (b:Plot {{id: $tgt}})
-                        MERGE (a)-[rel:{rtype}]->(b)
-                        SET rel.confidence = $conf, rel.reason = $reason
-                        """
-                        self.neo4j_utils.execute_query(cypher, {"src": src, "tgt": tgt, "conf": conf, "reason": reason})
-                    except Exception as ex:
-                        print(f"逐条写入 Plot-Plot 关系失败: {ex}")
+                    logger.exception("[NarrativeGraph][P2] pair failed: %s", e)
 
-        # ---------- 生成 Plot 图投影/embedding ----------
-        self.neo4j_utils.create_event_plot_graph()
-        self.neo4j_utils.run_node2vec()
+        deduped = self._dedupe_relations(out_rels)
+        json_dump_atomic(self.global_ep_ep_edges_path, deduped)
 
+        logger.info(
+            "[NarrativeGraph][P2] done: cand=%d filtered=%d ep2ep_edges=%d merged_out=%s cand_out=%s",
+            len(cand_pairs),
+            len(filtered),
+            len(deduped),
+            self.global_ep_ep_edges_path,
+            cand_path,
+        )
+        return deduped
 
-    def prepare_graph_embeddings(self):
-        """
-        构建/更新图嵌入与向量索引（事件/Plot）。
-        """
-        self.neo4j_utils.load_embedding_model(self.config.graph_embedding)
-        self.neo4j_utils.create_vector_index()
-        self.neo4j_utils.process_all_embeddings(entity_types=["Event", "Plot"])
-        self.neo4j_utils.ensure_entity_superlabel()
-        print("✅ Vector construction for event/plot graph completed")
+    # ================================================================
+    # Cycle break
+    # ================================================================
+    def break_episode_cycles(
+        self,
+        *,
+        method: str = "heuristic",  # heuristic | saber
+        episodes_path: Optional[str] = None,
+        episode_relations_path: Optional[str] = None,
+        out_relations_path: Optional[str] = None,
+        # overrides (override YAML if provided)
+        tau_conf: Optional[float] = None,
+        tau_eff: Optional[float] = None,
+        delta_tie: Optional[float] = None,
+        max_iter: Optional[int] = None,
+        type_weight: Optional[Dict[str, float]] = None,
+        skip_types: Optional[Set[str]] = None,
+        flipped_types: Optional[Set[str]] = None,
+        unified_pred: Optional[str] = None,
+        max_llm_calls_per_iter: int = 200,
+        triangle_workers: int = 64,
+        show_progress: bool = True,
+        save_log: bool = True,
+        log_path: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        m = (method or "").strip().lower()
+        if m not in {"heuristic", "saber"}:
+            raise ValueError(f"Unknown cycle break method: {method}")
 
-    # ---------------- Internals (原子能力，供上面 6 方法调用) ----------------
+        ep_path = episodes_path or self.global_episodes_path
+        rel_path = episode_relations_path or self.global_ep_ep_edges_path
+        out_path = out_relations_path or self.dag_path
 
-    def _clear_directory(self, path, keep_event_cards=False):
-        for file in glob.glob(os.path.join(path, "*.json")):
-            try:
-                if keep_event_cards and os.path.basename(file) == "event_cards.json":
+        episodes: List[Dict[str, Any]] = []
+        relations: List[Dict[str, Any]] = []
+
+        try:
+            obj = load_json(ep_path)
+            episodes = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+        except Exception:
+            logger.exception("[NarrativeGraph][CycleBreak] failed to load episodes: %s", ep_path)
+
+        try:
+            obj = load_json(rel_path)
+            relations = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+        except Exception:
+            logger.exception("[NarrativeGraph][CycleBreak] failed to load relations: %s", rel_path)
+
+        graph_cfg = load_causal_graph_cfg(self.config)
+        cycle_cfg = load_cycle_break_cfg(self.config)
+
+        # apply overrides
+        if tau_conf is not None:
+            graph_cfg["tau_conf"] = float(tau_conf)
+        if tau_eff is not None:
+            graph_cfg["tau_eff"] = float(tau_eff)
+        if unified_pred is not None:
+            graph_cfg["unified_pred"] = safe_str(unified_pred) or graph_cfg.get("unified_pred")
+        if skip_types is not None:
+            graph_cfg["skip_types"] = set([safe_str(x) for x in (skip_types or set()) if safe_str(x)])
+        if flipped_types is not None:
+            graph_cfg["flipped_types"] = set([safe_str(x) for x in (flipped_types or set()) if safe_str(x)])
+        if type_weight is not None:
+            graph_cfg["type_weight"] = {safe_str(k): float(v) for k, v in (type_weight or {}).items() if safe_str(k)}
+
+        if delta_tie is not None:
+            cycle_cfg["delta_tie"] = float(delta_tie)
+        if max_iter is not None:
+            cycle_cfg["max_iter"] = int(max_iter)
+
+        if m == "heuristic":
+            G, cb_log = run_heuristic(
+                episodes,
+                relations,
+                config=self.config,
+                graph_cfg=graph_cfg,
+                cycle_cfg=cycle_cfg,
+                show_progress=False,
+            )
+        else:
+            G, cb_log = run_saber(
+                episodes,
+                relations,
+                narrative_manager=self.narrative_manager,
+                config=self.config,
+                graph_cfg=graph_cfg,
+                cycle_cfg=cycle_cfg,
+                max_llm_calls_per_iter=int(max_llm_calls_per_iter),
+                show_progress=bool(show_progress),
+                triangle_workers=int(triangle_workers),
+            )
+
+        pred = safe_str(graph_cfg.get("unified_pred")) or "EPISODE_CAUSAL_LINK"
+        new_rels = export_relations_from_graph(G, predicate=pred)
+        json_dump_atomic(out_path, new_rels)
+
+        if save_log:
+            lp = log_path or os.path.join(self.out_global_dir, f"episode_cycle_break_{m}_log.json")
+            json_dump_atomic(lp, cb_log)
+
+        logger.info(
+            "[NarrativeGraph][CycleBreak] method=%s in_edges=%d out_edges=%d out=%s",
+            m,
+            len(relations),
+            len(new_rels),
+            out_path,
+        )
+        return new_rels
+
+    # ================================================================
+    # Storyline
+    # ================================================================
+    def build_storyline_candidates(
+        self,
+        *,
+        episodes_path: Optional[str] = None,
+        episode_relations_dag_path: Optional[str] = None,
+        method: Optional[str] = None,  # trie | mpc
+        min_trunk_len: int = 2,
+        out_candidates_path: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        ep_path = episodes_path or self.global_episodes_path
+        dag_path = episode_relations_dag_path or self.dag_path
+        out_path = out_candidates_path or self.global_storyline_candidates_path
+
+        try:
+            obj = load_json(ep_path)
+            episodes = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+        except Exception:
+            logger.exception("[NarrativeGraph][Storyline] failed to load episodes: %s", ep_path)
+            episodes = []
+
+        try:
+            obj = load_json(dag_path)
+            dag_rels = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+        except Exception:
+            logger.exception("[NarrativeGraph][Storyline] failed to load dag relations: %s", dag_path)
+            dag_rels = []
+
+        if not episodes or not dag_rels:
+            json_dump_atomic(out_path, [])
+            logger.warning(
+                "[NarrativeGraph][Storyline] empty candidates due to missing episodes/dag: episodes=%d dag=%d",
+                len(episodes),
+                len(dag_rels),
+            )
+            return []
+
+        m = safe_str(method or self.storyline_method_default or "trie").lower()
+        if m == "tri":
+            m = "trie"
+
+        candidates = extract_storyline_candidates(
+            episodes=episodes,
+            relations=dag_rels,
+            config=self.config,
+            method=m,
+        )
+
+        out: List[Dict[str, Any]] = []
+        seen: Set[Tuple[str, ...]] = set()
+        for c in candidates:
+            if not isinstance(c, dict):
+                continue
+            trunk = [safe_str(x) for x in safe_list(c.get("trunk")) if safe_str(x)]
+            if len(trunk) < max(1, int(min_trunk_len)):
+                continue
+            key = tuple(trunk)
+            if key in seen:
+                continue
+            seen.add(key)
+            cc = dict(c)
+            cc["trunk"] = trunk
+            cc["method"] = m
+            out.append(cc)
+
+        json_dump_atomic(out_path, out)
+        logger.info(
+            "[NarrativeGraph][Storyline] candidates built: method=%s in=%d out=%d saved=%s",
+            m,
+            len(candidates),
+            len(out),
+            out_path,
+        )
+        return out
+
+    def extract_storylines_from_candidates(
+        self,
+        *,
+        candidates_path: Optional[str] = None,
+        out_storylines_path: Optional[str] = None,
+        out_support_edges_path: Optional[str] = None,
+        ensure_storyline_embeddings: bool = True,
+        embedding_text_field: str = "name_desc",
+        embedding_batch_size: int = 256,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        cand_path = candidates_path or self.global_storyline_candidates_path
+        sl_path = out_storylines_path or self.global_storylines_path
+        se_path = out_support_edges_path or self.global_storyline_support_edges_path
+
+        try:
+            obj = load_json(cand_path)
+            candidates = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+        except Exception:
+            logger.exception("[NarrativeGraph][Storyline] failed to load candidates: %s", cand_path)
+            candidates = []
+
+        if not candidates:
+            json_dump_atomic(sl_path, [])
+            json_dump_atomic(se_path, [])
+            logger.warning("[NarrativeGraph][Storyline] no candidates found: %s", cand_path)
+            return [], []
+
+        def _chain_information(c: Dict[str, Any]) -> str:
+            chunks: List[str] = []
+            for x in safe_list(c.get("trunk_data")):
+                if not isinstance(x, dict):
                     continue
-                os.remove(file)
-            except Exception as e:
-                print(f"Failed to delete: {file} -> {e}")
+                name = safe_str(x.get("name")).strip()
+                desc = safe_str(x.get("description")).strip()
+                if name and desc:
+                    chunks.append(f"{name}: {desc}")
+                elif name or desc:
+                    chunks.append(name or desc)
+            if chunks:
+                return "\n".join(chunks)
+            trunk_ids = [safe_str(x) for x in safe_list(c.get("trunk")) if safe_str(x)]
+            return "\n".join(trunk_ids)
 
-    def _build_event_list(self) -> List[Entity]:
-        """
-        从章节的 contains 关系里抽 Event 列表。
-        """
-        section_entities = self.neo4j_utils.search_entities_by_type(entity_type=self.meta["section_label"])
-        self.sorted_sections = sorted(section_entities, key=lambda e: int(e.properties.get("order", 99999)))
+        def _unique_str_list(xs: List[Any]) -> List[str]:
+            out: List[str] = []
+            seen: Set[str] = set()
+            for x in xs:
+                s = safe_str(x).strip()
+                if not s or s in seen:
+                    continue
+                seen.add(s)
+                out.append(s)
+            return out
 
-        event_list: List[Entity] = []
-        event2section_map: Dict[str, str] = {}
-        for section in tqdm(self.sorted_sections, desc="Extracting events from sections"):
-            results = self.neo4j_utils.search_related_entities(
-                source_id=section.id,
-                predicate=self.meta["contains_pred"],
-                entity_types=["Event"],
-                return_relations=False,
-            )
-            if not results and self.event_fallback:
-                results = self.neo4j_utils.search_related_entities(
-                    source_id=section.id,
-                    relation_types=[self.meta["contains_pred"]],
-                    entity_types=self.event_fallback,
-                    return_relations=False,
-                )
-            for result in results:
-                if result.id not in event2section_map:
-                    event2section_map[result.id] = section.id
-                    event_list.append(result)
+        storylines: List[Dict[str, Any]] = []
+        support_edges: List[Dict[str, Any]] = []
 
-        self.event_list = event_list
-        self.event2section_map = event2section_map
-        return event_list
+        for c in candidates:
+            trunk = [safe_str(x) for x in safe_list(c.get("trunk")) if safe_str(x)]
+            if not trunk:
+                continue
 
-    def _precompute_event_cards(self, events: List[Entity]) -> Dict[str, Dict[str, Any]]:
-        """
-        并发生成/缓存事件卡片，落到 event_cards.json。
-        """
-        base = self.config.storage.event_plot_graph_path
-        os.makedirs(base, exist_ok=True)
-        cache_path = os.path.join(base, "event_cards.json")
+            info = _chain_information(c)
+            if not safe_str(info):
+                continue
 
-        # 读缓存
-        if os.path.exists(cache_path):
+            raw = self.narrative_manager.extract_storyline(chain_information=info)
             try:
-                with open(cache_path, "r", encoding="utf-8") as f:
-                    self.event_cards = json.load(f)
-                    if not isinstance(self.event_cards, dict):
-                        self.event_cards = {}
+                parsed = json.loads(raw.strip()) if isinstance(raw, str) else raw
             except Exception:
-                self.event_cards = {}
-        else:
-            self.event_cards = {}
+                parsed = None
+            if not isinstance(parsed, dict):
+                continue
+            if safe_str(parsed.get("error")).strip():
+                continue
 
-        existing = set(self.event_cards.keys())
-        pending_events = [e for e in events if e.id not in existing]
-        if not pending_events:
-            print(f"🗂️ Event cards already exist: {len(self.event_cards)} cached, skipping generation.")
-            return self.event_cards
+            name = safe_str(parsed.get("name")).strip()
+            desc = safe_str(parsed.get("description")).strip()
+            if not name or not desc:
+                continue
 
-        def _collect_related_context_by_section(ev: Entity) -> str:
-            ctx_set = set()
-            sec_id = self.event2section_map.get(ev.id)
-            if sec_id:
-                sec = self.neo4j_utils.get_entity_by_id(sec_id)
-                titles = sec.properties.get(self.meta["title"], [])
-                if isinstance(titles, str):
-                    titles = [titles]
-                for t in titles or []:
-                    try:
-                        docs = self.vector_store.search_by_metadata({"title": t})
-                        for d in docs:
-                            if getattr(d, "content", None):
-                                ctx_set.add(d.content)
-                    except Exception:
-                        pass
-            if not ctx_set:
-                try:
-                    node = self.neo4j_utils.get_entity_by_id(ev.id)
-                    chunk_ids = set((node.source_chunks or [])[:50])
-                    if chunk_ids:
-                        docs = self.vector_store.search_by_ids(list(chunk_ids))
-                        for d in docs:
-                            if getattr(d, "content", None):
-                                ctx_set.add(d.content)
-                except Exception:
-                    pass
+            method = safe_str(c.get("method")).strip().lower() or "trie"
+            sid = "sl_" + hashlib.sha1(f"{method}||{'|'.join(trunk)}".encode("utf-8")).hexdigest()[:16]
 
-            full_ctx = "\n".join(ctx_set)
-            goal = f"Please focus on information relevant to '{ev.name}'."
-            if len(full_ctx) >= 2000:
-                full_ctx_splitted = self.base_splitter.split_text(full_ctx)
-                summaries = []
-                for chunk in full_ctx_splitted:
-                    chunk_result = self.document_parser.summarize_paragraph(chunk, 100, "", goal)
-                    parsed = json.loads(correct_json_format(chunk_result)).get("summary", [])
-                    if isinstance(parsed, list):
-                        summaries.extend(parsed)
-                full_ctx = "\n".join(summaries) if summaries else full_ctx
-            return full_ctx
+            all_source_docs: List[str] = []
+            for x in safe_list(c.get("trunk_data")):
+                if isinstance(x, dict):
+                    all_source_docs.extend(safe_list(x.get("source_documents")))
+            source_docs = _unique_str_list(all_source_docs)
 
-        def _build_one(ev: Entity) -> str:
-            info = self.neo4j_utils.get_entity_info(ev.id, "Event", True, True)
-            related_ctx = _collect_related_context_by_section(ev)
-            try:
-                out = self.graph_analyzer.generate_event_context(info, related_ctx, timeout=min(PER_TASK_TIMEOUT - 5.0, 1200.0))
-            except TypeError:
-                out = self.graph_analyzer.generate_event_context(info, related_ctx)
-            card = json.loads(correct_json_format(out))["event_card"]
-            card = format_event_card(card)
-            return card
-
-        def _placeholder(ev: Entity, exc=None) -> str:
-            return _collect_related_context_by_section(ev)
-
-        res_map, still_failed = run_with_soft_timeout_and_retries(
-            pending_events,
-            work_fn=_build_one,
-            key_fn=lambda e: e.id,
-            desc_label="Precompute event cards",
-            per_task_timeout=600.0,
-            retries=5,
-            retry_backoff=30,
-            allow_placeholder_first_round=True,
-            placeholder_fn=_placeholder,
-            should_retry=None,
-            max_workers=self.max_workers,
-        )
-        for k, v in res_map.items():
-            self.event_cards[k] = v
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(self.event_cards, f, ensure_ascii=False, indent=2)
-        return self.event_cards
-
-    def _filter_event_pairs_by_community(self, events: List[Entity]) -> List[Tuple[Entity, Entity]]:
-        id2entity = {e.id: e for e in events}
-        pairs = self.neo4j_utils.fetch_event_pairs_same_community()
-        filtered_pairs = []
-        for row in pairs:
-            src_id, dst_id = row["srcId"], row["dstId"]
-            if src_id in id2entity and dst_id in id2entity:
-                filtered_pairs.append((id2entity[src_id], id2entity[dst_id]))
-        return filtered_pairs
-
-    def _sort_event_pairs_by_section_order(self, pairs: List[Tuple[Entity, Entity]]) -> List[Tuple[Entity, Entity]]:
-        def get_order(evt: Entity) -> int:
-            sec_id = self.event2section_map.get(evt.id)
-            if not sec_id:
-                return 99999
-            sec = self.neo4j_utils.get_entity_by_id(sec_id)
-            return int(sec.properties.get("order", 99999))
-        ordered = []
-        for e1, e2 in pairs:
-            ordered.append((e1, e2) if get_order(e1) <= get_order(e2) else (e2, e1))
-        return ordered
-
-    def _filter_pair_by_distance_and_similarity(self, pairs):
-        filtered_pairs = []
-        for pair in tqdm(pairs, desc="Filter node pairs"):
-            src_id, tgt_id = pair[0].id, pair[1].id
-            reachable = self.neo4j_utils.check_nodes_reachable(
-                src_id,
-                tgt_id,
-                excluded_rels=[self.meta["contains_pred"], "EVENT_CAUSES", "EVENT_INDIRECT_CAUSES", "EVENT_PART_OF"],
-                max_depth=self.max_depth,
-            )
-            if reachable:
-                filtered_pairs.append(pair)
-            else:
-                score = self.neo4j_utils.compute_semantic_similarity(src_id, tgt_id)
-                if score is not None and score >= 0.7:
-                    filtered_pairs.append(pair)
-        return filtered_pairs
-
-    def _check_causality_batch(self, pairs: List[Tuple[Entity, Entity]]) -> Dict[Tuple[str, str], Dict[str, Any]]:
-        PT = 1800
-        def _make_result(src_event, tgt_event, relation="NONE", reason="", temporal_order="Unknown", confidence=0.0, raw_result="", timeout=False):
-            res = {
-                "src_event": src_event,
-                "tgt_event": tgt_event,
-                "relation": relation,
-                "reason": reason,
-                "temporal_order": temporal_order,
-                "confidence": float(confidence) if confidence is not None else 0.0,
-                "raw_result": raw_result,
+            props = {
+                "impact": safe_str(parsed.get("impact")).strip(),
+                "key_characters": _unique_str_list(safe_list(parsed.get("key_characters"))),
+                "key_locations": _unique_str_list(safe_list(parsed.get("key_locations"))),
+                "method": method,
+                "chain_information": info,
+                "trunk_size": len(trunk),
             }
-            if timeout:
-                res["causality_timeout"] = True
-            return res
 
-        def _get_common_neighbor_info(src_id, tgt_id):
-            commons = self.neo4j_utils.get_common_neighbors(src_id, tgt_id, limit=50)
-            info = "Common neighbors for the two events are as follows:\n"
-            if not commons:
-                return info + "None"
-            for ent_ in commons:
-                try:
-                    ent_type = "/".join(ent_.type) if isinstance(ent_.type, (list, set, tuple)) else str(ent_.type)
-                except Exception:
-                    ent_type = "Unknown"
-                info += f"- Name: {ent_.name}, Type: {ent_type}, Description: {ent_.description}\n"
-            return info
+            storyline_ent = {
+                "id": sid,
+                "name": name,
+                "type": ["Storyline"],
+                "aliases": [],
+                "description": desc,
+                "scope": "global",
+                "source_documents": source_docs,
+                "properties": props,
+            }
+            storylines.append(storyline_ent)
 
-        def _ensure_card(e: Entity, info_text: str):
-            if e.id in self.event_cards:
-                return self.event_cards[e.id]
+            for eid in trunk:
+                rid = stable_relation_id(sid, P_STORYLINE_CONTAINS, eid, prefix="rel_sl_ep_")
+                support_edges.append(
+                    {
+                        "id": rid,
+                        "subject_id": sid,
+                        "object_id": eid,
+                        "predicate": P_STORYLINE_CONTAINS,
+                        "relation_name": "contains",
+                        "confidence": 1.0,
+                        "description": "Storyline contains Episode chain member.",
+                        "source_documents": source_docs,
+                        "properties": {"method": method},
+                    }
+                )
+
+        storylines = self._dedupe_entities_by_id(storylines)
+        support_edges = self._dedupe_relations(support_edges)
+
+        if ensure_storyline_embeddings and storylines:
             try:
-                out = self.graph_analyzer.generate_event_context(info_text, "", timeout=PT - 60)
-            except TypeError:
-                out = self.graph_analyzer.generate_event_context(info_text, "")
-            card = json.loads(correct_json_format(out))["event_card"]
-            card = format_event_card(card)
-            self.event_cards[e.id] = card
-            return card
-
-        def _work(pair: Tuple[Entity, Entity]) -> Dict[str, Any]:
-            src_event, tgt_event = pair
-            try:
-                info_1 = self.neo4j_utils.get_entity_info(src_event.id, "Event", True, True)
-                info_2 = self.neo4j_utils.get_entity_info(tgt_event.id, "Event", True, True)
-                related_context = info_1 + "\n" + info_2 + "\n" + _get_common_neighbor_info(src_event.id, tgt_event.id)
-                src_card = _ensure_card(src_event, info_1)
-                tgt_card = _ensure_card(tgt_event, info_2)
-                try:
-                    result_json = self.graph_analyzer.check_event_causality(
-                        src_card, tgt_card, system_prompt=self.system_prompt_text, related_context=related_context, timeout=max(5.0, PT - 60.0)
-                    )
-                except TypeError:
-                    result_json = self.graph_analyzer.check_event_causality(
-                        src_card, tgt_card, system_prompt=self.system_prompt_text, related_context=related_context
-                    )
-                if isinstance(result_json, dict):
-                    result_dict = result_json
-                    raw_str = json.dumps(result_json, ensure_ascii=False)
-                else:
-                    result_dict = json.loads(correct_json_format(result_json))
-                    raw_str = result_json
-                relation = result_dict.get("relation", "NONE")
-                reason = result_dict.get("reason", "")
-                temporal_order = result_dict.get("temporal_order", "Unknown")
-                confidence = result_dict.get("confidence", 0.3)
-                return _make_result(src_event, tgt_event, relation, reason, temporal_order, confidence, raw_str, timeout=False)
+                storylines = self._ensure_storyline_embeddings(
+                    storylines=storylines,
+                    embedding_text_field=embedding_text_field,
+                    batch_size=embedding_batch_size,
+                    save_path=sl_path,
+                )
             except Exception as e:
-                return _make_result(src_event, tgt_event, relation="NONE", reason=f"Error during check: {e}", timeout=True)
+                logger.exception("[NarrativeGraph][Storyline] ensure embeddings failed: %s", e)
 
-        def _placeholder(pair: Tuple[Entity, Entity], exc=None) -> Dict[str, Any]:
-            src_event, tgt_event = pair
-            return _make_result(src_event, tgt_event, relation="NONE", reason="Soft timeout/exception; placeholder", timeout=True)
-
-        def _should_retry(res: Dict[str, Any]) -> bool:
-            if res.get("causality_timeout"):
-                return True
-            reason = (res.get("reason") or "").strip()
-            return ("Error" in reason)
-
-        res_map, still_failed = run_with_soft_timeout_and_retries(
-            pairs,
-            work_fn=_work,
-            key_fn=lambda p: (p[0].id, p[1].id),
-            desc_label="Parallel causality check",
-            per_task_timeout=PT,
-            retries=MAX_RETRIES,
-            retry_backoff=RETRY_BACKOFF,
-            allow_placeholder_first_round=True,
-            placeholder_fn=_placeholder,
-            should_retry=_should_retry,
-            max_workers=self.max_workers,
+        json_dump_atomic(sl_path, storylines)
+        json_dump_atomic(se_path, support_edges)
+        logger.info(
+            "[NarrativeGraph][Storyline] extracted: storylines=%d support_edges=%d saved=%s,%s",
+            len(storylines),
+            len(support_edges),
+            sl_path,
+            se_path,
         )
-        for k in still_failed:
-            if k in res_map:
-                res_map[k]["final_fallback"] = True
-                res_map[k]["retries"] = MAX_RETRIES
-        return res_map
+        return storylines, support_edges
 
-    def _get_all_event_chains(self, min_confidence: float = 0.0):
-        starting_events = self.neo4j_utils.get_starting_events()
-        chains = []
-        for event in starting_events:
-            all_chains = self.neo4j_utils.find_event_chain(event, min_confidence)
-            chains.extend([chain for chain in all_chains if len(chain) >= 2])
-        return chains
+    def extract_storyline_relations(
+        self,
+        *,
+        storylines_path: Optional[str] = None,
+        out_relations_path: Optional[str] = None,
+        max_storyline_pairs_global: int = 50000,
+        similarity_threshold: float = 0.5,
+        overlap_pair_only: bool = True,
+        show_pair_progress: bool = False,
+    ) -> List[Dict[str, Any]]:
+        sl_path = storylines_path or self.global_storylines_path
+        out_path = out_relations_path or self.global_storyline_relations_path
 
-    def _prepare_chain_context(self, chain: List[str]) -> str:
-        if len(chain) > 1:
-            context = "Event chain: " + "->".join(chain) + "\n\nDetailed event information:\n"
-        else:
-            context = f"Event: {chain[0]}" + "\n\nDetailed event information:\n"
-        for i, event in enumerate(chain):
-            context += f"Event {i+1}: {event}\n" + self.event_cards.get(event, "") + "\n"
-        return context
+        try:
+            obj = load_json(sl_path)
+            storylines = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+        except Exception:
+            logger.exception("[NarrativeGraph][Storyline] failed to load storylines: %s", sl_path)
+            storylines = []
+
+        if len(storylines) < 2:
+            json_dump_atomic(out_path, [])
+            logger.warning("[NarrativeGraph][Storyline] insufficient storylines: %d", len(storylines))
+            return []
+
+        try:
+            storylines = self._ensure_storyline_embeddings(
+                storylines=storylines,
+                embedding_text_field="name_desc",
+                batch_size=256,
+                save_path=sl_path,
+            )
+        except Exception as e:
+            logger.warning("[NarrativeGraph][Storyline] embedding prep failed: %s", e)
+
+        def _anchors(s: Dict[str, Any]) -> Set[str]:
+            props = safe_dict(s.get("properties"))
+            chars = [safe_str(x).lower() for x in safe_list(props.get("key_characters")) if safe_str(x)]
+            locs = [safe_str(x).lower() for x in safe_list(props.get("key_locations")) if safe_str(x)]
+            return set(chars + locs)
+
+        total_pairs_considered = 0
+        reject_missing_id = 0
+        reject_no_overlap = 0
+        reject_missing_embedding = 0
+        reject_low_similarity = 0
+
+        pair_cands: List[Tuple[str, str, float, int]] = []
+        for i in range(len(storylines)):
+            a = storylines[i]
+            a_id = safe_str(a.get("id"))
+            a_emb = a.get("embedding")
+            a_anchor = _anchors(a)
+            if not a_id:
+                continue
+            for j in range(i + 1, len(storylines)):
+                total_pairs_considered += 1
+                b = storylines[j]
+                b_id = safe_str(b.get("id"))
+                b_emb = b.get("embedding")
+                b_anchor = _anchors(b)
+                if not b_id:
+                    reject_missing_id += 1
+                    continue
+                shared = len(a_anchor.intersection(b_anchor))
+                if overlap_pair_only and shared <= 0:
+                    reject_no_overlap += 1
+                    continue
+                sim = cosine_sim(a_emb, b_emb) if isinstance(a_emb, list) and isinstance(b_emb, list) else None
+                if sim is None:
+                    reject_missing_embedding += 1
+                    continue
+                if sim < float(similarity_threshold):
+                    reject_low_similarity += 1
+                    continue
+                pair_cands.append((a_id, b_id, float(sim), int(shared)))
+
+        pair_cands = sorted(pair_cands, key=lambda x: (x[3], x[2]), reverse=True)[: int(max_storyline_pairs_global)]
+        sl_by_id = {safe_str(s.get("id")): s for s in storylines if safe_str(s.get("id"))}
+
+        llm_parse_fail = 0
+        llm_none = 0
+        llm_self_loop = 0
+        llm_kept = 0
+
+        out_rels: List[Dict[str, Any]] = []
+        iterable = pair_cands
+        if show_pair_progress:
+            iterable = tqdm(pair_cands, total=len(pair_cands), desc="Storyline pairs", unit="pair", leave=False)
+        for a_id, b_id, sim, shared in iterable:
+            sa = sl_by_id.get(a_id)
+            sb = sl_by_id.get(b_id)
+            if not sa or not sb:
+                continue
+            out = self.narrative_manager.extract_narrative_relation(
+                subject_entity_info={
+                    "id": safe_str(sa.get("id")),
+                    "name": safe_str(sa.get("name")),
+                    "description": safe_str(sa.get("description")),
+                    "properties": safe_dict(sa.get("properties")),
+                },
+                object_entity_info={
+                    "id": safe_str(sb.get("id")),
+                    "name": safe_str(sb.get("name")),
+                    "description": safe_str(sb.get("description")),
+                    "properties": safe_dict(sb.get("properties")),
+                },
+                entity_type="Storyline",
+            )
+            try:
+                parsed = json.loads(out.strip()) if isinstance(out, str) else out
+            except Exception:
+                parsed = None
+            if not isinstance(parsed, dict):
+                llm_parse_fail += 1
+                continue
+
+            rel_type = safe_str(parsed.get("relation_type") or parsed.get("predicate")).strip()
+            s_id = safe_str(parsed.get("subject_id"))
+            o_id = safe_str(parsed.get("object_id"))
+            if not rel_type or _is_none_relation(rel_type) or not s_id or not o_id:
+                llm_none += 1
+                continue
+            if s_id == o_id:
+                llm_self_loop += 1
+                continue
+
+            try:
+                conf = float(parsed.get("confidence", 1.0))
+            except Exception:
+                conf = 1.0
+
+            source_docs = dedupe_list(
+                [safe_str(x) for x in (safe_list(sa.get("source_documents")) + safe_list(sb.get("source_documents"))) if safe_str(x)]
+            )
+            rid = stable_relation_id(s_id, rel_type, o_id, prefix="rel_sl_sl_")
+            props = {
+                "similarity": float(sim),
+                "shared_anchor_count": int(shared),
+            }
+            out_rels.append(
+                {
+                    "id": rid,
+                    "subject_id": s_id,
+                    "object_id": o_id,
+                    "predicate": rel_type,
+                    "relation_name": rel_type,
+                    "confidence": conf,
+                    "description": safe_str(parsed.get("description")),
+                    "source_documents": source_docs,
+                    "properties": props,
+                }
+            )
+            llm_kept += 1
+
+        out_rels = self._dedupe_relations(out_rels)
+        json_dump_atomic(out_path, out_rels)
+
+        logger.info(
+            "[NarrativeGraph][Storyline] relations extracted: pairs=%d rels=%d saved=%s "
+            "(total_pairs=%d, missing_id=%d, no_overlap=%d, missing_emb=%d, low_sim=%d, llm_none=%d, llm_parse_fail=%d)",
+            len(pair_cands),
+            len(out_rels),
+            out_path,
+            total_pairs_considered,
+            reject_missing_id,
+            reject_no_overlap,
+            reject_missing_embedding,
+            reject_low_similarity,
+            llm_none,
+            llm_parse_fail,
+        )
+        return out_rels
+
+    # ================================================================
+    # JSON -> runtime graph
+    # ================================================================
+    def load_json_to_graph_store(
+        self,
+        *,
+        episodes_path: Optional[str] = None,
+        support_edges_path: Optional[str] = None,
+        episode_relations_path: Optional[str] = None,
+        episode_relations_dag_path: Optional[str] = None,
+        storylines_path: Optional[str] = None,
+        storyline_support_edges_path: Optional[str] = None,
+        storyline_relations_path: Optional[str] = None,
+        store_support_edges: bool = True,
+        store_episode_relations: bool = True,
+        store_episode_dag_relations: bool = True,
+        store_episodes: bool = True,
+        store_storylines: bool = True,
+        store_storyline_support_edges: bool = True,
+        store_storyline_relations: bool = True,
+    ) -> None:
+        ep_path = episodes_path or self.global_episodes_path
+        se_path = support_edges_path or self.global_ep_support_edges_path
+        fine_path = episode_relations_path or self.global_ep_ep_edges_path
+        dag_path = episode_relations_dag_path or self.dag_path
+        sl_path = storylines_path or self.global_storylines_path
+        sl_se_path = storyline_support_edges_path or self.global_storyline_support_edges_path
+        sl_rel_path = storyline_relations_path or self.global_storyline_relations_path
+
+        episodes: List[Dict[str, Any]] = []
+        support_edges: List[Dict[str, Any]] = []
+        fine_all: List[Dict[str, Any]] = []
+        dag_raw: List[Dict[str, Any]] = []
+        storylines: List[Dict[str, Any]] = []
+        storyline_support_edges: List[Dict[str, Any]] = []
+        storyline_relations: List[Dict[str, Any]] = []
+
+        if store_episodes:
+            try:
+                obj = load_json(ep_path)
+                episodes = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+            except Exception:
+                logger.exception("[NarrativeGraph][JSON->Graph] failed to load episodes: %s", ep_path)
+
+        if store_support_edges:
+            try:
+                obj = load_json(se_path)
+                support_edges = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+            except Exception:
+                logger.exception("[NarrativeGraph][JSON->Graph] failed to load support_edges: %s", se_path)
+
+        if store_episode_relations:
+            try:
+                obj = load_json(fine_path)
+                fine_all = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+            except Exception:
+                logger.exception("[NarrativeGraph][JSON->Graph] failed to load fine relations: %s", fine_path)
+
+        if store_episode_dag_relations:
+            if not os.path.exists(dag_path):
+                raise FileNotFoundError(f"DAG relations not found: {dag_path}. Runtime graph writing is based on _dag.json.")
+            try:
+                obj = load_json(dag_path)
+                dag_raw = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+            except Exception:
+                logger.exception("[NarrativeGraph][JSON->Graph] failed to load dag relations: %s", dag_path)
+                dag_raw = []
+
+        if store_storylines:
+            try:
+                obj = load_json(sl_path)
+                storylines = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+            except Exception:
+                logger.exception("[NarrativeGraph][JSON->Graph] failed to load storylines: %s", sl_path)
+
+        if store_storyline_support_edges:
+            try:
+                obj = load_json(sl_se_path)
+                storyline_support_edges = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+            except Exception:
+                logger.exception("[NarrativeGraph][JSON->Graph] failed to load storyline support edges: %s", sl_se_path)
+
+        if store_storyline_relations:
+            try:
+                obj = load_json(sl_rel_path)
+                storyline_relations = [x for x in obj if isinstance(x, dict)] if isinstance(obj, list) else []
+            except Exception:
+                logger.exception("[NarrativeGraph][JSON->Graph] failed to load storyline relations: %s", sl_rel_path)
+
+        allowed_fine: Set[str] = set(
+            safe_str(x)
+            for r in dag_raw
+            for x in safe_list(r.get("source_relation_ids"))
+            if safe_str(x)
+        )
+
+        fine_rels: List[Dict[str, Any]] = []
+        if store_episode_relations:
+            fine_rels = [r for r in fine_all if safe_str(r.get("id")) in allowed_fine] if allowed_fine else []
+            fine_rels = self._dedupe_relations(fine_rels)
+
+        dag_norm: List[Dict[str, Any]] = []
+        if store_episode_dag_relations:
+            dag_norm = self._normalize_episode_dag_relations_for_graph_store(dag_raw)
+
+        logger.info(
+            "[NarrativeGraph][JSON->Graph] store_episodes=%s episodes=%d store_support=%s support=%d "
+            "store_fine=%s fine=%d (allowed=%d) store_dag=%s dag=%d "
+            "store_storylines=%s storylines=%d store_sl_support=%s sl_support=%d store_sl_rel=%s sl_rel=%d",
+            "yes" if store_episodes else "no",
+            len(episodes),
+            "yes" if store_support_edges else "no",
+            len(support_edges),
+            "yes" if store_episode_relations else "no",
+            len(fine_rels),
+            len(allowed_fine),
+            "yes" if store_episode_dag_relations else "no",
+            len(dag_norm),
+            "yes" if store_storylines else "no",
+            len(storylines),
+            "yes" if store_storyline_support_edges else "no",
+            len(storyline_support_edges),
+            "yes" if store_storyline_relations else "no",
+            len(storyline_relations),
+        )
+
+        if store_episodes and episodes:
+            self.graph_query_utils.save_to_graph_store(episodes, [])
+        if store_support_edges and support_edges:
+            self.graph_query_utils.save_to_graph_store([], support_edges)
+        if store_episode_relations and fine_rels:
+            self.graph_query_utils.save_to_graph_store([], fine_rels)
+        if store_episode_dag_relations and dag_norm:
+            self.graph_query_utils.save_to_graph_store([], dag_norm)
+        if store_storylines and storylines:
+            self.graph_query_utils.save_to_graph_store(storylines, [])
+        if store_storyline_support_edges and storyline_support_edges:
+            self.graph_query_utils.save_to_graph_store([], storyline_support_edges)
+        if store_storyline_relations and storyline_relations:
+            self.graph_query_utils.save_to_graph_store([], storyline_relations)
+
+        if store_episodes and episodes:
+            self._persist_entity_embeddings_to_graph(
+                entities=episodes,
+                allowed_labels=["Episode"],
+            )
+        if store_storylines and storylines:
+            self._persist_entity_embeddings_to_graph(
+                entities=storylines,
+                allowed_labels=["Storyline"],
+            )
+
+    # ================================================================
+    # Embeddings
+    # ================================================================
+    def _persist_entity_embeddings_to_graph(
+        self,
+        *,
+        entities: List[Dict[str, Any]],
+        allowed_labels: List[str],
+    ) -> int:
+        if not entities:
+            return 0
+
+        def _as_1d_vec(v: Any) -> Optional[List[float]]:
+            if v is None:
+                return None
+            # Preferred: already a single vector
+            if isinstance(v, list) and v and isinstance(v[0], (int, float)):
+                return [float(x) for x in v]
+            # Fallback: accidentally wrapped batch form [[...]]
+            vv = _to_vec_list(v)
+            if vv and isinstance(vv[0], list) and vv[0]:
+                return [float(x) for x in vv[0]]
+            return None
+
+        labels = [safe_str(x) for x in (allowed_labels or []) if safe_str(x)]
+        if not labels:
+            return 0
+
+        graph = self.graph_store.get_graph()
+        updated = 0
+        for e in entities:
+            if not isinstance(e, dict):
+                continue
+            eid = safe_str(e.get("id"))
+            if not eid or not graph.has_node(eid):
+                continue
+            node_labels = [safe_str(x) for x in safe_list(graph.nodes[eid].get("type")) if safe_str(x)]
+            if not (set(labels) & set(node_labels)):
+                continue
+            emb = e.get("embedding")
+            vec = _as_1d_vec(emb)
+            if not vec:
+                continue
+            graph.nodes[eid]["embedding"] = vec
+            updated += 1
+
+        if updated:
+            self.graph_store.persist()
+
+        logger.info(
+            "[NarrativeGraph][JSON->Graph] embeddings persisted: labels=%s candidates=%d updated=%d",
+            labels,
+            len(entities),
+            updated,
+        )
+        return updated
+
+    def _episode_embedding_text(self, e: Dict[str, Any], mode: str) -> str:
+        name, desc = safe_str(e.get("name")), safe_str(e.get("description"))
+        if mode == "name_only":
+            return name
+        if mode == "desc_only":
+            return desc
+        return f"{name}\n{desc}".strip() if name and desc else (name or desc)
+
+    def _ensure_episode_embeddings(
+        self,
+        *,
+        episodes: List[Dict[str, Any]],
+        embedding_text_field: str,
+        batch_size: int,
+        save_path: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        if not episodes:
+            return episodes
+
+        self.graph_query_utils.load_embedding_model(self.config.embedding)
+        model = getattr(self.graph_query_utils, "model", None)
+        if model is None or not hasattr(model, "encode"):
+            raise RuntimeError("graph_query_utils.model is not available or lacks encode()")
+
+        need: List[int] = []
+        texts: List[str] = []
+        for i, e in enumerate(episodes):
+            if not isinstance(e, dict):
+                continue
+            emb = e.get("embedding")
+            if isinstance(emb, list) and emb:
+                continue
+            t = self._episode_embedding_text(e, embedding_text_field)
+            if safe_str(t):
+                need.append(i)
+                texts.append(t)
+
+        if not need:
+            return episodes
+
+        bs = max(1, int(batch_size))
+        for s in range(0, len(texts), bs):
+            vecs = model.encode(texts[s : s + bs])
+            vec_list = _to_vec_list(vecs)
+            for j, v in enumerate(vec_list):
+                idx = need[s + j]
+                if 0 <= idx < len(episodes):
+                    episodes[idx]["embedding"] = v
+
+        if save_path:
+            try:
+                json_dump_atomic(save_path, episodes)
+            except Exception as e:
+                logger.warning("[NarrativeGraph] persist embeddings failed: %s err=%s", save_path, e)
+        return episodes
+
+    def _storyline_embedding_text(self, s: Dict[str, Any], mode: str) -> str:
+        name = safe_str(s.get("name"))
+        desc = safe_str(s.get("description"))
+        props = safe_dict(s.get("properties"))
+        impact = safe_str(props.get("impact"))
+        if mode == "name_only":
+            return name
+        if mode == "desc_only":
+            return desc
+        parts = [x for x in [name, desc, impact] if safe_str(x)]
+        return "\n".join(parts).strip()
+
+    def _ensure_storyline_embeddings(
+        self,
+        *,
+        storylines: List[Dict[str, Any]],
+        embedding_text_field: str,
+        batch_size: int,
+        save_path: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        if not storylines:
+            return storylines
+
+        self.graph_query_utils.load_embedding_model(self.config.embedding)
+        model = getattr(self.graph_query_utils, "model", None)
+        if model is None or not hasattr(model, "encode"):
+            raise RuntimeError("graph_query_utils.model is not available or lacks encode()")
+
+        need: List[int] = []
+        texts: List[str] = []
+        for i, s in enumerate(storylines):
+            if not isinstance(s, dict):
+                continue
+            emb = s.get("embedding")
+            if isinstance(emb, list) and emb:
+                continue
+            t = self._storyline_embedding_text(s, embedding_text_field)
+            if safe_str(t):
+                need.append(i)
+                texts.append(t)
+
+        if not need:
+            return storylines
+
+        bs = max(1, int(batch_size))
+        for st in range(0, len(texts), bs):
+            vecs = model.encode(texts[st : st + bs])
+            vec_list = _to_vec_list(vecs)
+            for j, v in enumerate(vec_list):
+                idx = need[st + j]
+                if 0 <= idx < len(storylines):
+                    storylines[idx]["embedding"] = v
+
+        if save_path:
+            try:
+                json_dump_atomic(save_path, storylines)
+            except Exception as e:
+                logger.warning("[NarrativeGraph] persist storyline embeddings failed: %s err=%s", save_path, e)
+        return storylines
+
+    # ================================================================
+    # Dedupe helpers
+    # ================================================================
+    def _dedupe_entities_by_id(self, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        seen: Set[str] = set()
+        for e in entities or []:
+            if not isinstance(e, dict):
+                continue
+            eid = safe_str(e.get("id"))
+            if eid and eid not in seen:
+                seen.add(eid)
+                out.append(e)
+        return out
+
+    def _dedupe_packs_by_episode_id(self, packs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        seen: Set[str] = set()
+        for p in packs or []:
+            if not isinstance(p, dict):
+                continue
+            ep = p.get("episode_entity") or {}
+            eid = safe_str(ep.get("id")) if isinstance(ep, dict) else ""
+            if eid and eid not in seen:
+                seen.add(eid)
+                out.append(p)
+        return out
+
+    def _dedupe_relations(self, rels: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        seen: Set[Tuple[str, str, str]] = set()
+        out: List[Dict[str, Any]] = []
+        for r in rels or []:
+            if not isinstance(r, dict):
+                continue
+            pred = safe_str(r.get("predicate") or r.get("relation_type")).strip()
+            s, o = safe_str(r.get("subject_id")), safe_str(r.get("object_id"))
+            if not pred or _is_none_relation(pred) or not s or not o:
+                continue
+            k = (pred, s, o)
+            if k in seen:
+                continue
+            seen.add(k)
+            rr = dict(r)
+            rr["predicate"] = pred
+            rr.setdefault("confidence", 1.0)
+            if not isinstance(rr.get("properties"), dict):
+                rr["properties"] = {}
+            out.append(rr)
+        return out
+
+    def _normalize_episode_dag_relations_for_graph_store(self, rels: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for r in rels or []:
+            if not isinstance(r, dict):
+                continue
+            s_id, o_id = safe_str(r.get("subject_id")), safe_str(r.get("object_id"))
+            pred = safe_str(r.get("predicate")).strip()
+            if not s_id or not o_id or not pred or _is_none_relation(pred):
+                continue
+
+            props = safe_dict(r.get("properties"))
+            rel_type = safe_str(r.get("relation_type")).strip()
+            if rel_type:
+                props["relation_type"] = rel_type
+            for k in ("type_weight", "effective_weight", "source_relation_ids", "evidence_pool"):
+                if k in r:
+                    props[k] = safe_list(r.get(k)) if k in {"source_relation_ids", "evidence_pool"} else r.get(k)
+
+            rid = safe_str(r.get("id")) or stable_relation_id(s_id, pred, o_id, prefix="rel_ep_dag_")
+            rr = dict(r)
+            rr["id"] = rid
+            rr["predicate"] = pred
+            rr["relation_name"] = safe_str(r.get("relation_name")) or pred
+            rr["properties"] = props
+            rr.setdefault("confidence", 1.0)
+            out.append(rr)
+
+        return self._dedupe_relations(out)

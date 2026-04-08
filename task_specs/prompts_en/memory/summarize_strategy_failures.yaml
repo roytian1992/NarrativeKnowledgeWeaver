@@ -1,0 +1,41 @@
+id: summarize_strategy_failures
+category: memory
+name: Summarize Strategy Failures
+description: >
+  Summarize why all attempts failed for one retrieval question.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: attempt_summaries_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are summarizing failure causes for a retrieval question.
+
+  Question:
+  {question}
+
+  Reference answer:
+  {reference_answer}
+
+  Attempt summaries (JSON):
+  {attempt_summaries_json}
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "failure_summary": "string",
+      "likely_causes": ["string", "string"],
+      "recommended_improvements": ["string", "string"]
+    }}
+  - Focus on retrieval path choice, tool selection, missing evidence, or answer synthesis failures.
+  - No markdown. No extra explanation.

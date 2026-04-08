@@ -1,0 +1,33 @@
+id: distill_retrieval_strategy_pattern
+category: memory
+name: Distill Retrieval Strategy Pattern
+description: >
+  Distill a generic retrieval strategy pattern from abstract QA trace clusters.
+
+task_variables:
+  - name: pattern_payload
+    type: string
+    required: true
+    description: JSON string payload for one pattern cluster (examples + tool-chain candidates).
+
+static_variables: []
+
+template: |
+  You are summarizing retrieval routing strategy patterns from abstract QA traces.
+
+  Input payload (JSON string):
+  {pattern_payload}
+
+  Output requirements:
+  - Return exactly one JSON object only. No markdown, no commentary.
+  - JSON schema must be:
+    {{
+      "pattern_name": "string",
+      "pattern_description": "string",
+      "recommended_chain": ["tool_name_1", "tool_name_2"],
+      "anti_patterns": ["string", "string"]
+    }}
+  - pattern_name must be domain-generic, not story-specific.
+  - pattern_description must describe problem type + recommended retrieval route.
+  - recommended_chain length must be 1 to 4, and items must be tool names only (letters/numbers/underscores).
+  - Do NOT include character names, locations, scene/chapter/document ids, chunk ids, or ent/rel/int/pat ids.

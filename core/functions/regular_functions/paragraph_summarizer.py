@@ -1,104 +1,129 @@
-"""
-语义分割器
-使用增强的JSON处理工具
-"""
-from typing import Dict, Any, List
+from __future__ import annotations
+
 import json
 import logging
-from core.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
+from typing import Any, Dict, Optional
+
+from core.utils.general_utils import safe_str
+from core.utils.function_manager import process_with_format_guarantee
 from core.utils.general_text import general_repair_template
 from core.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
+
+def _valid_summary(x: Any) -> bool:
+    return isinstance(x, str) and bool(x.strip())
+
+
 class ParagraphSummarizer:
     """
-    语义分割器
-    确保最终返回的是correct_json_format处理后的结果
+    YAML-driven paragraph summarizer.
+
+    Prompt YAML:
+      - text_processing/summarize_text
+
+    Input params JSON:
+      {
+        "text": "...",
+        "max_length": 200,
+        "previous_summary": "... (optional) ...",
+        "goal": "... (optional) ..."
+      }
+
+    Output JSON:
+      {
+        "summary": "... (non-empty) ..."
+      }
     """
-    
-    def __init__(self, prompt_loader=None, llm=None):
+
+    def __init__(
+        self,
+        prompt_loader,
+        llm,
+        prompt_id: str = "text_processing/summarize_text",
+    ):
+        if llm is None:
+            raise ValueError("llm must be provided")
+        if prompt_loader is None:
+            raise ValueError("prompt_loader must be provided")
+
         self.prompt_loader = prompt_loader
         self.llm = llm
-        
-        # 定义验证规则
-        self.required_fields = ["summary"]
-        self.field_validators = {
-            "summary": lambda x: isinstance(x, str)
-        }
-        
-        # 修复提示词模板
-        self.repair_template = general_repair_template
-    
-    def call(self, params: str, **kwargs) -> str:
-        """
-        调用语义分割，保证返回correct_json_format处理后的结果
-        
-        Args:
-            params: 参数字符串
-            **kwargs: 其他参数
-            
-        Returns:
-            str: 经过correct_json_format处理的JSON字符串
-        """
-        try:
-            # 解析参数
-            params_dict = json.loads(params)
-            text = params_dict.get("text", "")
-            max_length = params_dict.get("max_length", 200)
-            previous_summary = params_dict.get("previous_summary", "")
-            goal = params_dict.get("goal", "")
+        self.prompt_id = prompt_id
 
+        self.required_fields = ["summary"]
+        self.field_validators = {"summary": _valid_summary}
+        self.repair_template = general_repair_template
+
+    def call(self, params: str, **kwargs) -> str:
+        # 1) parse params
+        try:
+            params_dict = json.loads(params) if isinstance(params, str) else (params or {})
+            text = safe_str(params_dict.get("text", "")).strip()
+            max_length_raw = params_dict.get("max_length", 200)
+            previous_summary = safe_str(params_dict.get("previous_summary", "")).strip()
+            goal = safe_str(params_dict.get("goal", "")).strip()
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
-            # 即使是错误结果，也要经过correct_json_format处理
-            error_result = {"error": f"参数解析失败: {str(e)}", "summary": text}
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-        
-        try:
-            # 构建提示词变量
-            variables = {
-                'text': text,
-                'max_length': max_length,
-            }
-            messages = []
-            if previous_summary: 
-                messages.append({"role": "user", "content": f"这是前文摘要：{previous_summary}"})
-            
-            # print("[CHECK]读入参数： ", variables)
-            # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('summarize_paragraph_prompt', variables)
-            # print("[CHECK] prompt_text: ", prompt_text)
-            if goal:
-                prompt_text += f"\n\n请注意，当前任务的目标是：{goal}\n请根据目标进行摘要。"
-            # 构建消息
-            messages.append({"role": "user", "content": prompt_text})
-            # print("[CHECK] prompt_text: ", prompt_text)
-            # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json, status = process_with_format_guarantee(
-                llm_client=self.llm,
-                messages=messages,
-                required_fields=self.required_fields,
-                field_validators=self.field_validators,
-                max_retries=1,
-                repair_template=self.repair_template,
-                enable_thinking=False,
+            return correct_json_format(
+                json.dumps(
+                    {"error": f"参数解析失败: {str(e)}", "summary": ""},
+                    ensure_ascii=False,
+                )
             )
-            
-            if status == "success":
-                return corrected_json
-            else:
-                error_result = {
-                    "error": f"提取摘要失败，返回整段文本",
-                    "summary": text
-                }
-                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-            
-        except Exception as e:
-            logger.error(f"提取摘要过程中出现异常: {e}")
-            error_result = {
-                "error": f"提取摘要失败: {str(e)}",
-                "segments": text
-            }
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 
+        if not text:
+            return correct_json_format(
+                json.dumps(
+                    {"error": "missing required field: text", "summary": ""},
+                    ensure_ascii=False,
+                )
+            )
+
+        # 2) normalize max_length
+        try:
+            max_length = int(max_length_raw)
+            if max_length <= 0:
+                max_length = 200
+        except Exception:
+            max_length = 200
+
+        # 3) render YAML prompt
+        try:
+            user_prompt = self.prompt_loader.render(
+                self.prompt_id,
+                static_values={},
+                task_values={
+                    "text": text,
+                    "max_length": max_length,
+                    # keep keys always present for strict rendering
+                    "previous_summary": f"[Previous Summary]\n{previous_summary}\n" if previous_summary else "",
+                    "goal": goal,
+                },
+                strict=True,
+            )
+        except Exception as e:
+            logger.error(f"summarize_text prompt render failed: {e}")
+            return correct_json_format(
+                json.dumps({"error": f"prompt render failed: {str(e)}", "summary": ""}, ensure_ascii=False)
+            )
+
+        messages = [{"role": "user", "content": user_prompt}]
+
+        # 4) LLM call with format guarantee
+        corrected_json, status = process_with_format_guarantee(
+            llm_client=self.llm,
+            messages=messages,
+            required_fields=self.required_fields,
+            field_validators=self.field_validators,
+            max_retries=1,
+            repair_template=self.repair_template,
+        )
+
+        if status == "success":
+            return correct_json_format(corrected_json)
+
+        # 5) fallback
+        fallback = {"error": "提取摘要失败，返回整段文本", "summary": text}
+        return correct_json_format(json.dumps(fallback, ensure_ascii=False))

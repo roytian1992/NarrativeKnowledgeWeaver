@@ -1,0 +1,73 @@
+{
+  "interaction_relations": [
+    {
+      "type": "dialogue",
+      "description": "Explicit spoken content by a character. For monologue/self-talk, target object can be empty. If target is an Object, it must be an interactive/agentive object (e.g., robot/AI/system agent), not passive props like curtains, doors, or scenery items.",
+      "from": [
+        "Character"
+      ],
+      "to": [
+        "Character",
+        "Object"
+      ],
+      "allow_null_object": true,
+      "polarity_required": false,
+      "polarity_values": [
+        "positive",
+        "negative",
+        "neutral"
+      ],
+      "samples": [
+        {
+          "subject": "Indian Scientist",
+          "object": "Medical Robot",
+          "interaction_type": "dialogue",
+          "polarity": "neutral",
+          "content": "The scientist explains neural signal principles to the medical robot."
+        },
+        {
+          "subject": "Benny",
+          "object": "",
+          "interaction_type": "dialogue",
+          "polarity": "",
+          "content": "Keep walking. Do not look back."
+        }
+      ]
+    },
+    {
+      "type": "interaction",
+      "description": "Action-level interaction between Character/Object entities, with polarity label. If the target is an Object, it must be an interactive/agentive object (e.g., robot/AI agent/system entity); passive props or environment objects should not be used as object.",
+      "from": [
+        "Character",
+        "Object"
+      ],
+      "to": [
+        "Character",
+        "Object"
+      ],
+      "allow_null_object": false,
+      "polarity_required": true,
+      "polarity_values": [
+        "positive",
+        "negative",
+        "neutral"
+      ],
+      "samples": [
+        {
+          "subject": "Researchers",
+          "object": "Subject",
+          "interaction_type": "interaction",
+          "polarity": "neutral",
+          "content": "Researchers inspect and discuss the subject's neural data."
+        },
+        {
+          "subject": "Captain Zhao",
+          "object": "Engineer Lin",
+          "interaction_type": "interaction",
+          "polarity": "positive",
+          "content": "Captain Zhao pats Engineer Lin on the shoulder to show support."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+id: judge_online_answer
+category: memory
+name: Judge Online Answer
+description: >
+  Judge whether an answer is supported by retrieved evidence when no reference answer is available.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+  - name: evidence_summary
+    type: string
+    required: true
+  - name: tool_summary_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are evaluating an online retrieval answer without a gold reference answer.
+  You must decide whether the candidate answer is directly supported by the available evidence.
+
+  Question:
+  {question}
+
+  Candidate answer:
+  {candidate_answer}
+
+  Evidence summary:
+  {evidence_summary}
+
+  Tool summary (JSON):
+  {tool_summary_json}
+
+  Task:
+  - Score the trajectory by whether it reaches a well-supported answer from useful intermediate evidence.
+  - Evaluate the answer itself and also whether the intermediate tool outputs are genuinely valuable for solving the question.
+  - If the evidence is too weak or incomplete, do not mark the answer as successful.
+
+  Decision principles:
+  - `answer_support_score`: whether the final answer's core conclusion is directly grounded in the evidence.
+  - `evidence_specificity_score`: whether the retrieved evidence is specific and direct rather than broad or weakly related.
+  - `evidence_coverage_score`: whether the evidence covers the key constraints needed to answer the question reliably.
+  - `intermediate_value_score`: whether the intermediate retrieved information is genuinely useful for narrowing, verifying, or disambiguating the answer.
+  - `trace_efficiency_score`: whether the tool trajectory is reasonably efficient and avoids obvious redundant or low-yield steps.
+  - `is_success` can be true only if the answer is directly supported and the evidence coverage is sufficient.
+  - If the evidence is too limited to decide reliably, prefer `needs_human_review=true`.
+
+  Output requirements:
+  - Output exactly one JSON object.
+  - The JSON schema must be:
+    {{
+      "is_success": false,
+      "score": 0.0,
+      "reason": "string",
+      "answer_support_score": 0.0,
+      "evidence_specificity_score": 0.0,
+      "evidence_coverage_score": 0.0,
+      "intermediate_value_score": 0.0,
+      "trace_efficiency_score": 0.0,
+      "supported_points": ["string"],
+      "unsupported_points": ["string"],
+      "missing_points": ["string"],
+      "needs_human_review": true
+    }}
+  - Every `*_score` and `score` must be between 0 and 1.
+  - Set `score` using this formula:
+    `0.35 * answer_support_score + 0.20 * evidence_specificity_score + 0.20 * evidence_coverage_score + 0.15 * intermediate_value_score + 0.10 * trace_efficiency_score`
+  - `supported_points`: claims clearly supported by evidence.
+  - `unsupported_points`: unsupported claims, speculative claims, or low-value intermediate information that did not materially help solve the question.
+  - `missing_points`: what additional evidence would be needed for a reliable judgment.
+  - Do not output Markdown or extra commentary.

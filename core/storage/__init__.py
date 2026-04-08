@@ -3,7 +3,11 @@
 """
 
 from .graph_store import GraphStore
-from .vector_store import VectorStore
+from .sql_store import SQLStore
 
-__all__ = ["GraphStore", "VectorStore"]
+try:
+    from .vector_store import VectorStore
+except Exception:  # pragma: no cover - optional dependency import guard
+    VectorStore = None
 
+__all__ = ["GraphStore", "VectorStore", "SQLStore"]

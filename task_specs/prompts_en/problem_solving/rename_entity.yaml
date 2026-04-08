@@ -1,0 +1,91 @@
+id: rename_entity
+category: problem_solving
+name: Rename Entity
+description: >
+  Rename an extracted entity (any supported entity type) to be more specific, grounded, and disambiguating,
+  using only the provided text and the type-specific naming rules and exclusions from the schema.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The source text where the entity mention appears.
+
+  - name: entity_name
+    type: string
+    required: true
+    description: The current extracted entity name to be renamed or kept.
+
+  - name: entity_type
+    type: string
+    required: true
+    description: The entity type of the current entity name (e.g., Character, Event, Location, Object, Concept, Occasion, TimePoint).
+
+static_variables:
+  - name: type_description
+    type: string
+    required: true
+    description: Short description/definition of the entity type, loaded from default_task_descriptions.json.
+
+  - name: naming_rules
+    type: string
+    required: true
+    description: Type-specific naming rules, rendered as bullet lines, loaded from default_task_descriptions.json.
+
+  - name: exclusions
+    type: string
+    required: true
+    description: Type-specific exclusions, rendered as bullet lines, loaded from default_task_descriptions.json.
+
+template: |
+  You are renaming an extracted entity to be more specific, grounded, and disambiguating.
+
+  ENTITY TYPE
+  You are working on an entity of type: {entity_type}
+
+  Type definition:
+  {type_description}
+
+  Type naming rules:
+  {naming_rules}
+
+  Type exclusions:
+  {exclusions}
+
+  TASK
+  You are given:
+  1) A piece of text.
+  2) An existing entity name that was extracted from this text.
+  3) The entity type.
+
+  Your job is to propose a better entity name that refers to ONE specific entity of this type
+  in THIS text. If the current name is already specific and accurate, keep it.
+
+  STRICT RULES
+  - Base your decision ONLY on the provided text. Do NOT use external knowledge.
+  - The renamed entity MUST be grounded in the text.
+  - Do NOT invent new participants, places, time, or consequences not stated or implied.
+  - Prefer short, specific, disambiguating names.
+  - Avoid vague names like "Thing", "Someone", "Place", "Organization", "Event", "Incident".
+  - Avoid adding parentheses like "(Entity)" or appending the type.
+  - If multiple plausible entities exist, pick the ONE that best matches the current entity name and entity type.
+  - Follow the Type naming rules and respect Type exclusions above.
+
+  QUALITY CHECK
+  - If you keep the name unchanged, explicitly say why it already satisfies the naming rules.
+
+  INPUTS
+
+  [Text]
+  {text}
+
+  [Current Entity Name]
+  {entity_name}
+
+  OUTPUT FORMAT
+  Return ONLY one JSON object, with no extra text:
+
+  {{
+    "new_name": "string",
+    "reason": "Brief justification grounded in the text. Mention the specific cue(s) you used."
+  }}

@@ -1,0 +1,90 @@
+id: plan_trajectory_direction
+category: memory
+name: Plan Online Sampling Branches
+description: >
+  Plan diverse retrieval branches for online QA using only the current question and available tools.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: available_tools_json
+    type: string
+    required: true
+  - name: planned_branch_count
+    type: string
+    required: true
+  - name: strategy_prior_knowledge
+    type: string
+    required: false
+
+static_variables: []
+
+template: |
+  You are planning several diverse retrieval branches for one question.
+
+  The system will always add one extra branch called `free_exploration` by default.
+  You should NOT generate that branch.
+  You only need to generate the remaining planned branches.
+
+  Question:
+  {question}
+
+  Available tools (JSON):
+  {available_tools_json}
+
+  Number of branches to generate:
+  {planned_branch_count}
+
+  Offline strategy prior knowledge (soft reference from high-support templates):
+  {strategy_prior_knowledge}
+
+  Your task:
+  - Generate exactly {planned_branch_count} retrieval branches.
+  - Each branch must be meaningfully different from the others.
+  - Each branch should reflect a different retrieval bias, evidence preference, or verification strategy.
+  - Use the question, the available tool descriptions, and the prior knowledge above.
+  - Treat the prior knowledge as a default bias, not a rigid script; when the question itself gives no stronger signal, follow the high-support priors.
+  - Do not assume any gold answer.
+  - Do not invent unavailable tools.
+  - Do not write exact tool arguments or rigid step-by-step scripts.
+  - Keep each branch lightweight and high level.
+  - If the priors show lexical search or local evidence search is dominant, at least one branch must reflect that bias.
+  - Unless the question explicitly asks about ordering, storyline, episode structure, or cross-section consistency, do not waste multiple branches on narrative-structure or graph-heavy reasoning.
+  - Tools like `retrieve_entity_by_name` are mainly for grounding and disambiguation; do not let a branch stop at entity-summary-level evidence.
+
+  Field definitions:
+  - `name`: a short branch name.
+  - `focus`: what evidence this branch should prioritize.
+  - `tool_hint`: which tools or tool family this branch should prefer early.
+  - `constraint`: what this branch should avoid or be careful about.
+
+  Good branch differences include:
+  - broad lexical retrieval first vs targeted evidence lookup first
+  - entity-centered grounding vs local passage grounding
+  - direct answer seeking vs disambiguation or verification first
+
+  Avoid:
+  - near-duplicate branches
+  - vague advice like "retrieve relevant information"
+  - answering the question directly
+  - mentioning any branch not in the output
+  - generating `free_exploration`
+
+  Output requirements:
+  - Output exactly one JSON object.
+  - JSON schema:
+    {
+      "branches": [
+        {
+          "name": "string",
+          "focus": "string",
+          "tool_hint": "string",
+          "constraint": "string"
+        }
+      ]
+    }
+  - The number of branches must be exactly {planned_branch_count}.
+  - Keep every field concise and specific.
+  - Do not output Markdown.
+  - Do not output any text outside the JSON object.

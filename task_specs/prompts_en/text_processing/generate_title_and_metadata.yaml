@@ -1,0 +1,105 @@
+id: generate_title_and_metadata
+category: text_processing
+name: Generate Segment Title And Metadata
+description: >
+  Generate a specific standalone title for one text segment and extract structured metadata
+  according to the selected doc_type. Strict JSON-only output.
+
+task_variables:
+  - name: doc_type
+    type: string
+    required: true
+    description: Document type key used to select metadata parsing task.
+
+  - name: title
+    type: string
+    required: false
+    description: Optional original title hint from the source document.
+
+  - name: subtitle
+    type: string
+    required: false
+    description: Optional original subtitle hint from the source document.
+
+  - name: text
+    type: string
+    required: true
+    description: Text segment content.
+
+static_variables:
+  - name: task_spec
+    type: string
+    required: true
+    description: Rendered metadata extraction task description for the given doc_type.
+
+template: |
+  You are processing one pre-split document segment.
+
+  --------------------------------
+  INPUTS
+  --------------------------------
+
+  [Document Type]
+  {doc_type}
+
+  [Original Title Hint]
+  {title}
+  {subtitle}
+
+  [Text Segment]
+  {text}
+
+  --------------------------------
+  TASK DESCRIPTION
+  --------------------------------
+  The following describes which metadata fields to extract and what each field represents:
+
+  {task_spec}
+
+  --------------------------------
+  TITLE GENERATION RULES
+  --------------------------------
+  - Generate one concise standalone segment title.
+  - The title must be specific to this segment, not a generic copy of the original title.
+  - Preserve important named entities, events, or topics when explicitly supported by the text.
+  - Do NOT fabricate facts not supported by the segment.
+  - Avoid vague titles such as "Part 1", "Section", "Content Summary", or "Continuation".
+  - If the original title is already specific and still fits this segment, you may reuse or lightly refine it.
+
+  --------------------------------
+  GLOBAL RULES
+  --------------------------------
+  - Output JSON only.
+  - Do NOT fabricate information.
+  - If a metadata value is not explicitly supported, use null.
+  - Do NOT output empty strings.
+  - Do NOT add metadata keys beyond those defined in the task description.
+
+  --------------------------------
+  MULTI-VALUE RULE (IMPORTANT)
+  --------------------------------
+  - Some metadata fields may have multiple distinct values.
+  - If multiple values apply to a field, combine them into a single string
+    using "; " (semicolon + space) as the separator.
+  - Do NOT output lists or arrays.
+  - Preserve the natural order of appearance when possible.
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+  Return JSON ONLY:
+
+  {{
+    "title": "specific segment title",
+    "metadata": {{
+      "field_name_1": "value or null",
+      "field_name_2": "value or null"
+    }}
+  }}
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+  - Keep the generated title short, specific, and readable.
+  - Keep metadata concise and canonical.
+  - No explanations, no markdown, JSON only.

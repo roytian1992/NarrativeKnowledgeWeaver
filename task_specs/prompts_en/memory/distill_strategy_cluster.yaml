@@ -1,0 +1,56 @@
+id: distill_strategy_cluster
+category: memory
+name: Distill Strategy Cluster
+description: >
+  Distill multiple similar strategy-template members into one cluster-level canonical template.
+
+task_variables:
+  - name: cluster_id
+    type: string
+    required: true
+  - name: member_templates_json
+    type: string
+    required: true
+  - name: cluster_statistics_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are consolidating a strategy-template cluster into a canonical retrieval template for agent reuse.
+
+  cluster_id:
+  {cluster_id}
+
+  Member templates (JSON):
+  {member_templates_json}
+
+  Cluster statistics (JSON):
+  {cluster_statistics_json}
+
+  Requirements:
+  - The result must be generic and non-text-specific. Do not include story-specific names, places, section titles, or document ids.
+  - Distinguish the reusable problem pattern from the chain variants seen in the cluster.
+  - `recommended_chain` should be the best representative minimal chain for this cluster, not a union of all observed chains.
+  - `anti_patterns` should summarize common wrong or wasteful retrieval routes.
+  - `query_pattern_prototype` should capture the reusable problem pattern, not a single concrete question.
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "pattern_name": "string",
+      "pattern_description": "string",
+      "recommended_chain": ["tool_name_1", "tool_name_2"],
+      "anti_patterns": ["string", "string"],
+      "query_pattern_prototype": {{
+        "query_abstract": "string",
+        "problem_type": "string",
+        "target_category": "string",
+        "answer_shape": "string",
+        "retrieval_goals": ["string", "string"],
+        "notes": "string"
+      }}
+    }}
+  - No markdown. No extra explanation.

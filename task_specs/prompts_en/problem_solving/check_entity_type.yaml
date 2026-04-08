@@ -1,0 +1,104 @@
+id: check_entity_type
+category: problem_solving
+name: Check Entity Type Override
+description: >
+  Validate whether a locally assigned entity type should be kept or dropped in favor of the majority type,
+  using only the provided text evidence. Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The text where the entity appears.
+
+  - name: entity_name
+    type: string
+    required: true
+    description: The entity name appearing in the text.
+
+  - name: minority_type
+    type: string
+    required: true
+    description: The locally assigned (minority) entity type in this context.
+
+  - name: majority_type
+    type: string
+    required: true
+    description: The entity type used in the majority of occurrences across the document.
+
+  - name: majority_percentage
+    type: string
+    required: true
+    description: Majority type percentage (e.g., 98, 98.0, "98", "98%").
+
+static_variables: []
+
+template: |
+  You are validating whether a locally assigned entity type should be KEPT
+  or DROPPED, based on global usage patterns and local textual evidence.
+
+  TASK
+  You are given:
+  1) A piece of text.
+  2) An entity name appearing in the text.
+  3) The entity type assigned in the current local extraction (minority_type).
+  4) The entity type that appears in the majority of cases across the full document (majority_type).
+  5) The percentage of occurrences where the entity is classified as the majority type.
+
+  Across the full document, the entity is classified as the majority type
+  in most cases ({majority_percentage}% of all occurrences).
+
+  Your task is to decide whether, in THIS specific text, the locally assigned
+  entity type should be KEPT, or DROPPED in favor of the majority type.
+
+  If you decide to KEEP the locally assigned type, you MUST also propose a
+  NEW NAME for the minority usage in this text, so it can remain a distinct
+  entity without conflicting with the majority entity.
+
+  Decision principles:
+  - Treat the majority entity type as the default interpretation.
+  - KEEP the locally assigned type ONLY if the text provides clear, explicit,
+    and unambiguous evidence that the entity is being used differently here.
+  - DROP the locally assigned type if:
+    - the text is compatible with the majority type, OR
+    - the evidence for the local type is weak, implicit, ambiguous, or purely formal
+      (for example capitalization, scene formatting, or naming conventions).
+
+  CRITICAL CONSTRAINTS
+  - Base your judgment ONLY on the provided text.
+  - Do NOT use external or world knowledge.
+  - Do NOT treat screenplay formatting or capitalization alone as sufficient evidence.
+  - In ambiguous cases, prefer the majority entity type.
+  - When proposing "new_name" (ONLY when decision="keep"):
+    - The new_name must refer to the minority usage in THIS text, not the majority entity.
+    - Do NOT change the meaning of the text.
+    - Do NOT invent facts not present in the text.
+    - The new_name should be short, specific, and disambiguating.
+    - Prefer adding a minimal qualifier rather than rewriting completely.
+    - Do NOT simply append the type in parentheses as the new_name.
+
+  INPUTS
+
+  [Text]
+  {text}
+
+  [Entity Name]
+  {entity_name}
+
+  [Locally Assigned Entity Type]
+  {minority_type}
+
+  [Majority Entity Type]
+  {majority_type}
+
+  [Majority Type Percentage]
+  {majority_percentage}%
+
+  OUTPUT FORMAT
+  Return ONLY one JSON object, with no extra text:
+
+  {{
+    "decision": "keep" | "drop",
+    "reason": "Brief explanation grounded explicitly in the text.",
+    "new_name": "Required only if decision is keep; otherwise omit or null."
+  }}

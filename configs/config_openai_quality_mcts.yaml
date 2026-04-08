@@ -1,0 +1,216 @@
+# QUALITY experiment config tuned for upstream stability.
+#
+# This keeps the same model/tool stack as config_openai.yaml, but lowers
+# extraction / graph / training parallelism so large benchmark runs do not
+# overload the local OpenAI-compatible services.
+
+# 全局配置
+global:
+  language: "zh"
+  task_specs_root: ./task_specs
+  doc_type: "screenplay"
+  aggregation_mode: "narrative"
+
+# 文本处理
+document_processing:
+  chunk_size: 600
+  chunk_overlap: 0
+  max_workers: 4
+  max_segments: 3
+  max_content_size: 1200
+  store_vector_chunks: true
+  sentence_chunk_size: 200
+  sentence_chunk_overlap: 50
+  bm25_chunk_size: 250
+  reset_vector_collections: true
+
+# 知识图谱
+knowledge_graph_builder:
+  file_path: data/knowledge_graph
+  max_workers: 4
+  max_retries: 2
+  per_task_timeout: 2400
+
+# 存储配置
+storage:
+  graph_store_path: data/knowledge_graph/graph_runtime.pkl
+  vector_store_type: chroma
+  vector_store_path: data/vector_store
+  sql_database_path: data/sql
+
+# LLM配置
+llm:
+  provider: openai
+  model_name: Qwen3-235B
+  api_key: token-abc123
+  base_url: http://localhost:8001/v1
+  temperature: 0.0
+  max_tokens: 8192
+  timeout: 60
+
+retriever_llm:
+  provider: openai
+  model_name: Qwen3-235B
+  api_key: token-abc123
+  base_url: http://localhost:8001/v1
+  temperature: 0.0
+  max_tokens: 8192
+  timeout: 60
+
+router_llm:
+  provider: openai
+  model_name: Qwen3-235B
+  api_key: token-abc123
+  base_url: http://localhost:8001/v1
+  temperature: 0.0
+  max_tokens: 4096
+  timeout: 60
+
+memory_llm:
+  provider: openai
+  model_name: Qwen3-235B
+  api_key: token-abc123
+  base_url: http://localhost:8001/v1
+  temperature: 0.0
+  max_tokens: 8192
+  timeout: 60
+
+# 词向量模型
+embedding:
+  provider: openai
+  model_name: bge-m3
+  api_key: not-needed
+  base_url: http://localhost:8080/v1
+  max_tokens: 8192
+  dimensions: 1024
+  timeout: 60
+
+# rerank模型
+rerank:
+  provider: cohere
+  model_name: BAAI/bge-reranker-v2-m3
+  api_key: sk-trprJ0OtKgyMpKwtNidbfI0ovoZBAxYqbezUnWDBN9j3TD4N
+  base_url: http://35.220.164.252:3888/v1
+  timeout: 120
+
+# Task Specific Builder
+narrative_graph_builder:
+  max_workers: 4
+  file_path: data/narrative_graph
+  enable_storyline_relations: true
+  episode_relation_similarity_threshold: 0.55
+  episode_relation_dynamic_threshold: true
+  episode_relation_min_candidate_pairs: 10
+  episode_relation_threshold_floor: 0.20
+  episode_relation_threshold_step: 0.05
+  episode_relation_backfill_by_similarity: true
+  episode_relation_backfill_max_episodes: 500
+  causal_graph:
+    tau_conf: 0.0
+    tau_eff: 0.0
+    unified_pred: "EPISODE_CAUSAL_LINK"
+    skip_types: ["contrasts_with"]
+    flipped_types: ["elaborates"]
+    type_weight: |
+      {
+        "causes": 1.0,
+        "precedes": 0.7,
+        "elaborates": 0.35
+      }
+  cycle_break:
+    delta_tie: 0.02
+    max_iters: 10
+  chain_extraction:
+    min_effective_weight: 0.0
+    min_similarity: 0.0
+    min_common_neighbors: 0.0
+    max_paths_per_source: 200
+    max_total_paths: 5000
+    max_depth: null
+    trie_min_len: 3
+    trie_include_cutpoint: true
+    trie_drop_contained: true
+    trie_keep_terminal_pairs: false
+
+community_graph_builder:
+  max_workers: 8
+  file_path: data/community_graph
+  projection_graph_name: community_projection
+  exclude_node_labels: ["Scene", "Chapter", "Document", "Episode", "Storyline", "Community"]
+  exclude_relation_types: ["SCENE_CONTAINS", "CHAPTER_CONTAINS", "CONTAINS", "EPISODE_CONTAINS", "STORYLINE_CONTAINS", "COMMUNITY_CONTAINS", "COMMUNITY_PARENT_OF"]
+  include_intermediate_communities: true
+  write_property: community_id
+  intermediate_property: community_path
+  relationship_weight_property: ""
+  use_confidence_as_weight: false
+  min_community_size: 3
+  gamma: 1.0
+  theta: 0.01
+  tolerance: 0.0001
+  max_levels: 10
+  concurrency: 2
+  random_seed: 42
+  summary_max_length: 500
+  summary_max_members: 40
+  summary_max_relations: 80
+  store_summary_embeddings: true
+
+extraction_memory:
+  enabled: true
+  raw_store_path: data/memory/raw_memory
+  distilled_store_path: data/memory/distilled_memory
+  realtime_store_path: data/memory/realtime_memory
+  max_context_entries: 12
+  similarity_threshold: 0.90
+  distill_enabled: true
+  distill_every_n_docs: 10
+  distill_min_new_entries: 50
+  max_raw_context_entries: 5
+
+strategy_memory:
+  enabled: false
+  read_enabled: true
+  require_tool_use: true
+  runtime_routing_note_enabled: false
+  hidden_tool_names: []
+  library_path: data/memory/strategy/strategy_library.json
+  tool_metadata_runtime_dir: data/memory/strategy/tool_metadata
+  top_k_templates: 5
+  max_active_patterns: 2
+  subagent_enabled: true
+  subagent_max_branches: 5
+  min_sampling_branches: 5
+  max_hint_lines: 6
+  min_template_support: 1
+  min_similarity: 0.0
+  match_min_score: 0.5
+  selection_min_score: 0.4
+  merge_candidate_top_k: 3
+  merge_min_candidate_score: 0.28
+  consolidation_rounds: 1
+  cluster_distill_max_members: 12
+  question_timeout_sec: 900
+  training_max_workers: 5
+  question_timeout_retry_rounds: 2
+  question_timeout_retry_workers: 2
+  timeout_retry_max_retry_per_attempt: 1
+  abstraction_mode: hybrid
+  pattern_extractor_prompt_id: memory/extract_strategy_query_pattern
+  online_enabled: false
+  online_buffer_dir: data/memory/online
+  online_real_trace_path: data/memory/online/real_traces.jsonl
+  online_strategy_buffer_path: data/memory/online/online_strategy_buffer.jsonl
+  online_failure_reflection_path: data/memory/online/failure_reflections.jsonl
+  online_synthetic_qa_path: data/memory/online/synthetic_qa_buffer.jsonl
+  online_judge_prompt_id: memory/judge_online_answer
+  online_strategy_min_score: 0.85
+  online_max_tool_items: 8
+  online_max_evidence_chars: 4000
+  self_bootstrap_enabled: false
+  self_bootstrap_prompt_id: memory/generate_self_bootstrap_qa
+  self_bootstrap_max_questions: 3
+  self_bootstrap_min_source_score: 0.8
+  self_bootstrap_min_accept_score: 0.9
+
+tree_search:
+  enabled: false

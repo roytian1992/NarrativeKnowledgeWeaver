@@ -1,349 +1,369 @@
-# Narrative Knowledge Weaver: A Multi-Agent Framework for Knowledge Graph Construction and Narrative Analysis
+# NarrativeKnowledgeWeaver
 
-**Narrative Knowledge Weaver** is a large-language-model–powered system for building knowledge graphs and analyzing narratives from unstructured texts (e.g., novels, screenplays). It automatically extracts entities, relations, and attributes to construct a structured knowledge graph; then it infers event causality and plot structure to produce an **Event Causality Graph** and a **Plot Unit Graph**.
+NarrativeKnowledgeWeaver is a narrative analysis and retrieval framework built around a JSON-first knowledge extraction pipeline, a local NetworkX runtime graph, Chroma vector stores, SQLite interaction storage, and a tool-calling retriever agent.
 
-A **QA Agent** is included to answer user questions by **selecting and invoking the right tools**—graph DB, vector DB, or relational DB—and fusing multi-source results when needed. This lets the system fluidly switch between **structured reasoning**, **text-grounded evidence retrieval**, and **attribute-style lookups**, producing answers that are both logically sound and grounded in the source text.
+The current codebase supports:
+- base knowledge graph extraction from screenplay / novel / general documents
+- post-refinement property extraction
+- interaction extraction to JSON plus optional SQLite import
+- two aggregation families on top of the base graph:
+  - `narrative`: `Event -> Episode -> Storyline`
+  - `community`: Leiden communities plus GraphRAG-style community reports
+  - `full`: build both
+- a retrieval-first QA agent that loads tools according to aggregation mode
+- two separate memory systems:
+  - extraction memory for the KG pipeline
+  - strategy memory for retrieval-time tool routing
 
-In addition, the system provides a **QA module for narrative texts**. By orchestrating **Neo4j (graph DB)**, **ChromaDB (vector DB)**, and **SQL (costume/prop DB)**, it uses **Hybrid mode** by default:
+This README reflects the current repository state. Older descriptions about the architecture may no longer match the code.
 
-* **Graph DB** for reasoning over event causal chains, character relationships, and plot structures  
-* **Vector DB** for semantic retrieval of dialogues and narrative descriptions with evidence tracing  
-* **Relational DB** for normalized lookups of costume, makeup, and props  
+## What The Repository Does
 
-The QA agent can automatically compose these tools to generate answers that include both **structured conclusions** and **textual evidence**.
+### 1. Base knowledge graph pipeline
+The base pipeline is implemented by [`core/builder/graph_builder.py`](core/builder/graph_builder.py).
 
----
+It performs the following steps:
+1. split the input narrative into chunks
+2. extract entities and relations into JSON
+3. refine and merge graph results
+4. build entity / relation basic info files
+5. extract properties after refinement
+6. extract interactions after property extraction
+7. dump interaction JSON files to `data/narrative_interactions`
+8. optionally import interaction records into SQLite
+9. build document-level nodes and load the graph into the local runtime graph store
 
-## Key Features
+### 2. Narrative aggregation
+The narrative aggregation pipeline is implemented by [`core/builder/narrative_graph_builder.py`](core/builder/narrative_graph_builder.py).
 
-- **Intelligent Knowledge Extraction**: automatic entity, relation, and attribute extraction via LLMs  
-- **Multi-layer Graph Construction**: builds knowledge, event-causality, and plot-unit graphs  
-- **Multi-Agent Collaboration**: specialized agents work together in a coordinated workflow  
-- **Reflection Mechanism**: built-in evaluation and feedback loops to iteratively refine results  
-- **Multi-Model Support**: supports OpenAI, Qwen, and other LLM providers  
-- **High-Performance Processing**: multi-threaded parallelism for large-scale documents  
-- **Flexible Configuration**: YAML-based, easy to adjust parameters  
-- **Multiple Storage Backends**: supports Neo4j and ChromaDB  
+It builds:
+- Episode nodes and `EPISODE_CONTAINS` support edges
+- Episode causal / semantic relations
+- Storyline candidates and Storyline nodes
+- Storyline support edges and relations
 
----
+Intermediate and merged outputs are stored under `data/narrative_graph/`.
 
-## System Architecture
+### 3. Community aggregation
+The community aggregation pipeline is implemented by [`core/builder/community_graph_builder.py`](core/builder/community_graph_builder.py).
 
-<img src="./assets/overall_architecture.png" alt="System Architecture" width="600"/>
+It:
+- runs local community detection on the existing runtime graph
+- writes community assignments back to the runtime graph
+- creates community reports with LLM summaries
+- stores community report embeddings in `data/vector_store/community`
 
----
+Outputs are stored under `data/community_graph/`.
 
-## Multi-Agent System
+### 4. Retrieval agent
+The retrieval agent is implemented by [`core/agent/retriever_agent.py`](core/agent/retriever_agent.py).
 
-### Information Extraction Agent
-Extracts entities and relations.
+It is a single-turn, retrieval-first agent that can combine:
+- graph tools from the local runtime graph
+- vector retrieval tools
+- BM25 / document mapping utilities
+- optional SQLite interaction tools
+- composite retrieval tools such as narrative hierarchical search and community GraphRAG search
 
-<img src="./assets/kg_agent.png" alt="Information Extraction Agent" width="600"/>
+The loaded tool set depends on `global.aggregation_mode`:
+- `narrative`: load Episode / Storyline tools
+- `community`: load Community tools
+- `full`: load both
 
-**Workflow:**
-1. **Experience Retrieval**: query semantic memory for similar past cases and suggestions  
-2. **Entity Extraction**: identify structured entities (Character, Event, Action, Location, Object, Concept, Emotion, Goal, TimePoint)  
-3. **Relation Extraction**: detect semantic links such as role relationships, event–action ties, and scene relations  
-4. **Reflection Evaluation**: score quality and provide feedback for iterative refinement  
+### 5. Memory
+There are two different memory subsystems:
 
-Attribute extraction and costume/prop extraction follow the same **extract → reflect → optimize** loop.
+- `extraction_memory`
+  - used during KG extraction
+  - stores raw / distilled / realtime extraction memories
+  - located under `data/memory/raw_memory`, `data/memory/distilled_memory`, `data/memory/realtime_memory`
 
----
+- `strategy_memory`
+  - used by the retriever agent at read time
+  - trained offline from question-answer CSV files
+  - runtime library stored at `data/memory/strategy/strategy_library.json`
+  - training runner implemented in [`core/strategy_training/strategy_training_runner.py`](core/strategy_training/strategy_training_runner.py)
 
-### Attribute Extraction Agent
-Dedicated to extracting entity attributes.
+## Repository Layout
 
-<img src="./assets/attribute_extraction_process.png" alt="Attribute Extraction Agent" width="600"/>
-
----
-
-### Graph Probing Agent
-Ensures the schema matches narrative content and user needs.
-
-<img src="./assets/probing_agent.png" alt="Graph Probing Agent" width="600"/>
-
-**Process:**
-1. **Experience Retrieval**  
-2. **Background/Terminology Update**  
-3. **Schema Generation/Adjustment**  
-4. **Trial Extraction** on partial text for feasibility  
-5. **Pruning Optimization** to remove redundant/low-frequency types  
-6. **Reflection Iteration** until schema quality is satisfactory  
-
----
-
-## Core Directory Structure
-
+```text
+NarrativeKnowledgeWeaver/
+├── configs/                     # YAML configs
+├── core/
+│   ├── agent/                   # extraction / retrieval agents
+│   ├── builder/                 # graph builders and managers
+│   ├── functions/               # tool calls, memory functions, aggregation functions
+│   ├── memory/                  # extraction memory and strategy memory
+│   ├── model_providers/         # LLM / embedding / rerank wrappers
+│   ├── storage/                 # local graph store, vector store, SQL store
+│   └── utils/                   # config, formatting, graph helpers, general utils
+├── data/
+│   ├── knowledge_graph/
+│   ├── narrative_graph/
+│   ├── community_graph/
+│   ├── narrative_interactions/
+│   ├── vector_store/
+│   ├── sql/
+│   └── memory/
+├── examples/
+│   ├── documents/
+│   └── datasets/
+├── reports/                     # tool tests, smoke reports, QA reports
+├── strategy_training/           # offline strategy-memory training runs
+├── task_specs/                  # prompts, schemas, task settings, tool metadata
+├── main.py                      # base graph + configured aggregation pipeline
+└── test_main.py                 # community-only test entry
 ```
-core/
-├── agent/                    
-│   ├── attribute_extraction_agent.py   
-│   ├── knowledge_extraction_agent.py          
-│   ├── graph_probing_agent.py           
-│   ├── retriever_agent.py              
-│   └── cmp_extraction_agent.py           
-├── builder/                  
-│   ├── manager/                        
-│   ├── document_processor.py           
-│   ├── graph_builder.py                
-│   ├── database_builder.py             
-│   ├── graph_preprocessor.py           
-│   ├── narrative_graph_builder.py      
-│   └── reflection.py                   
-├── functions/                
-├── memory/                   
-├── model_providers/          
-├── models/                   
-├── prompts/                  
-├── schema/                   
-├── storage/                  
-└── utils/                    
-```
 
----
+## Prompt / Schema Management
+
+Prompt, schema, and task-setting files are managed under `task_specs/`.
+
+Language-dependent resources are selected by [`core/utils/config.py`](core/utils/config.py):
+- `global.language: zh`
+  - `task_specs/prompts`
+  - `task_specs/task_settings`
+  - `task_specs/schema`
+  - `task_specs/tool_metadata/zh`
+- `global.language: en`
+  - `task_specs/prompts_en`
+  - `task_specs/task_settings_en`
+  - `task_specs/schema_en`
+  - `task_specs/tool_metadata/en`
+
+This is the current source of truth. The old `core/prompts` style is no longer the active organization.
 
 ## Requirements
 
-- Python 3.10+  
-- Neo4j 5.x  
-- 16GB+ RAM recommended  
-
----
+- Python 3.12
+- a compatible OpenAI-style LLM endpoint for generation
+- embedding endpoint
+- reranker endpoint if reranking is enabled
 
 ## Installation
 
-```bash
-git clone https://github.com/roytian1992/NarrativeKnowledgeWeaver.git
-cd NarrativeKnowledgeWeaver
+### Conda
 
-# install dependencies
-pip install -r requirements.txt
-# or
+The provided environment file uses the environment name `screenplay`.
+
+```bash
 conda env create -f environment.yml
-conda activate kgag
+conda activate screenplay
 ```
 
-### Install & Configure Neo4j (Ubuntu/Debian)
+### Pip
 
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install wget apt-transport-https gnupg lsb-release -y
-
-# add Neo4j repo
-wget -O - https://debian.neo4j.com/neotechnology.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/neo4j.gpg
-echo "deb [signed-by=/usr/share/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" | sudo tee /etc/apt/sources.list.d/neo4j.list
-
-# install Neo4j
-sudo apt update
-sudo apt install neo4j -y
-
-# install GDS plugin
-cd /var/lib/neo4j/plugins/
-sudo wget https://graphdatascience.ninja/neo4j-graph-data-science-2.20.0.zip
-sudo unzip neo4j-graph-data-science-2.20.0.zip
-
-# configure procedures
-sudo nano /etc/neo4j/neo4j.conf
-# add:
-# dbms.security.procedures.unrestricted=gds.*
-# dbms.security.procedures.allowlist=gds.*
-
-# enable & start
-sudo systemctl enable neo4j
-sudo systemctl start neo4j
+pip install -r requirements.txt
 ```
 
----
+## Configuration Overview
 
-## Configuration
+The main config file is parsed by [`core/utils/config.py`](core/utils/config.py).
 
-Create your main YAML config from the template below:
+Important sections:
+- `global`
+  - `language`: `zh` or `en`
+  - `doc_type`: `screenplay`, `novel`, or `general`
+  - `aggregation_mode`: `narrative`, `community`, or `full`
+- `document_processing`
+  - chunk sizes for graph extraction, vector storage, sentence storage, and BM25 subchunking
+- `knowledge_graph_builder`
+  - output path and extraction concurrency
+- `storage`
+  - local graph store path, vector store path, SQL path
+- `llm`, `embedding`, `rerank`
+  - model endpoints
+- `narrative_graph_builder`
+  - episode / storyline construction settings
+- `community_graph_builder`
+  - Leiden / community report settings
+- `extraction_memory`
+  - memory used by extraction agents
+- `strategy_memory`
+  - runtime strategy-template retrieval
 
-```yaml
-# Knowledge Graph Builder
-knowledge_graph_builder:
-  prompt_dir: ./core/prompts
-  doc_type: "screenplay"  # or "novel"
-  max_workers: 32
+Example config files:
+- [`configs/config_openai.yaml`](configs/config_openai.yaml)
+- [`configs/config_local.yaml`](configs/config_local.yaml)
 
-# Event & Plot Graph Builder
-event_plot_graph_builder:
-  max_workers: 32
-  max_depth: 2
-  check_weakly_connected_components: true
-  min_connected_component_size: 10
-  max_num_triangles: 2000
-  max_iterations: 5
-  min_confidence: 0.0
-  event_fallback: [Action, Goal]
+## Running The Pipeline
 
-# Probing
-probing:
-  probing_mode: adjust  # fixed/adjust/from_scratch
-  refine_background: false
-  max_workers: 32
-  max_retries: 2
-  experience_limit: 100
-  relation_prune_threshold: 0.01
-  entity_prune_threshold: 0.02
+### End-to-end build
 
-# LLM
-llm:
-  provider: openai
-  model_name: Qwen3-235B-A22B-FP8  # or another supported model
-  api_key: your-api-key
-  base_url: http://your-api-endpoint/v1
-  temperature: 0.0
-  max_tokens: 8096
-  enable_thinking: true
-  timeout: 60
+`main.py` always runs the base graph pipeline first, then executes the aggregation pipeline selected by `global.aggregation_mode`.
 
-# Graph Embeddings
-graph_embedding:
-  provider: openai
-  model_name: bge-m3
-  base_url: http://localhost:8080/v1
-  dimensions: 1024
-
-# Vector DB Embeddings
-vectordb_embedding:
-  provider: openai
-  model_name: Qwen3-Embedding-8B
-  base_url: http://localhost:8009/v1
-  dimensions: 1024
-
-# Rerank
-rerank:
-  provider: cohere
-  model_name: Qwen3-Reranker-8B
-  base_url: http://localhost:8012/v1
-
-# Document Processing
-document_processing:
-  chunk_size: 500
-  chunk_overlap: 0
-  max_workers: 32
-  max_segments: 3
-  max_content_size: 2000
-
-# Agent
-agent:
-  max_workers: 32
-  score_threshold: 7
-  max_retries: 2
-  async_timeout: 600
-  async_max_attempts: 3
-  async_backoff_seconds: 60
-
-# Memory
-memory:
-  enabled: true
-  memory_type: vector
-  max_token_limit: 4000
-  memory_path: ./data/memory
-  history_memory_size: 3
-  insight_memory_size: 10
-
-# Storage
-storage:
-  neo4j_uri: bolt://localhost:7687
-  neo4j_username: neo4j
-  neo4j_password: your-password
-  vector_store_type: chroma
-  vector_store_path: data/vector_store
-  document_store_path: data/document_store
-  knowledge_graph_path: data/knowledge_graph
-  graph_schema_path: data/graph_schema
-  sql_database_path: data/sql
-```
-
----
-
-## Usage
-
-### Process a screenplay
 ```bash
-python main.py     -c configs/config_openai.yaml     -i examples/documents/wandering_earth2.json     -v
+python main.py \
+  --config configs/config_openai.yaml \
+  --json_file examples/documents/wandering_earth2.json
 ```
 
-### Process a novel
+Current `main.py` behavior:
+- base graph pipeline is always executed
+- then:
+  - `narrative` -> build Episode / Storyline aggregation
+  - `community` -> build community aggregation
+  - `full` -> build narrative first, then community
+
+### Community-only rebuild on an existing graph
+
+If you already have the base runtime graph and only want to rebuild communities:
+
 ```bash
-python main.py     -c configs/config_openai.yaml     -i examples/documents/i_robot.json     -v
+python test_main.py \
+  --config configs/config_openai.yaml \
+  --clear_previous_community
 ```
 
-### Command-Line Arguments
+Optional flags:
+- `--clear_previous_community`
+- `--clear_previous_narrative`
 
-| Argument | Type | Required | Description |
-|---|---|---|---|
-| `-c, --config` | str | Yes | Path to the main YAML config |
-| `-i, --input` | str | Yes | Path to input document (JSON) |
-| `-b, --build-settings` | str | Yes | Path to build settings file |
-| `-v, --verbose` | flag | No | Enable verbose logs |
+## Interaction Extraction And SQL Storage
 
----
+Interaction extraction is not stored in the knowledge graph.
 
-## Workflow
+Current behavior:
+- extraction happens after property extraction
+- source input is the refined extraction result plus Character / Object candidates
+- outputs are dumped to `data/narrative_interactions`
+- SQL import is a separate step
 
-1. **Config Load**: initialize components from YAML  
-2. **Document Preprocessing**: chunking and metadata generation  
-3. **Knowledge Extraction**: entities, relations, attributes (with reflection)  
-4. **Graph Preprocessing**: entity disambiguation, clustering, merging  
-5. **Graph Construction**: write to Neo4j  
-6. **Event Causality Analysis**: build event-causality graph  
-7. **Plot Structure Analysis**: build plot-unit graph  
-8. **Vectorization**: embed and store in ChromaDB  
+Relevant code:
+- extraction: [`KnowledgeGraphBuilder.extract_interactions()`](core/builder/graph_builder.py)
+- SQL import: [`KnowledgeGraphBuilder.store_interactions_to_sql()`](core/builder/graph_builder.py)
+- generic SQLite persistence: [`core/storage/sql_store.py`](core/storage/sql_store.py)
 
----
+Current interaction files:
+- `data/narrative_interactions/interaction_results.json`
+- `data/narrative_interactions/interaction_records_list.json`
 
-## Outputs
+Current SQL target:
+- default DB: `data/sql/Interaction.db`
+- default table: `Interaction_info`
 
-- **Neo4j Knowledge Graph** (entities/relations/attributes)  
-- **Event Causality Graph**  
-- **Plot Unit Graph**  
-- **Vector Index** for semantic search  
-- **Processing Logs** with quality evaluations  
+## Tool System
 
----
+Tool implementations live in [`core/functions/tool_calls/`](core/functions/tool_calls).
 
-## Applications
+Current categories:
+- `graphdb_tools.py`
+  - entity lookup, section search, neighborhood search, episode / storyline / community search
+- `vectordb_tools.py`
+  - document, sentence, hierarchical, and document-id based retrieval
+- `native_tools.py`
+  - BM25, document-id/title mapping, section content filtering
+- `sqldb_tools.py`
+  - dialogue and interaction lookup from SQLite
+- `composite_tools.py`
+  - `narrative_hierarchical_search`
+  - community GraphRAG retrieval
+  - section-level evidence search
 
-- **Humanities research**: large-scale literary analysis and pattern discovery  
-- **Content analytics**: structured media understanding  
-- **Narrative QA**: question answering grounded in narratives  
-- **Creative assistance**: story structure analysis and suggestions  
-- **Education**: tools for understanding complex narratives  
+The retriever agent loads a subset of these tools depending on aggregation mode and whether SQL tools are enabled.
 
----
+## Using The Retriever Agent Programmatically
 
-## Technical Highlights
+There is no single dedicated CLI for QA in the current repository. The simplest way to use the agent is from Python.
 
-- **Multi-Agent Architecture** with specialized roles  
-- **Reflection Mechanism** to boost extraction quality  
-- **Parallel Processing** for throughput and scale  
-- **Modular Design** for easy extension and maintenance  
-- **Model Agnostic**: plug in different LLMs and embedding models  
+```python
+from core import KAGConfig
+from core.agent.retriever_agent import QuestionAnsweringAgent
 
----
+config = KAGConfig.from_yaml("configs/config_openai.yaml")
+agent = QuestionAnsweringAgent(
+    config,
+    aggregation_mode="narrative",   # or community / full
+    enable_sql_tools=True,
+)
 
-## License
+responses = agent.ask("550系列有哪几个型号？分别出现在了哪些场次中？", lang="zh")
+print(agent.extract_final_text(responses))
+agent.close()
+```
 
-This project is licensed under the MIT License – see [LICENSE](LICENSE).
+## Strategy Memory Training
 
----
+Strategy memory is trained offline from question-answer CSV files.
 
-## Contributing
+Current implementation:
+- trainer: [`StrategyMemoryTrainingRunner`](core/strategy_training/strategy_training_runner.py)
+- runtime reader: [`RetrievalStrategyMemory`](core/memory/retrieval_strategy_memory.py)
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+The trainer currently supports:
+- multiple attempts per question
+- answer judging
+- effective tool-chain extraction
+- failure reflection
+- retry instruction generation
+- retry attempts
+- template clustering and deduplication
+- runtime library export
 
----
+Example:
 
-## Support
+```python
+from core import KAGConfig
+from core.strategy_training.strategy_training_runner import StrategyMemoryTrainingRunner
 
-- Issues: https://github.com/roytian1992/NarrativeKnowledgeWeaver/issues  
-- Discussions: https://github.com/roytian1992/NarrativeKnowledgeWeaver/discussions
+config = KAGConfig.from_yaml("configs/config_openai.yaml")
+runner = StrategyMemoryTrainingRunner(
+    config=config,
+    csv_path="examples/datasets/we2_qa.csv",
+    dataset_name="we2_training",
+    attempts_per_question=5,
+    output_root="strategy_training",
+)
 
----
+# optional: clear runtime strategy library first
+runner.clear_runtime_library()
+result = runner.run(reset_runtime_library=True)
+runner.close()
+print(result)
+```
 
-## Acknowledgments
+Training artifacts are stored under `strategy_training/<dataset_name>/`.
+The runtime strategy library is stored at `data/memory/strategy/strategy_library.json`.
 
-Special thanks to the **The Wandering Earth 3** production team for compute support and narrative QA annotations.
+## Main Output Directories
+
+- `data/knowledge_graph/`
+  - chunked documents, extraction results, refined entities / relations, basic info files
+- `data/narrative_interactions/`
+  - interaction JSON outputs
+- `data/sql/`
+  - SQLite databases
+- `data/narrative_graph/`
+  - episodes, storylines, support edges, relations
+- `data/community_graph/`
+  - community assignments, hierarchy, reports
+- `data/vector_store/document/`
+  - document-level vector store
+- `data/vector_store/sentence/`
+  - sentence-level vector store
+- `data/vector_store/community/`
+  - community summary vector store
+- `data/memory/`
+  - extraction memory and runtime strategy library
+- `reports/`
+  - tool tests, smoke tests, QA reports
+
+## Notes And Limitations
+
+- `main.py` is the supported entry point for end-to-end builds.
+- `test_main.py` is a utility entry for community-only rebuilds on top of an existing graph.
+- The retriever agent is currently single-turn.
+- Strategy-memory training is currently serial at the question/attempt loop level; large runs can take a long time.
+- Some training-time substeps, such as effective tool-chain extraction, can still hit long-context limits if a single attempt becomes very large.
+- SQL tools are optional and are not loaded unless `enable_sql_tools=True`.
+
+## Related Files
+
+- [`README_zh.md`](README_zh.md)
+- [`main.py`](main.py)
+- [`test_main.py`](test_main.py)
+- [`core/agent/retriever_agent.py`](core/agent/retriever_agent.py)
+- [`core/builder/graph_builder.py`](core/builder/graph_builder.py)
+- [`core/builder/narrative_graph_builder.py`](core/builder/narrative_graph_builder.py)
+- [`core/builder/community_graph_builder.py`](core/builder/community_graph_builder.py)

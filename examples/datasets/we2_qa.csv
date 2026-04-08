@@ -1,4 +1,4 @@
-question_index,question,refined_answer,question_type,original_ground_truth
+question_index,question,answer,question_type,original_ground_truth
 0,联合政府成立时大会场屏幕上出现了什么内容？,大会场屏幕上显示：UN 变为 UEG。,场景描述类,"新闻画面： 
 联合国秘书长在主席台上宣布联合政府成立。 
 联合国名称变更（大会会场屏幕上显示：UN 变为 UEG）。 

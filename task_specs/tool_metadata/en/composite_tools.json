@@ -1,0 +1,164 @@
+{
+  "community_graphrag_search": {
+    "name": "community_graphrag_search",
+    "description": "Traverse community summaries from high-level clusters down to finer clusters, then pull supporting text evidence. Use for theme-level synthesis, broad topic exploration, or cross-event aggregation. It is not the best default tool for direct multiple-choice evidence lookup.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Natural-language question or theme to search for.",
+        "required": true
+      },
+      {
+        "name": "community_top_k",
+        "type": "integer",
+        "description": "How many communities to keep at each level. Default 3.",
+        "required": false
+      },
+      {
+        "name": "start_level",
+        "type": "integer",
+        "description": "Optional starting community level. If omitted, starts from the highest level.",
+        "required": false
+      },
+      {
+        "name": "max_depth",
+        "type": "integer",
+        "description": "Maximum number of community levels to drill down. Default 2.",
+        "required": false
+      },
+      {
+        "name": "child_limit_per_parent",
+        "type": "integer",
+        "description": "Maximum number of child communities to expand per parent. Default 8.",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "Whether to apply LLM relevance filtering to candidate communities.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM relevance threshold. Default 0.35.",
+        "required": false
+      },
+      {
+        "name": "document_top_k",
+        "type": "integer",
+        "description": "Maximum number of evidence document_ids to extract. Default 6.",
+        "required": false
+      },
+      {
+        "name": "max_evidence_length",
+        "type": "integer",
+        "description": "Maximum extracted evidence length per document. Default 240.",
+        "required": false
+      },
+      {
+        "name": "member_preview_limit",
+        "type": "integer",
+        "description": "How many representative community members to preview. Default 5.",
+        "required": false
+      }
+    ]
+  },
+  "narrative_hierarchical_search": {
+    "name": "narrative_hierarchical_search",
+    "description": "Retrieve evidence through the narrative hierarchy Storyline -> Episode -> Event -> source documents. Useful for plot progression, event connections, and cross-section narrative questions.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Narrative question or query.",
+        "required": true
+      },
+      {
+        "name": "storyline_top_k",
+        "type": "integer",
+        "description": "Maximum number of storyline candidates. Default 4.",
+        "required": false
+      },
+      {
+        "name": "episode_top_k",
+        "type": "integer",
+        "description": "Maximum number of episode candidates. Default 5.",
+        "required": false
+      },
+      {
+        "name": "event_top_k",
+        "type": "integer",
+        "description": "Maximum number of event candidates. Default 8.",
+        "required": false
+      },
+      {
+        "name": "document_top_k",
+        "type": "integer",
+        "description": "Maximum number of source documents. Default 6.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "Relevance threshold for hierarchical filtering. Default 0.35.",
+        "required": false
+      },
+      {
+        "name": "max_evidence_length",
+        "type": "integer",
+        "description": "Maximum evidence length per document. Default 240.",
+        "required": false
+      }
+    ]
+  },
+  "section_evidence_search": {
+    "name": "section_evidence_search",
+    "description": "Section-level evidence retrieval that finds relevant scenes or sections and extracts answer-bearing text. Useful for local facts, scene localization, dialogue, actions, objects, and grounding.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Question or query to ground in sections.",
+        "required": true
+      },
+      {
+        "name": "section_top_k",
+        "type": "integer",
+        "description": "Maximum number of relevant sections. Default 8.",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "Whether to apply LLM filtering to section candidates.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "integer",
+        "description": "How many section candidates to send to the LLM filter. Default 12.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM relevance threshold. Default 0.35.",
+        "required": false
+      },
+      {
+        "name": "max_length",
+        "type": "integer",
+        "description": "Maximum evidence length per matched section. Default 320.",
+        "required": false
+      },
+      {
+        "name": "related_entity_limit",
+        "type": "integer",
+        "description": "Maximum related entities to show per type. Default 3.",
+        "required": false
+      }
+    ]
+  }
+}

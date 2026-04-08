@@ -1,0 +1,108 @@
+id: update_episodes
+category: aggregation
+name: Update Episodes with New Scene Part
+description: >
+  Update an existing set of Episodes using new text and the full entity list.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The new scene part text only.
+
+  - name: entities
+    type: string
+    required: true
+    description: JSON string of the full entity list across all parts so far.
+
+  - name: existing_episodes
+    type: string
+    required: true
+    description: JSON string of previously extracted episodes.
+
+static_variables:
+  - name: entity_definitions_text
+    type: string
+    required: true
+    description: Rendered definitions for Event, Occasion, Episode, and Storyline.
+
+  - name: episode_output_fields_text
+    type: string
+    required: true
+    description: Rendered Episode output field schema.
+
+  - name: episode_construction_constraints_text
+    type: string
+    required: true
+    description: Schema-derived structural constraints for Episode extraction.
+
+  - name: episode_writing_constraints_text
+    type: string
+    required: true
+    description: Schema-derived writing constraints for Episode descriptions.
+
+  - name: episode_sample_json_text
+    type: string
+    required: true
+    description: A compact sample Episode object from schema.
+
+template: |
+  You are an information extraction and narrative structuring assistant.
+
+  Definitions:
+  {entity_definitions_text}
+
+  Task:
+  Update an existing set of Episodes using NEW text (a new scene part) and the full entity list.
+  You must keep the constraint that each Event belongs to exactly one Episode.
+
+  Input:
+  1) existing_episodes: Episodes previously extracted from earlier scene parts.
+  2) text: the original text for the new scene part only.
+  3) entities: the full entity list across all parts so far. Each entity has:
+     - id, name, description, type ("Event" or "Occasion"), source_documents
+
+  Rules:
+  {episode_construction_constraints_text}
+  - Each Event id must appear in exactly one Episode across the final output.
+  - You may perform these actions:
+     - Add new events from the new scene part into an existing Episode if they share the same immediate goal/narrative unit.
+     - Create new Episodes for events that start a new goal-driven unit.
+     - (Optional) Rename Episodes if the updated membership changes the best action-oriented summary.
+  - Be conservative: do not change existing Episode structure unless the new text provides strong evidence that it is needed.
+     In particular, do NOT split or merge existing Episodes.
+  - Do not invent events or details not supported by the text.
+
+  Episode Output Fields:
+  {episode_output_fields_text}
+
+  Episode Writing Constraints:
+  {episode_writing_constraints_text}
+
+  Sample Episode object:
+  {episode_sample_json_text}
+
+  Output JSON only, schema:
+
+  {{
+    "episodes": [
+      {{
+        "name": "...",
+        "description": "...",
+        "related_events": ["..."],
+        "related_occasions": ["..."]
+      }}
+    ]
+  }}
+
+  Now process.
+
+  Existing Episodes:
+  {existing_episodes}
+
+  New Text:
+  {text}
+
+  All Entities:
+  {entities}

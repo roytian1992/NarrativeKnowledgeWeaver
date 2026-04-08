@@ -1,0 +1,14 @@
+{
+  "source_manifest": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/regression/remaining102_manifest_20260330.json",
+  "sampling_note": "single-article stable router smoke",
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_c719ce3807e7eb5a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c719ce3807e7eb5a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c719ce3807e7eb5a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c719ce3807e7eb5a.json",
+      "title": "a_c719ce3807e7eb5a"
+    }
+  ]
+}

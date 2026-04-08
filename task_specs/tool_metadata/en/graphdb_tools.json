@@ -1,0 +1,596 @@
+{
+  "retrieve_entity_by_id": {
+    "name": "retrieve_entity_by_id",
+    "description": "Return a single entity by entity ID. Use after another tool has already identified the right entity and you want its properties, relations, or source sections. This is a follow-up inspection tool, not an initial search tool.",
+    "parameters": [
+      {
+        "name": "entity_id",
+        "type": "string",
+        "description": "Unique entity ID.",
+        "required": true
+      },
+      {
+        "name": "contain_properties",
+        "type": "bool",
+        "description": "Whether to include the entity's properties. Default false.",
+        "required": false
+      },
+      {
+        "name": "contain_relations",
+        "type": "bool",
+        "description": "Whether to include the entity's relations to other entities. Default false.",
+        "required": false
+      },
+      {
+        "name": "resolve_source_documents",
+        "type": "bool",
+        "description": "Whether to resolve source_documents into readable section or chapter titles. Default false.",
+        "required": false
+      }
+    ]
+  },
+  "retrieve_entity_by_name": {
+    "name": "retrieve_entity_by_name",
+    "description": "Hybrid entity retrieval by name, alias, or short description, with an optional entity-type constraint.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Entity name, alias, or short description.",
+        "required": true
+      },
+      {
+        "name": "entity_type",
+        "type": "string",
+        "description": "Optional entity type.",
+        "required": false
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "Maximum number of candidate entities. Default 8.",
+        "required": false
+      },
+      {
+        "name": "resolve_source_documents",
+        "type": "bool",
+        "description": "Whether to resolve source_documents into readable titles. Default false.",
+        "required": false
+      }
+    ]
+  },
+  "get_entity_sections": {
+    "name": "get_entity_sections",
+    "description": "Return the sections or scenes where an entity appears.",
+    "parameters": [
+      {
+        "name": "entity_id",
+        "type": "string",
+        "description": "Entity ID.",
+        "required": true
+      },
+      {
+        "name": "include_document_ids",
+        "type": "bool",
+        "description": "Whether to include backing document_ids. Default true.",
+        "required": false
+      }
+    ]
+  },
+  "search_related_entities": {
+    "name": "search_related_entities",
+    "description": "Return entities connected to a given entity, optionally filtered by relation or target entity type.",
+    "parameters": [
+      {
+        "name": "source_id",
+        "type": "string",
+        "description": "Source entity ID.",
+        "required": true
+      },
+      {
+        "name": "predicate",
+        "type": "string",
+        "description": "Optional predicate filter.",
+        "required": false
+      },
+      {
+        "name": "relation_types",
+        "type": "array",
+        "description": "Optional relation-type whitelist.",
+        "required": false
+      },
+      {
+        "name": "entity_types",
+        "type": "array",
+        "description": "Optional target entity-type whitelist.",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "type": "number",
+        "description": "Maximum number of results.",
+        "required": false
+      },
+      {
+        "name": "return_relations",
+        "type": "bool",
+        "description": "Whether to return entity-relation pairs. Default false.",
+        "required": false
+      }
+    ]
+  },
+  "get_relations_between_entities": {
+    "name": "get_relations_between_entities",
+    "description": "Return graph relations of a given type between two known entities.",
+    "parameters": [
+      {
+        "name": "src_id",
+        "type": "string",
+        "description": "Source entity ID.",
+        "required": true
+      },
+      {
+        "name": "tgt_id",
+        "type": "string",
+        "description": "Target entity ID.",
+        "required": true
+      },
+      {
+        "name": "relation_type",
+        "type": "string",
+        "description": "Relation type to check.",
+        "required": true
+      }
+    ]
+  },
+  "get_common_neighbors": {
+    "name": "get_common_neighbors",
+    "description": "Return common graph neighbors shared by two known entities. Use for graph-structure comparison or bridge discovery when both entity IDs are known. This is exploratory and usually not a direct QA evidence tool.",
+    "parameters": [
+      {
+        "name": "id1",
+        "type": "string",
+        "description": "First entity ID.",
+        "required": true
+      },
+      {
+        "name": "id2",
+        "type": "string",
+        "description": "Second entity ID.",
+        "required": true
+      },
+      {
+        "name": "rel_types",
+        "type": "array",
+        "description": "Optional whitelist of relation types.",
+        "required": false
+      },
+      {
+        "name": "direction",
+        "type": "string",
+        "description": "Edge direction constraint: any, out, or in. Default any.",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "type": "number",
+        "description": "Maximum number of common neighbors to return.",
+        "required": false
+      },
+      {
+        "name": "include_rel_types",
+        "type": "bool",
+        "description": "Whether to also show relation types from each side. Default false.",
+        "required": false
+      }
+    ]
+  },
+  "find_paths_between_nodes": {
+    "name": "find_paths_between_nodes",
+    "description": "Find short graph paths between two known node IDs and render them as readable evidence chains. Use only after both endpoint IDs are known and you need an abstract structural connection. This is for graph reasoning, not for retrieving exact textual evidence from the source text.",
+    "parameters": [
+      {
+        "name": "src_id",
+        "type": "string",
+        "description": "Start node ID.",
+        "required": true
+      },
+      {
+        "name": "dst_id",
+        "type": "string",
+        "description": "End node ID.",
+        "required": true
+      },
+      {
+        "name": "max_depth",
+        "type": "integer",
+        "description": "Maximum path length in edges. Default 4.",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "Maximum number of paths to return. Default 5.",
+        "required": false
+      }
+    ]
+  },
+  "top_k_by_centrality": {
+    "name": "top_k_by_centrality",
+    "description": "Return the most central nodes by a stored centrality metric such as pagerank, degree, or betweenness. Use for global graph analysis or importance inspection, not for local question answering unless the question explicitly asks about central or prominent entities.",
+    "parameters": [
+      {
+        "name": "metric",
+        "type": "string",
+        "description": "Centrality metric: pagerank, degree, or betweenness.",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "Number of ranked nodes to return. Default 50.",
+        "required": false
+      },
+      {
+        "name": "node_labels",
+        "type": "array",
+        "description": "Optional list of node labels to restrict the ranking to.",
+        "required": false
+      }
+    ]
+  },
+  "get_co_section_entities": {
+    "name": "get_co_section_entities",
+    "description": "For a known entity, group co-occurring entities by section or scene. Use to inspect who or what appears together with the entity in the same local context. Helpful for narrowing candidate scenes, but not usually sufficient as final evidence on its own.",
+    "parameters": [
+      {
+        "name": "entity_id",
+        "type": "string",
+        "description": "Entity ID whose co-occurring neighbors should be grouped by section.",
+        "required": true
+      },
+      {
+        "name": "include_types",
+        "type": "array",
+        "description": "Optional entity-type filter, for example ['Event', 'Character'].",
+        "required": false
+      },
+      {
+        "name": "document_ids",
+        "type": "array",
+        "description": "Optional section filter. Only return co-occurrences from these document_ids.",
+        "required": false
+      },
+      {
+        "name": "max_sections",
+        "type": "number",
+        "description": "Maximum number of section groups to return.",
+        "required": false
+      },
+      {
+        "name": "max_entities_per_section",
+        "type": "number",
+        "description": "Maximum number of co-occurring entities to show per section.",
+        "required": false
+      }
+    ]
+  },
+  "search_episodes": {
+    "name": "search_episodes",
+    "description": "Search Episode nodes by hybrid keyword plus vector retrieval. Use for questions about narrative stages or mid-level plot units when Episode nodes are likely to capture the answer context. This is a structure-level locator tool, often followed by document or evidence retrieval.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Question or query describing the relevant episode content.",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "Maximum number of episode hits to return. Default 5.",
+        "required": false
+      },
+      {
+        "name": "vector_top_k",
+        "type": "number",
+        "description": "How many vector candidates to keep before merging. Default 3.",
+        "required": false
+      },
+      {
+        "name": "keyword_top_k",
+        "type": "number",
+        "description": "How many keyword candidates to keep before merging. Default 2.",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "Whether to apply LLM relevance filtering to candidates.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "number",
+        "description": "How many candidates to send to the LLM filter. Default 8 or top_k, whichever is larger.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM relevance threshold. Default 0.35.",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "Whether to include richer metadata such as descriptions. Default false.",
+        "required": false
+      }
+    ]
+  },
+  "search_storylines": {
+    "name": "search_storylines",
+    "description": "Search Storyline nodes by hybrid keyword plus vector retrieval. Use for high-level plotline or narrative-thread questions. This is best for storyline discovery and routing, not for final fine-grained textual evidence.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Question or query describing the storyline you want to find.",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "Maximum number of storyline hits to return. Default 5.",
+        "required": false
+      },
+      {
+        "name": "vector_top_k",
+        "type": "number",
+        "description": "How many vector candidates to keep before merging. Default 3.",
+        "required": false
+      },
+      {
+        "name": "keyword_top_k",
+        "type": "number",
+        "description": "How many keyword candidates to keep before merging. Default 2.",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "Whether to apply LLM relevance filtering to candidates.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "number",
+        "description": "How many candidates to send to the LLM filter. Default 8 or top_k, whichever is larger.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM relevance threshold. Default 0.35.",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "Whether to include richer metadata such as descriptions. Default false.",
+        "required": false
+      }
+    ]
+  },
+  "search_sections": {
+    "name": "search_sections",
+    "description": "Hybrid retrieval over section-level nodes such as scenes or chapters. Useful for locating candidate sections related to the query.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Question or query.",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "Maximum number of section hits. Default 5.",
+        "required": false
+      },
+      {
+        "name": "vector_top_k",
+        "type": "number",
+        "description": "Number of vector candidates before merging. Default 3.",
+        "required": false
+      },
+      {
+        "name": "keyword_top_k",
+        "type": "number",
+        "description": "Number of keyword candidates before merging. Default 2.",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "Whether to apply LLM filtering to section candidates.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "number",
+        "description": "How many candidates to send to the LLM filter. Default 8 or top_k.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM relevance threshold. Default 0.35.",
+        "required": false
+      },
+      {
+        "name": "include_related_entities",
+        "type": "bool",
+        "description": "Whether to include related entities for each section. Default true.",
+        "required": false
+      },
+      {
+        "name": "related_entity_limit",
+        "type": "number",
+        "description": "Maximum related entities per type. Default 3.",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "Whether to include additional metadata. Default false.",
+        "required": false
+      }
+    ]
+  },
+  "search_communities": {
+    "name": "search_communities",
+    "description": "Search Community nodes or summaries as high-level semantic clusters. Use for topic-level exploration or cluster routing when the question is broad. This is generally weaker than section- or sentence-level tools for direct answer evidence.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Question or topic query.",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "Maximum number of community hits to return. Default 5.",
+        "required": false
+      },
+      {
+        "name": "level",
+        "type": "number",
+        "description": "Optional community hierarchy level to search within.",
+        "required": false
+      },
+      {
+        "name": "vector_top_k",
+        "type": "number",
+        "description": "How many vector candidates to keep before merging. Default 3.",
+        "required": false
+      },
+      {
+        "name": "keyword_top_k",
+        "type": "number",
+        "description": "How many keyword candidates to keep before merging. Default 2.",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "Whether to apply LLM relevance filtering to candidate communities.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "number",
+        "description": "How many candidates to send to the LLM filter. Default 8.",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM relevance threshold. Default 0.35.",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "Whether to include extra community properties.",
+        "required": false
+      },
+      {
+        "name": "include_member_preview",
+        "type": "bool",
+        "description": "Whether to preview representative community members.",
+        "required": false
+      }
+    ]
+  },
+  "query_similar_entities": {
+    "name": "query_similar_entities",
+    "description": "Vector-only semantic search over entity nodes. Use when you want entities whose meanings or descriptions are similar to a text query, especially if you do not know the exact name. This is exploratory entity recall and usually needs a follow-up evidence tool.",
+    "parameters": [
+      {
+        "name": "text",
+        "type": "string",
+        "description": "Semantic query text used to search similar entities.",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "Maximum number of entity hits to return.",
+        "required": false
+      },
+      {
+        "name": "entity_types",
+        "type": "array",
+        "description": "Optional whitelist of entity types.",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "Whether to include extra metadata fields.",
+        "required": false
+      }
+    ]
+  },
+  "retrieve_triple_facts": {
+    "name": "retrieve_triple_facts",
+    "description": "Retrieve graph triples related to a relation query.",
+    "parameters": [
+      {
+        "name": "text",
+        "type": "string",
+        "description": "Query describing the relation facts you want.",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "Maximum number of fact triples.",
+        "required": false
+      },
+      {
+        "name": "min_score",
+        "type": "number",
+        "description": "Optional minimum similarity score.",
+        "required": false
+      }
+    ]
+  },
+  "get_k_hop_subgraph": {
+    "name": "get_k_hop_subgraph",
+    "description": "Return the k-hop neighborhood subgraph around one or more center nodes. Use only for explicit neighborhood inspection or structural debugging. It can expand quickly and is generally too broad for routine QA.",
+    "parameters": [
+      {
+        "name": "center_ids",
+        "type": "array",
+        "description": "List of center node IDs.",
+        "required": true
+      },
+      {
+        "name": "k",
+        "type": "integer",
+        "description": "Neighborhood radius in hops. Keep it small, typically 1 to 3. Default 2.",
+        "required": false
+      },
+      {
+        "name": "limit_nodes",
+        "type": "integer",
+        "description": "Maximum number of nodes to include. Default 200.",
+        "required": false
+      }
+    ]
+  }
+}

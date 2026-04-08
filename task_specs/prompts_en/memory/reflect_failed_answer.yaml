@@ -1,0 +1,56 @@
+id: reflect_failed_answer
+category: memory
+name: Reflect Failed Answer
+description: >
+  Briefly explain why an answer failed and suggest the next action.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+  - name: tool_summary_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are doing failure reflection for retrieval QA training.
+
+  Question:
+  {question}
+
+  Reference answer:
+  {reference_answer}
+
+  Candidate answer:
+  {candidate_answer}
+
+  Tool summary (JSON):
+  {tool_summary_json}
+
+  Task:
+  - Identify only the single most important reason this answer failed.
+  - If a retry is worthwhile, provide the most direct next action.
+  - Keep it short. Do not produce a long analysis.
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "failure_reason": "string",
+      "missed_fact": "string",
+      "next_action": "string",
+      "need_retry": true
+    }}
+  - `failure_reason`: one sentence explaining the failure.
+  - `missed_fact`: one sentence describing the key missing fact.
+  - `next_action`: one sentence stating the next best action.
+  - `need_retry`: true only if there is still a clear corrective path.
+  - No markdown. No extra explanation.

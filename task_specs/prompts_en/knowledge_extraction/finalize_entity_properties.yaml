@@ -1,0 +1,204 @@
+id: finalize_entity_properties
+category: problem_solving
+name: Finalize Entity Properties
+description: >
+  Canonicalize and consolidate noisy candidate properties into a small, stable set of global properties
+  and produce a consolidated new_description. Strict JSON-only output.
+
+task_variables:
+  - name: entity_name
+    type: string
+    required: true
+    description: Entity name.
+
+  - name: candidate_properties_json
+    type: string
+    required: true
+    description: Pretty JSON string of candidate properties pooled from multiple chunks.
+
+  - name: full_description_text
+    type: string
+    required: true
+    description: Full concatenated entity description text (source of truth for support).
+
+  - name: num_properties
+    type: integer
+    required: true
+    description: Maximum number of properties to output (may output fewer, never more).
+
+static_variables: []
+
+template: |
+  You are performing canonical attribute abstraction for a single entity.
+
+  This is NOT a simple merge.
+  Your task is to reorganize, abstract, and consolidate noisy attributes into a
+  small, stable set of long-term entity properties suitable for knowledge graph storage.
+
+  --------------------------------
+  INPUTS
+  --------------------------------
+
+  [Entity Name]
+  {entity_name}
+
+  [Candidate Properties JSON]
+  A JSON object of key-value pairs extracted from multiple chunks.
+  This set may contain:
+  - Redundant or overlapping keys
+  - Inconsistent naming
+  - Short-term, situational, or narrative-specific properties
+
+  These properties are a REFERENCE POOL, not a final schema.
+
+  {candidate_properties_json}
+
+  [Full Description Text]
+  The full concatenated description text of the entity.
+
+  This text is the SOLE source of truth for:
+  - The final new_description
+  - Validation of whether a property is truly supported
+
+  {full_description_text}
+
+  [Target Property Count]
+  {num_properties}
+
+  This is the DESIRED number of properties to output.
+  You may output FEWER if necessary, but NEVER more.
+
+  --------------------------------
+  TASK DECOMPOSITION (IMPORTANT)
+  --------------------------------
+
+  You must perform TWO related but distinct tasks:
+
+  1) Generate new_description
+  - Based ONLY on the full description text.
+  - A clean, coherent 2–6 sentence paragraph.
+  - Focus on stable identity, long-term roles, affiliations, and defining traits.
+  - Do NOT enumerate properties or list attributes.
+
+  2) Generate properties
+  - Based PRIMARILY on the candidate properties JSON.
+  - This is an abstraction and consolidation process:
+    many input properties → fewer, higher-level semantic dimensions.
+
+  --------------------------------
+  GLOBAL vs LOCAL (CRITICAL)
+  --------------------------------
+
+  A property is GLOBAL if it describes:
+  - Identity: what/who the entity is (profession, role in society, species/type, canonical identity)
+  - Stable affiliations: membership/employment/long-term association with an organization/faction
+  - Stable traits: personality, long-term disposition, enduring physical conditions
+  - Persistent abilities or limitations: skills, disabilities, chronic conditions
+  - Enduring background: origin, family relation types (e.g., "niece of X" if it's a stable fact)
+  - Long-term possessions or resources (only if repeatedly indicated or clearly enduring)
+
+  A property is LOCAL and MUST be excluded if it describes:
+  - A momentary emotional state in a scene (fear, panic in one moment)
+  - A single event role (witness/target in an investigation, participant in one incident)
+  - A one-off interaction with another named person (comforted by X, led by Y in this scene)
+  - Temporary location or immediate situation ("currently hiding", "in this room now")
+  - Fine-grained relationship snapshots that may change (trusting; threatened; unwanted advance)
+  - Scene-specific action details ("reads Braille" is OK only if it indicates a stable capability/habit)
+
+  If you are unsure whether a fact is global or local, DO NOT include it.
+
+  --------------------------------
+  ATTRIBUTE DESIGN RULES (CRITICAL)
+  --------------------------------
+
+  A) Semantic key design (MANDATORY)
+  - Keys represent SEMANTIC DIMENSIONS, not answers.
+    GOOD: "vision_status": "blind"
+    BAD:  "blind": "yes"
+  - Keys must be:
+    - Conceptually stable across many entities
+    - Reusable beyond this single entity
+    - Neutral noun or noun_phrase
+    - snake_case
+  - FORBIDDEN:
+    - Boolean-style keys ("is_x", "has_y")
+    - Adjective-only keys ("blind", "married")
+  - Values must NEVER be yes/no/true/false.
+  - Values can be KEYWORDS or SHORT CANONICAL PHRASES (short sentences), but not long text.
+
+  B) Abstraction and deduplication
+  - Merge multiple low-level or narrative-specific properties
+    into ONE higher-level semantic dimension when possible.
+  - Choose EXACTLY ONE canonical key per semantic dimension.
+  - Prefer:
+    1) Schema-aligned or commonly reusable keys
+    2) Otherwise the most general abstraction that preserves meaning
+  - NEVER keep multiple keys for the same concept.
+
+  C) Conflict handling
+  - If values conflict:
+    - Prefer the more stable, long-term interpretation.
+    - Prefer the value better supported by the full description text.
+  - If conflict cannot be confidently resolved, OMIT the attribute entirely.
+  - NEVER invent facts to resolve conflicts.
+
+  D) Sparsity and support (STRICT)
+  - NEVER output empty string values.
+  - EVERY property must be clearly supported by the full description text.
+  - If support is weak, implicit, or speculative, OMIT the key.
+
+  E) New key restriction
+  - Do NOT freely invent new semantic dimensions.
+  - You may introduce a new key ONLY to replace an INVALID key form
+    (e.g., "blind":"yes" → "vision_status":"blind").
+
+  --------------------------------
+  STRUCTURAL CONSTRAINTS (MUST FOLLOW)
+  --------------------------------
+
+  1) Property count constraint
+  - Output AT MOST {num_properties} properties.
+  - Prefer FEWER, more abstract, higher-value properties
+    over many narrow or specific ones.
+
+  2) Relationship collapse (VERY IMPORTANT)
+  - NEVER output per-counterpart relationship keys:
+    "relationship_with_x", "friend_of_y", "led_by_z".
+  - NEVER output generic exploding keys:
+    "relationship", "interpersonal_relations".
+  - ALL relationship-related information MUST be collapsed into:
+    "relationships_summary": "semicolon-separated concise summary"
+  - Keep ONLY this key if relationships are present.
+
+  3) Role / identity consolidation
+  - If properties include "role", "occupation", "identity", "position":
+    - Keep at most ONE or TWO long-term identity keys.
+    - Drop situational or event-specific roles.
+
+  4) Compactness requirement
+  - The final properties object must be SMALL, STABLE, and MERGE-FRIENDLY.
+  - Each key should plausibly apply to many entities in the graph.
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+
+  Return JSON ONLY in this exact structure:
+
+  {{
+    "new_description": "Final consolidated entity description (2–6 sentences)",
+    "properties": {{
+      "canonical_key": "canonical_value",
+      "another_key": "another_value"
+    }}
+  }}
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+
+  - Output JSON only.
+  - No explanations, comments, or markdown.
+  - Do NOT invent facts.
+  - Do NOT exceed {num_properties} properties.
+  - Do NOT include empty or redundant keys.

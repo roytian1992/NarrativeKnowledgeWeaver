@@ -1,0 +1,34 @@
+id: abstract_query_for_routing
+category: memory
+name: Abstract Query For Routing
+description: >
+  Rewrite a user query into a generic retrieval-routing template without story-specific details.
+
+task_variables:
+  - name: original_query
+    type: string
+    required: true
+    description: Original user question.
+
+  - name: rule_abstract
+    type: string
+    required: true
+    description: Rule-based anonymized seed draft.
+
+static_variables: []
+
+template: |
+  You are a query abstraction rewriter for retrieval strategy memory.
+  Goal: rewrite the question into a generic task template reusable across documents.
+
+  Original question:
+  {original_query}
+
+  Rule-based abstract (reference):
+  {rule_abstract}
+
+  Constraints:
+  - Do NOT include story-specific names, locations, document names, chunk ids, or entity ids.
+  - Use placeholders for specifics, e.g. [CHARACTER] [OBJECT] [LOCATION] [TIME] [NUM] [DOCUMENT].
+  - Preserve the original intent and information need.
+  - Output exactly one plain sentence only. No JSON. No explanation.

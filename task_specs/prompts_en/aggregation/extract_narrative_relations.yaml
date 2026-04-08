@@ -1,0 +1,119 @@
+id: extract_narrative_relations
+category: aggregation
+name: Classify Narrative Relation Between Two Units
+description: >
+  Classify the best relation type between exactly one subject and one object narrative unit
+  (Episode or Storyline). Allowed relations and samples are provided via static variables.
+  Strict JSON-only output.
+
+task_variables:
+  - name: entity_type
+    type: string
+    required: true
+    description: The narrative unit type. Must be Episode or Storyline.
+
+  - name: subject_json
+    type: string
+    required: true
+    description: JSON string for the subject unit (must include id).
+
+  - name: object_json
+    type: string
+    required: true
+    description: JSON string for the object unit (must include id).
+
+static_variables:
+  - name: entity_definitions_text
+    type: string
+    required: true
+    description: Rendered definitions for Episode and Storyline.
+
+  - name: relation_schema_text
+    type: string
+    required: true
+    description: Rendered allowed relation types and definitions for this entity_type.
+
+  - name: few_shot_samples_text
+    type: string
+    required: true
+    description: Rendered few-shot samples for this entity_type.
+
+template: |
+  You are performing {entity_type}-to-{entity_type} relation classification.
+
+  Definitions:
+  {entity_definitions_text}
+
+  Goal:
+  Given exactly one subject {entity_type} and one object {entity_type}, decide the SINGLE best relation between them
+  based strictly on the provided {entity_type} information and the allowed relation schema.
+
+  IMPORTANT CONSTRAINTS:
+  - You MUST NOT invent new {entity_type}s.
+  - You MUST NOT invent relation types outside the provided schema, except you MAY output "NONE".
+  - Your decision MUST be supported by the provided {entity_type} information.
+  - Precision over recall: if uncertain, output "NONE".
+
+  --------------------------------
+  INPUTS
+  --------------------------------
+
+  [Entity #1]
+  {subject_json}
+
+  [Entity #2]
+  {object_json}
+
+  [Allowed Relation Schema]
+  {relation_schema_text}
+
+  [Few-shot Samples]
+  {few_shot_samples_text}
+
+  --------------------------------
+  DECISION RULES
+  --------------------------------
+
+  1) Output exactly ONE relation_type:
+  - relation_type MUST be one of the allowed types in the schema OR "NONE".
+  - If no relation is sufficiently supported, output "NONE".
+
+  2) Directionality:
+  - Do NOT assume a default direction between the two units.
+  - If the chosen relation type is directed:
+    - Determine whether the relation is better supported as subject -> object or object -> subject
+      based strictly on the provided information.
+  - If the chosen relation type is undirected or symmetric (per schema), direction is irrelevant.
+  - If no clear directional relation can be justified, output relation_type = "NONE".
+
+  3) Evidence grounding:
+  - Ground your decision in {entity_type} fields such as: name, description, related_events, related_occasions, and properties.
+  - Do NOT assume chronology, causality, or contrast unless supported by the provided {entity_type} information.
+
+  4) Confidence scoring (0.0 to 1.0):
+  - confidence reflects how strongly the provided {entity_type} information supports the chosen relation.
+  - Use these anchors:
+    - 0.90-1.00: explicit, unambiguous support
+    - 0.70-0.89: strong but slightly indirect support
+    - 0.40-0.69: weak/partial support (prefer "NONE" unless schema clearly fits)
+    - 0.00-0.39: speculative (must output "NONE")
+  - If relation_type is "NONE", confidence should reflect confidence that no relation can be justified.
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+
+  Return a SINGLE JSON object (NOT an array), exactly in this structure:
+  {{
+    "subject_id": "{entity_type} id (must match exactly)",
+    "object_id": "{entity_type} id (must match exactly)",
+    "relation_type": "One allowed relation type or NONE",
+    "confidence": 0.0,
+    "description": "Concise, factual justification grounded in the provided {entity_type} information"
+  }}
+
+  FINAL INSTRUCTIONS
+  - Output JSON only.
+  - Do NOT include any extra keys.
+  - Do NOT include commentary or headings.
+  - description must not be empty.

@@ -1,0 +1,69 @@
+id: check_entity_scope
+category: problem_solving
+name: Check Entity Scope
+description: >
+  Decide whether an entity mention should be treated as global or local scope using only the provided context.
+  Output must be strict JSON only.
+
+task_variables:
+  - name: entity_name
+    type: string
+    required: true
+    description: The entity name to judge.
+
+  - name: context
+    type: string
+    required: true
+    description: The context where the entity appears.
+
+static_variables: []
+
+template: |
+  You are deciding whether an entity mention should be treated as GLOBAL or LOCAL scope
+  based ONLY on the provided context.
+
+  TASK
+  You are given:
+  1) An entity name.
+  2) The context where it appears (may include nearby sentences, scene/chapter snippets, or extracted notes).
+
+  You must choose ONE scope:
+  - "global": This mention refers to the same, reusable entity across the whole document.
+  - "local": This mention is specific to this context only (a one-off, a temporary label, or an ambiguous same-name that should not be merged globally).
+
+  DEFAULT PRINCIPLE
+  - Prefer "global" by default.
+  - Choose "local" ONLY when the context provides clear and explicit evidence that this mention should not be merged globally.
+
+  STRONG SIGNALS FOR "local" (must be explicit in context)
+  - The name is used as a generic role/label in this moment (e.g., "a guard", "a driver", "a waiter") rather than a consistent identity.
+  - The context explicitly indicates it is a different person/thing with the same name (e.g., "another John", "not the same X", "different X").
+  - The mention is clearly a one-off object/place/event label that is not meant to persist (e.g., "Random Customer", "Unknown Caller", "Man #2").
+  - The context explicitly ties the mention to this scene only (e.g., "in this scene, the 'Doctor' is just a passerby") or marks it as incidental.
+
+  WEAK SIGNALS (NOT sufficient by themselves, should still choose "global")
+  - Capitalization, screenplay formatting, headings, or line breaks.
+  - Lack of detail.
+  - Short context.
+
+  CRITICAL CONSTRAINTS
+  - Base your judgment ONLY on the provided context.
+  - Do NOT use external knowledge.
+  - Do NOT invent facts not present in context.
+  - If ambiguous, choose "global".
+
+  INPUTS
+
+  [Entity Name]
+  {entity_name}
+
+  [Context]
+  {context}
+
+  OUTPUT FORMAT
+  Return ONLY one JSON object, with no extra text:
+
+  {{
+    "scope": "global" | "local",
+    "reason": "Brief explanation grounded in the context."
+  }}

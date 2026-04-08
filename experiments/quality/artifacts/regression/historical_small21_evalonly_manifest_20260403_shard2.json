@@ -1,0 +1,69 @@
+{
+  "source_manifest": "experiments/quality/artifacts/regression/historical_small21_evalonly_manifest_20260403.json",
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_149778067861b252",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_149778067861b252.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_149778067861b252.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_149778067861b252.json",
+      "title": "THE FROZEN PLANET",
+      "content_words": 4759,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_28fe10fe657f7e28",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_28fe10fe657f7e28.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_28fe10fe657f7e28.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_28fe10fe657f7e28.json",
+      "title": "The Cosmic Express",
+      "content_words": 4998,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_46077e75504d5b2a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_46077e75504d5b2a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_46077e75504d5b2a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_46077e75504d5b2a.json",
+      "title": "The Monster Maker",
+      "content_words": 5178,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_19680df3295d69ca",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_19680df3295d69ca.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_19680df3295d69ca.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_19680df3295d69ca.json",
+      "title": "MONOPOLY",
+      "content_words": 5169,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_0e747667263343c5",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0e747667263343c5.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0e747667263343c5.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0e747667263343c5.json",
+      "title": "IMAGE OF SPLENDOR",
+      "content_words": 5034,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_0e7b285d3d466773",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0e7b285d3d466773.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0e7b285d3d466773.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0e7b285d3d466773.json",
+      "title": "TOLLIVER'S ORBIT",
+      "content_words": 4980,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_0914f0cae2712b97",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0914f0cae2712b97.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0914f0cae2712b97.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0914f0cae2712b97.json",
+      "title": "SEA LEGS",
+      "content_words": 5209,
+      "qa_count": 13
+    }
+  ]
+}

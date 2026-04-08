@@ -1,0 +1,60 @@
+[
+  {
+    "task": "relation_extraction",
+    "task_name": "Narrative Relation Extraction",
+    "task_goal": "Extract valid relations between already-extracted entities strictly grounded in the input text. Relations must use only entities provided in the entity list and only relation types defined in the selected relation group schema.",
+    "global_constraints": [
+      "Do NOT invent entities not present in the extracted entity list.",
+      "Do NOT invent relation types not present in the selected relation group schema.",
+      "Do NOT extract relations if either side is missing from the extracted entity list.",
+      "If evidence is ambiguous or speculative, do NOT extract the relation.",
+      "Output JSON only. Do NOT include commentary or extra text."
+    ],
+    "output_fields": [
+      "subject",
+      "object",
+      "relation_type",
+      "relation_name",
+      "description"
+    ],
+    "few_shot": {
+      "per_type_k": 1,
+      "max_total": 10,
+      "strategy": "per_relation_type_first_k"
+    },
+    "relation_groups": [
+      {
+        "group": "event_occasion_relations",
+        "group_name": "Event and Occasion Relations",
+        "group_goal": "Link entities to Events and Occasions (agent, patient, participation, initiation).",
+        "group_constraints": [
+          "Prefer extracting relations that connect Characters/Concepts/Objects to Events/Occasions when strongly supported."
+        ]
+      },
+      {
+        "group": "social_relations",
+        "group_name": "Social Relations",
+        "group_goal": "Extract stable or phase-level social relationships between Characters and/or Concepts.",
+        "group_constraints": [
+          "Use only when the text explicitly establishes a relationship state, not a one-off interaction."
+        ]
+      },
+      {
+        "group": "spatiotemporal_relations",
+        "group_name": "Spatiotemporal Anchors",
+        "group_goal": "Anchor events/occasions/entities to TimePoint and Location nodes.",
+        "group_constraints": [
+          "Only extract if the anchor entity (Location/TimePoint) exists in the extracted entity list."
+        ]
+      },
+      {
+        "group": "semantic_relations",
+        "group_name": "Semantic Relations",
+        "group_goal": "Extract type, part-whole, or possession relations (is_a, part_of, possesses).",
+        "group_constraints": [
+          "Only extract is_a/part_of/possesses if the text explicitly supports the classification/containment/possession."
+        ]
+      }
+    ]
+  }
+]

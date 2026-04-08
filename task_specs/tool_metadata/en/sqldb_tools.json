@@ -1,0 +1,128 @@
+{
+  "get_interactions_by_document_ids": {
+    "name": "get_interactions_by_document_ids",
+    "description": "Return dialogue or interaction rows for given document_ids from the SQLite interaction store.",
+    "parameters": [
+      {
+        "name": "document_ids",
+        "type": "array",
+        "required": true,
+        "description": "List of document_ids."
+      },
+      {
+        "name": "interaction_type",
+        "type": "string",
+        "required": false,
+        "description": "Optional filter: dialogue or interaction."
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "description": "Maximum number of rows. Default 100."
+      }
+    ]
+  },
+  "search_dialogues": {
+    "name": "search_dialogues",
+    "description": "Search dialogue rows by speaker, target, section, content, or document_id.",
+    "parameters": [
+      {
+        "name": "subject",
+        "type": "string",
+        "required": false,
+        "description": "Speaker name."
+      },
+      {
+        "name": "object",
+        "type": "string",
+        "required": false,
+        "description": "Target or addressee name."
+      },
+      {
+        "name": "section",
+        "type": "string",
+        "required": false,
+        "description": "Section or scene title."
+      },
+      {
+        "name": "subsection",
+        "type": "string",
+        "required": false,
+        "description": "Subsection or sub-scene title."
+      },
+      {
+        "name": "content",
+        "type": "string",
+        "required": false,
+        "description": "Dialogue content substring."
+      },
+      {
+        "name": "document_id",
+        "type": "string",
+        "required": false,
+        "description": "Document_id filter."
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "description": "Maximum number of rows. Default 20."
+      }
+    ]
+  },
+  "search_interactions": {
+    "name": "search_interactions",
+    "description": "Search non-dialogue interaction rows by subject, object, section, content, polarity, or document_id.",
+    "parameters": [
+      {
+        "name": "subject",
+        "type": "string",
+        "required": false,
+        "description": "Subject entity name."
+      },
+      {
+        "name": "object",
+        "type": "string",
+        "required": false,
+        "description": "Object entity name."
+      },
+      {
+        "name": "section",
+        "type": "string",
+        "required": false,
+        "description": "Section or scene title."
+      },
+      {
+        "name": "subsection",
+        "type": "string",
+        "required": false,
+        "description": "Subsection or sub-scene title."
+      },
+      {
+        "name": "content",
+        "type": "string",
+        "required": false,
+        "description": "Interaction content substring."
+      },
+      {
+        "name": "polarity",
+        "type": "string",
+        "required": false,
+        "description": "Optional polarity filter: positive, negative, or neutral."
+      },
+      {
+        "name": "document_id",
+        "type": "string",
+        "required": false,
+        "description": "Document_id filter."
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "description": "Maximum number of rows to return. Default 20."
+      }
+    ]
+  }
+}

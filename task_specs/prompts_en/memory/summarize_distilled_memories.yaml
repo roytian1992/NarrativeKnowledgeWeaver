@@ -1,0 +1,49 @@
+id: summarize_distilled_memories
+category: problem_solving
+name: Summarize Distilled Memories
+description: >
+  Summarize distilled memories into one stable summary per memory type.
+
+task_variables:
+  - name: grouped_memories_json
+    type: string
+    required: true
+    description: JSON string grouped by memory type.
+
+  - name: existing_summaries_json
+    type: string
+    required: true
+    description: Existing summary memories in JSON string.
+
+static_variables: []
+
+template: |
+  You are updating stable summary memories for KG extraction.
+
+  GROUPED MEMORIES:
+  {grouped_memories_json}
+
+  EXISTING SUMMARIES:
+  {existing_summaries_json}
+
+  HARD REQUIREMENTS
+  - Return strict JSON object only. No markdown, no commentary.
+  - Output schema:
+    {{
+      "summaries": [
+        {{
+          "summary_id": "stable_string_id",
+          "type": "guideline|anti_pattern|canonical_map",
+          "content": "short actionable summary",
+          "keywords": ["k1", "k2"],
+          "confidence": 0.0
+        }}
+      ]
+    }}
+  - Exactly one summary per type present in grouped memories.
+  - Reuse existing summary_id when updating the same type if possible.
+  - confidence must be in [0,1].
+  - content must be concise and reusable.
+
+  OUTPUT ONLY JSON.
+

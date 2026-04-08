@@ -1,0 +1,70 @@
+id: generate_self_bootstrap_qa
+category: memory
+name: Generate Self Bootstrap QA
+description: >
+  Generate a small set of additional QA pairs that are directly supported by the current evidence.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: final_answer
+    type: string
+    required: true
+  - name: evidence_summary
+    type: string
+    required: true
+  - name: tool_summary_json
+    type: string
+    required: true
+  - name: max_questions
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are generating self-bootstrapped QA data from the evidence already retrieved.
+
+  Original question:
+  {question}
+
+  Current answer:
+  {final_answer}
+
+  Evidence summary:
+  {evidence_summary}
+
+  Tool summary (JSON):
+  {tool_summary_json}
+
+  Maximum number of new questions:
+  {max_questions}
+
+  Task:
+  - Generate at most the requested number of new QA pairs.
+  - Every new question must be answerable directly from the current evidence.
+  - Do not rely on outside knowledge.
+  - Avoid shallow paraphrases of the original question.
+  - Prefer fact lookup, section localization, attribute lookup, temporal lookup, or light multi-hop retrieval questions.
+  - Keep the questions reusable and retrieval-oriented rather than overly text-specific.
+
+  Output requirements:
+  - Output exactly one JSON object.
+  - The JSON schema must be:
+    {{
+      "qa_pairs": [
+        {{
+          "question": "string",
+          "answer": "string",
+          "evidence": "string",
+          "question_type": "string",
+          "difficulty": "easy|medium|hard"
+        }}
+      ]
+    }}
+  - `evidence` should briefly summarize the key supporting evidence.
+  - Every generated question must be distinct from the original question.
+  - If there are no strong candidates, return an empty list.
+  - Do not output Markdown or extra commentary.
+

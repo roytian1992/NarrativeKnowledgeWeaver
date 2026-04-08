@@ -1,0 +1,67 @@
+{
+  "source_manifest": "experiments/quality/artifacts/regression/historical_small21_evalonly_manifest_20260403.json",
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_0738452092642612",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0738452092642612.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_0738452092642612.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0738452092642612.json",
+      "title": "Doctor Universe",
+      "content_words": 4529,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_01c24596502e2376",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_01c24596502e2376.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_01c24596502e2376.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_01c24596502e2376.json",
+      "title": "Goings On About Town",
+      "content_words": 2108,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_370f48d773951d4d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_370f48d773951d4d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_370f48d773951d4d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_370f48d773951d4d.json",
+      "title": "Boys Do Bleed",
+      "content_words": 1946,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_1691cfb0ed0b829e",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_1691cfb0ed0b829e.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_1691cfb0ed0b829e.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_1691cfb0ed0b829e.json",
+      "title": "CULTURAL EXCHANGE",
+      "content_words": 5298,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_400a48e381b75652",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_400a48e381b75652.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_400a48e381b75652.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_400a48e381b75652.json",
+      "title": "A Gift From Earth",
+      "content_words": 5484,
+      "qa_count": 15
+    },
+    {
+      "article_name": "a_42c427588d061091",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_42c427588d061091.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_42c427588d061091.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_42c427588d061091.json",
+      "title": "Let Si Get This",
+      "content_words": 2127,
+      "qa_count": 14
+    },
+    {
+      "article_name": "a_4e6f78a888d294ee",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_4e6f78a888d294ee.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_4e6f78a888d294ee.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_4e6f78a888d294ee.json",
+      "title": "a_4e6f78a888d294ee"
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+id: fix_entity_error
+category: knowledge_extraction
+name: Entity Error Fix
+description: >
+  Fix relation extraction errors by deciding to add a missing entity (only if text-grounded)
+  or drop the relation, with strict JSON-only output.
+
+task_variables:
+  - name: content
+    type: string
+    required: true
+    description: Original scene/chunk text.
+
+  - name: candidate_entity_types
+    type: string
+    required: true
+    description: >
+      Candidate entity types allowed for the missing entity. Prefer passing a JSON array string
+      (e.g., ["Character","Object"]) or a newline/comma-separated string.
+
+  - name: feedback
+    type: string
+    required: true
+    description: Feedback describing what went wrong (e.g., subject missing / object missing).
+
+static_variables:
+  - name: candidate_entity_descriptions
+    type: string
+    required: true
+    description: >
+      A rendered text block describing each candidate type. This must be built in code from your
+      schema JSON, based on candidate_entity_types.
+
+template: |
+  You are fixing a relation extraction error in a narrative knowledge graph.
+
+  TASK
+  You are given:
+  1) The original scene text.
+  2) A set of candidate entity types that the missing entity is allowed to be, based on the relation type constraint.
+  3) Short descriptions for each candidate type.
+  4) A feedback item that indicates what went wrong (e.g., subject missing / object missing).
+
+  Your goal is to decide whether to ADD a missing entity (only if it is explicitly grounded in the text)
+  or DROP the relation (if the missing entity cannot be supported).
+
+  CRITICAL CONSTRAINTS
+  - Do NOT invent information that is not in the text.
+  - If the missing entity is not explicitly mentioned (or cannot be uniquely identified) in the text, you MUST choose "drop".
+  - If you choose "add", the entity MUST:
+    - Use an entity type from Candidate Entity Types.
+    - Have a clean canonical name (trim spaces, single spaces between words, no line breaks).
+    - Be grounded in the text (the description should reference what is stated, not guesses).
+    - Include a scope: "global" if it is a recurring named entity likely to appear across scenes (e.g., "Benny", "AA", "Los Angeles"),
+      otherwise "local" if it is only a one-off mention in this scene.
+
+  INPUTS
+  [Scene Text]
+  {content}
+
+  [Candidate Entity Types]
+  {candidate_entity_types}
+
+  [Candidate Type Descriptions]
+  {candidate_entity_descriptions}
+
+  [Feedback]
+  {feedback}
+
+  DECISION RULES
+  Choose exactly ONE of the following:
+  1) "add":
+     - Only if you can point to an explicit mention in the Scene Text that corresponds to the missing entity.
+     - The entity name should match the surface form in the text (after simple cleanup).
+  2) "drop":
+     - If the missing entity is not clearly present in the Scene Text,
+       OR there are multiple plausible entities and you cannot disambiguate,
+       OR adding it would require assumptions.
+
+  OUTPUT FORMAT
+  Return ONLY one JSON object, with no extra text.
+
+  If decision is "add":
+  {{
+    "decision": "add",
+    "output": {{
+      "name": "<string>",
+      "description": "<string grounded in the text>",
+      "type": "<one of Candidate Entity Types>",
+      "scope": "global" | "local"
+    }}
+  }}
+
+  If decision is "drop":
+  {{
+    "decision": "drop",
+    "output": {{}}
+  }}

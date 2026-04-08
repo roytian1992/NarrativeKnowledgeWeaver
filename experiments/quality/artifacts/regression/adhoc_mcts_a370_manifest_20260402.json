@@ -1,0 +1,109 @@
+{
+  "source_manifest": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/split_manifest.json",
+  "sampling_seed": 20260402,
+  "train_articles": 10,
+  "eval_articles": 1,
+  "train": [
+    {
+      "article_name": "a_c14faba2ed717047",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c14faba2ed717047.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c14faba2ed717047.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_c14faba2ed717047.json",
+      "title": "It's Time To Keelhaul U-Haul!",
+      "content_words": 1896,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_37d86534fd8b303f",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_37d86534fd8b303f.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_37d86534fd8b303f.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_37d86534fd8b303f.json",
+      "title": "New money: Do local currencies actually work?",
+      "content_words": 2459,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_d7f80d40f7ede332",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d7f80d40f7ede332.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d7f80d40f7ede332.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_d7f80d40f7ede332.json",
+      "title": "DISTURBING SUN",
+      "content_words": 4080,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_c006b0f0c9f46c5a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c006b0f0c9f46c5a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c006b0f0c9f46c5a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_c006b0f0c9f46c5a.json",
+      "title": "Divided we stand",
+      "content_words": 4174,
+      "qa_count": 18
+    },
+    {
+      "article_name": "a_c38cc3c2249e8ba9",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c38cc3c2249e8ba9.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c38cc3c2249e8ba9.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_c38cc3c2249e8ba9.json",
+      "title": "THE AVENGER",
+      "content_words": 4942,
+      "qa_count": 19
+    },
+    {
+      "article_name": "a_f1e332c961bdf802",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f1e332c961bdf802.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f1e332c961bdf802.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_f1e332c961bdf802.json",
+      "title": "THE LONG REMEMBERED THUNDER",
+      "content_words": 5022,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_987447476396ab12",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_987447476396ab12.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_987447476396ab12.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_987447476396ab12.json",
+      "title": "A Gleeb for Earth",
+      "content_words": 5053,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_8273044a3aaa7806",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_8273044a3aaa7806.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_8273044a3aaa7806.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_8273044a3aaa7806.json",
+      "title": "JUDAS RAM",
+      "content_words": 5173,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_aa748e60fa14d042",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_aa748e60fa14d042.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_aa748e60fa14d042.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_aa748e60fa14d042.json",
+      "title": "ALL DAY SEPTEMBER",
+      "content_words": 5704,
+      "qa_count": 16
+    },
+    {
+      "article_name": "a_bfb79cccb67a6d80",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_bfb79cccb67a6d80.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_bfb79cccb67a6d80.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/train/a_bfb79cccb67a6d80.json",
+      "title": "The Dwindling Years",
+      "content_words": 5727,
+      "qa_count": 19
+    }
+  ],
+  "eval": [
+    {
+      "article_name": "a_370f48d773951d4d",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_370f48d773951d4d.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_370f48d773951d4d.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_370f48d773951d4d.json",
+      "title": "Boys Do Bleed",
+      "content_words": 1946,
+      "qa_count": 17
+    }
+  ]
+}

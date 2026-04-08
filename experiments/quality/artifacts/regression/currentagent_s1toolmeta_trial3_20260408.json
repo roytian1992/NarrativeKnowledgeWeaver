@@ -1,0 +1,27 @@
+{
+  "source_manifest": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/regression/routerllm_remaining102_20260404_shards/shard_1.json",
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_c9b6a3443916e904",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_c9b6a3443916e904.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_c9b6a3443916e904.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_c9b6a3443916e904.json",
+      "title": "a_c9b6a3443916e904"
+    },
+    {
+      "article_name": "a_d1aa97244aead18a",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_d1aa97244aead18a.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_d1aa97244aead18a.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_d1aa97244aead18a.json",
+      "title": "a_d1aa97244aead18a"
+    },
+    {
+      "article_name": "a_f2358a5e91801ffd",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_f2358a5e91801ffd.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/qas/a_f2358a5e91801ffd.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_f2358a5e91801ffd.json",
+      "title": "a_f2358a5e91801ffd"
+    }
+  ]
+}

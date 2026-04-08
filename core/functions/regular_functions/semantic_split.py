@@ -1,98 +1,147 @@
-"""
-语义分割器
-使用增强的JSON处理工具
-"""
-from typing import Dict, Any, List
+from __future__ import annotations
+
 import json
 import logging
-from core.utils.function_manager import EnhancedJSONUtils, process_with_format_guarantee
-from core.utils.general_text import semantic_splitter_repair_template
+from typing import Any, Dict, List, Optional
+
+from core.utils.general_utils import safe_str
+from core.utils.function_manager import process_with_format_guarantee
+from core.utils.general_text import general_repair_template
 from core.utils.format import correct_json_format
 
 logger = logging.getLogger(__name__)
 
+
+def _valid_segments(x: Any) -> bool:
+    if not isinstance(x, list) or len(x) == 0:
+        return False
+    for seg in x:
+        if not isinstance(seg, str):
+            return False
+    return True
+
+
 class SemanticSplitter:
     """
-    语义分割器
-    确保最终返回的是correct_json_format处理后的结果
+    YAML-driven semantic splitter.
+
+    Prompt YAML:
+      - text_processing/split_text
+
+    Input params JSON:
+      {
+        "text": "...",
+        "max_segments": 3,
+        "min_length": 120
+      }
+
+    Output JSON:
+      {
+        "segments": ["...", "...", ""]
+      }
     """
-    
-    def __init__(self, prompt_loader=None, llm=None):
-        self.prompt_loader = prompt_loader
+
+    def __init__(
+        self,
+        prompt_loader,
+        llm,
+        prompt_id: str = "text_processing/split_text",
+    ):
+        if llm is None:
+            raise ValueError("llm must be provided")
+        if prompt_loader is None:
+            raise ValueError("prompt_loader must be provided")
+
         self.llm = llm
-        
-        # 定义验证规则
+        self.prompt_loader = prompt_loader
+        self.prompt_id = prompt_id
+
         self.required_fields = ["segments"]
-        self.field_validators = {
-            "segments": lambda x: isinstance(x, list) and len(x) > 0
-        }
-        
-        # 修复提示词模板
-        self.repair_template = semantic_splitter_repair_template
-    
+        self.field_validators = {"segments": _valid_segments}
+        self.repair_template = general_repair_template
+
     def call(self, params: str, **kwargs) -> str:
-        """
-        调用语义分割，保证返回correct_json_format处理后的结果
-        
-        Args:
-            params: 参数字符串
-            **kwargs: 其他参数
-            
-        Returns:
-            str: 经过correct_json_format处理的JSON字符串
-        """
+        # 1) parse params
         try:
-            # 解析参数
-            params_dict = json.loads(params)
-            text = params_dict.get("text", "")
-            max_segments = params_dict.get("max_segments", 3)
-            min_length = params_dict.get("min_length", len(text) * 0.4)
-            
+            params_dict = json.loads(params) if isinstance(params, str) else (params or {})
+            text = safe_str(params_dict.get("text", "")).strip()
+
+            max_segments_raw = params_dict.get("max_segments", 3)
+            min_length_raw = params_dict.get("min_length", None)
         except Exception as e:
             logger.error(f"参数解析失败: {e}")
-            # 即使是错误结果，也要经过correct_json_format处理
-            error_result = {"error": f"参数解析失败: {str(e)}", "segments": [text, ]}
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-        
-        try:
-            # 构建提示词变量
-            variables = {
-                'text': text,
-                'max_segments': max_segments,
-                'min_length': min_length,
-            }
-            
-            # 渲染提示词
-            prompt_text = self.prompt_loader.render_prompt('semantic_splitter_prompt', variables)
-            
-            # 构建消息
-            messages = [{"role": "user", "content": prompt_text}]
-            
-            # 使用增强工具处理响应，保证返回correct_json_format处理后的结果
-            corrected_json, status = process_with_format_guarantee(
-                llm_client=self.llm,
-                messages=messages,
-                required_fields=self.required_fields,
-                field_validators=self.field_validators,
-                max_retries=1,
-                repair_template=self.repair_template,
-                enable_thinking=False,
+            return correct_json_format(
+                json.dumps(
+                    {"error": f"参数解析失败: {str(e)}", "segments": []},
+                    ensure_ascii=False,
+                )
             )
-            
-            if status == "success":
-                return corrected_json
-            else:
-                error_result = {
-                    "error": f"语义分割失败，返回默认分割方式",
-                    "segments": [text, ]
-                }
-                return correct_json_format(json.dumps(error_result, ensure_ascii=False))
-            
-        except Exception as e:
-            logger.error(f"语义分割过程中出现异常: {e}")
-            error_result = {
-                "error": f"语义分割失败: {str(e)}",
-                "segments": [text, ]
-            }
-            return correct_json_format(json.dumps(error_result, ensure_ascii=False))
 
+        if not text:
+            return correct_json_format(
+                json.dumps(
+                    {"error": "missing required field: text", "segments": []},
+                    ensure_ascii=False,
+                )
+            )
+
+        # 2) normalize numeric fields
+        try:
+            max_segments = int(max_segments_raw)
+            if max_segments <= 0:
+                max_segments = 3
+        except Exception:
+            max_segments = 3
+
+        try:
+            if min_length_raw is None:
+                # default heuristic: 40% of words, at least 30
+                word_count = len(text.split())
+                min_length = max(30, int(word_count * 0.4))
+            else:
+                min_length = int(min_length_raw)
+                if min_length < 0:
+                    min_length = 0
+        except Exception:
+            word_count = len(text.split())
+            min_length = max(30, int(word_count * 0.4))
+
+        # 3) render YAML prompt
+        try:
+            user_prompt = self.prompt_loader.render(
+                self.prompt_id,
+                static_values={},
+                task_values={
+                    "text": text,
+                    "max_segments": max_segments,
+                    "min_length": min_length,
+                },
+                strict=True,
+            )
+        except Exception as e:
+            logger.error(f"split_text prompt render failed: {e}")
+            return correct_json_format(
+                json.dumps({"error": f"prompt render failed: {str(e)}", "segments": []}, ensure_ascii=False)
+            )
+
+        messages = [{"role": "user", "content": user_prompt}]
+
+        # 4) LLM call with format guarantee
+        corrected_json, status = process_with_format_guarantee(
+            llm_client=self.llm,
+            messages=messages,
+            required_fields=self.required_fields,
+            field_validators=self.field_validators,
+            max_retries=1,
+            repair_template=self.repair_template,
+        )
+
+        if status == "success":
+            return correct_json_format(corrected_json)
+
+        # 5) fallback
+        fallback = {
+            "error": "语义分割失败，返回默认分割方式",
+            "segments": [text, ""],
+        }
+        return correct_json_format(json.dumps(fallback, ensure_ascii=False))

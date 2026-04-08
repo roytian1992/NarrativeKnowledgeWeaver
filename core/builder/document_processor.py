@@ -1,15 +1,17 @@
 import json
-from typing import List, Dict, Any, Optional
+import hashlib
+import math
+from typing import List, Dict, Any, Optional, Literal
 from itertools import chain
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-
+import re
 from core.models.data import Document, TextChunk
 from ..utils.config import KAGConfig
 from core.builder.manager.document_manager import DocumentParser
-from core.utils.prompt_loader import PromptLoader
 from core.utils.format import correct_json_format, safe_text_for_json
 from core.utils.function_manager import run_concurrent_with_retries
+from core.utils.general_utils import word_len
 
 
 class DocumentProcessor:
@@ -30,10 +32,6 @@ class DocumentProcessor:
         self.config = config
         self.llm = llm
         self.doc_type = doc_type
-
-        prompt_dir = config.knowledge_graph_builder.prompt_dir
-        self.prompt_loader = PromptLoader(prompt_dir)
-
         self.chunk_size = config.document_processing.chunk_size
         self.chunk_overlap = config.document_processing.chunk_overlap
         self.max_segments = config.document_processing.max_segments
@@ -42,7 +40,7 @@ class DocumentProcessor:
 
         # Base recursive splitter
         self.base_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
+            chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap,  length_function=word_len
         )
 
         # LLM-powered parser utilities
@@ -120,7 +118,7 @@ class DocumentProcessor:
         # ------ 这里改动：对“最后一个 segment”做 min_length 合并规则 ------
         if isinstance(carry, str) and carry.strip():
             tail = carry.strip()
-            if results and len(tail) < last_min_length:
+            if results and word_len(tail) < last_min_length: # 中英文修改
                 # 和前一个块合并
                 # 这里简单用拼接，你如果需要可以加换行或空格
                 results[-1] = (results[-1] or "") + tail
@@ -130,19 +128,187 @@ class DocumentProcessor:
         return results
 
     # ------------------------------------------------------------------ #
-    # JSON loader (each input item -> ONE document; no pre-partitions)
+    # Pre-split long raw items by max_content_size
+    # ------------------------------------------------------------------ #
+    def _pre_split_item_by_max_content(self, item: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Split one raw item into multiple item dicts when content is too long.
+        This pre-split runs before prepare_chunk().
+        """
+        content = item.get("content", "") or ""
+        # Keep paragraph/sentence boundaries for natural pre-splitting.
+        content = str(content).replace("\r\n", "\n").replace("\r", "\n").strip()
+
+        explicit_id = item.get("_id")
+        if explicit_id is None:
+            explicit_id = item.get("id")
+
+        if explicit_id is not None and str(explicit_id).strip():
+            base_id = str(explicit_id).strip()
+        else:
+            base_id = hashlib.sha1(content.encode("utf-8")).hexdigest()[:16]
+
+        max_content = max(1, int(self.max_content))
+        total_len = word_len(content)
+
+        if not content:
+            split_texts = [""]
+        elif total_len <= max_content:
+            split_texts = [content]
+        else:
+            # Triggered only when total length exceeds max_content.
+            # Split count is auto-decided by max_content upper bound.
+            num_segments = max(2, int(math.ceil(total_len / max_content)))
+            # Balanced target size; guaranteed <= max_content
+            balanced_chunk_size = max(1, int(math.ceil(total_len / num_segments)))
+
+            # Prefer complete paragraphs/sentences before falling back to finer separators.
+            natural_separators = [
+                "\n\n", "\n",
+                "。", "！", "？", "；",
+                ". ", "! ", "? ", "; ",
+                "，", "、", ", ",
+                " ",
+                "",
+            ]
+            pre_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=balanced_chunk_size,
+                chunk_overlap=0,
+                length_function=word_len,
+                separators=natural_separators,
+            )
+            split_texts = pre_splitter.split_text(content) or [content]
+
+            # Hard cap: no segment may exceed max_content.
+            hard_cap_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=max_content,
+                chunk_overlap=0,
+                length_function=word_len,
+                separators=natural_separators,
+            )
+            capped: List[str] = []
+            for seg in split_texts:
+                if word_len(seg) <= max_content:
+                    capped.append(seg)
+                else:
+                    capped.extend(hard_cap_splitter.split_text(seg) or [seg])
+            split_texts = capped
+
+        out_items: List[Dict[str, Any]] = []
+        for idx, seg in enumerate(split_texts, start=1):
+            doc_segment_id = f"{base_id}_seg_{idx}"
+            new_item = dict(item)
+            md = dict(new_item.get("metadata") or {})
+            md["raw_doc_id"] = base_id
+            md["doc_segment_id"] = doc_segment_id
+            new_item["metadata"] = md
+            new_item["content"] = seg
+            new_item["_id"] = doc_segment_id
+            out_items.append(new_item)
+
+        return out_items
+
+    def _generate_segment_title_and_metadata(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        For long general documents that were pre-split, turn each segment into a more
+        self-contained unit by generating a segment-specific title and metadata.
+        """
+        original_title = str(item.get("title", "") or "").strip()
+        subtitle = str(item.get("subtitle", "") or "").strip()
+        text = str(item.get("content", "") or "").strip()
+        if not text:
+            return item
+
+        try:
+            raw = self.document_parser.generate_title_and_metadata(
+                text=text,
+                title=original_title,
+                subtitle=subtitle,
+                doc_type=self.doc_type,
+            )
+            parsed = json.loads(correct_json_format(raw))
+        except Exception:
+            return item
+
+        generated_title = str(parsed.get("title", "") or "").strip()
+        generated_metadata = parsed.get("metadata", {})
+        if not isinstance(generated_metadata, dict):
+            generated_metadata = {}
+
+        new_item = dict(item)
+        new_metadata = dict(new_item.get("metadata") or {})
+        if original_title:
+            new_metadata.setdefault("original_title", original_title)
+        if subtitle:
+            new_metadata.setdefault("original_subtitle", subtitle)
+        if generated_title and generated_title != original_title:
+            new_metadata["generated_segment_title"] = True
+        new_metadata.update(generated_metadata)
+        new_item["metadata"] = new_metadata
+        if generated_title:
+            new_item["title"] = generated_title
+        return new_item
+
+    def _enrich_pre_split_items(self, _source_item: Dict[str, Any], split_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Only general documents need LLM-generated segment titles after pre-splitting.
+        Structured inputs such as screenplay/novel already carry stronger local titles.
+        """
+        if self.doc_type != "general" or len(split_items) <= 1:
+            return split_items
+
+        results_map, _failed = run_concurrent_with_retries(
+            items=split_items,
+            task_fn=self._generate_segment_title_and_metadata,
+            per_task_timeout=120.0,
+            max_retry_rounds=1,
+            max_in_flight=min(len(split_items), max(1, min(self.max_workers, 8))),
+            max_workers=min(len(split_items), max(1, min(self.max_workers, 8))),
+            thread_name_prefix="segment_metadata",
+            desc_prefix="Generating segment titles",
+            show_progress=False,
+        )
+
+        enriched: List[Dict[str, Any]] = []
+        for idx, item in enumerate(split_items):
+            enriched.append(results_map.get(idx, item))
+        return enriched
+
+    # ------------------------------------------------------------------ #
+    # JSON loader (supports dict or list[dict])
     # ------------------------------------------------------------------ #
     def load_from_json(self, json_file_path: str) -> List[Document]:
         """
-        Load a JSON list of items into a list of Documents.
-        Each input item becomes ONE document (no pre-splitting into partitions).
+        Load input JSON into normalized document dicts.
+        Accepts either:
+          - list[dict]: each item is one document
+          - dict: treated as a single document
         """
         import json as _json
         with open(json_file_path, "r", encoding="utf-8") as f:
             data = _json.load(f)
 
+        if isinstance(data, dict):
+            items = [data]
+        elif isinstance(data, list):
+            items = data
+        else:
+            raise ValueError(
+                f"Invalid JSON top-level type: {type(data).__name__}. "
+                "Expected a dict or a list of dicts."
+            )
+
+        normalized_items: List[Dict[str, Any]] = []
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Invalid item at index {i}: expected dict, got {type(item).__name__}."
+                )
+            split_items = self._pre_split_item_by_max_content(item)
+            normalized_items.extend(self._enrich_pre_split_items(item, split_items))
+
         documents: List[Document] = []
-        for i, item in enumerate(data):
+        for i, item in enumerate(normalized_items):
             documents.append(self._create_document_from_item(item, i))
         return documents
 
@@ -160,11 +326,29 @@ class DocumentProcessor:
         version = item.get("version", "") or "default"
         metadata = item.get("metadata", {}) or {}
 
-        # Keep a minimal partition marker for downstream compatibility
-        metadata.setdefault("partition", f"{item.get('_id', doc_id)}_1_1")
+        explicit_id = item.get("_id")
+        if explicit_id is None:
+            explicit_id = item.get("id")
+
+        if explicit_id is not None and str(explicit_id).strip():
+            raw_source_id = str(explicit_id).strip()
+        else:
+            content_hash = hashlib.sha1(raw_text.strip().encode("utf-8")).hexdigest()[:16]
+            raw_source_id = content_hash
+
+        # Keep a minimal partition marker for downstream compatibility.
+        metadata.setdefault("partition", f"{raw_source_id}_1_1")
+        raw_doc_id = str(metadata.get("raw_doc_id") or "").strip()
+        if not raw_doc_id:
+            m = re.match(r"^(.*)_seg_\d+$", raw_source_id)
+            raw_doc_id = m.group(1) if m else raw_source_id
+        metadata["raw_doc_id"] = raw_doc_id
+        metadata.setdefault("doc_segment_id", raw_source_id)
 
         doc = {
             "id": doc_id,
+            "_id": raw_source_id,
+            "raw_doc_id": raw_doc_id,
             "doc_type": "document",
             "title": title,
             "version": version,
@@ -296,7 +480,6 @@ class DocumentProcessor:
         use_semantic_split: bool = True,
         extract_summary: bool = False,
         extract_metadata: bool = False,
-        extract_timelines: bool = False,          # <--- NEW
         summary_max_words: int = 200,
     ) -> Dict[str, List[TextChunk]]:
         document_chunks: List[TextChunk] = []
@@ -308,11 +491,18 @@ class DocumentProcessor:
         version = document.get("version", "") or "default"
         meta["title"] = title
         meta["subtitle"] = subtitle
-        meta["order"] = int(str(document["id"]).split("_")[-1]) if "id" in document else 0
+        order_val = 0
+        if "id" in document:
+            try:
+                tail = str(document["id"]).split("_")[-1]
+                order_val = int(tail)
+            except Exception:
+                order_val = 0
+        meta["order"] = order_val
         meta["version"] = version
 
         text = document.get("content", "") or ""
-        current_pos = 0
+        text = re.sub(r'\s+', ' ', text).strip()
 
         # ---- (1) Split once ----
         if len(text) <= self.chunk_size + 100:
@@ -321,11 +511,6 @@ class DocumentProcessor:
             split_docs = self.base_splitter.split_text(text)
             if use_semantic_split:
                 split_docs = self.sliding_semantic_split(split_docs)
-
-        # ---- (1.5) (New) Doc-level timelines from post-split chunks ----
-        doc_timelines: List[str] = []
-        if extract_timelines and split_docs:
-            doc_timelines = self.extract_timelines_over_chunks(split_docs)
 
         # ---- (2) Rolling summary -> keep ONLY the final doc-level summary ----
         doc_summary: str = ""
@@ -362,14 +547,8 @@ class DocumentProcessor:
                 pass
 
         # ---- (3.5) Inject timelines into doc-level metadata (always top-level key)
-        if extract_timelines:
-            flat_doc_metadata["timelines"] = doc_timelines or []
-
         # ---- (4) Build chunks ----
         for i, desc in enumerate(split_docs):
-            start = current_pos
-            end = start + len(desc)
-
             chunk_meta = {
                 "chunk_index": i,
                 "chunk_type": "document",
@@ -377,19 +556,28 @@ class DocumentProcessor:
                 **meta,                # copy from doc-level
                 **flat_doc_metadata,   # flatten metadata here (includes timelines if enabled)
             }
+            chunk_source_id = (
+                str(document.get("_id") or "").strip()
+                or str(document.get("id") or "").strip()
+            )
+            raw_doc_id = str(document.get("raw_doc_id") or meta.get("raw_doc_id") or "").strip()
+            if not raw_doc_id and chunk_source_id:
+                m = re.match(r"^(.*)_seg_\d+$", chunk_source_id)
+                raw_doc_id = m.group(1) if m else chunk_source_id
+            if chunk_source_id:
+                chunk_meta["doc_segment_id"] = chunk_source_id
+            if raw_doc_id:
+                chunk_meta["raw_doc_id"] = raw_doc_id
 
             document_chunks.append(
                 TextChunk(
                     id=f"{document['id']}_chunk_{i}",
                     content=desc,
-                    document_id=document["id"],
+                    source_doc_id=chunk_source_id or document["id"],
                     version=version,
-                    start_pos=start,
-                    end_pos=end,
                     metadata=chunk_meta,
                 )
             )
-            current_pos = end
 
         # annotate total chunks
         total = len(document_chunks)

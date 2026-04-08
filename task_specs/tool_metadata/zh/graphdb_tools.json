@@ -1,0 +1,595 @@
+{
+  "retrieve_entity_by_id": {
+    "name": "retrieve_entity_by_id",
+    "description": "根据实体 ID 返回实体信息。可选返回属性、关系，以及由 source_documents 去重映射出的场次/章节标题。",
+    "parameters": [
+      {
+        "name": "entity_id",
+        "type": "string",
+        "description": "实体唯一 ID。",
+        "required": true
+      },
+      {
+        "name": "contain_properties",
+        "type": "bool",
+        "description": "是否包含属性字段，默认 False。",
+        "required": false
+      },
+      {
+        "name": "contain_relations",
+        "type": "bool",
+        "description": "是否包含与其它实体的关系列表，默认 False。",
+        "required": false
+      },
+      {
+        "name": "resolve_source_documents",
+        "type": "bool",
+        "description": "是否把 source_documents 去重映射成可读的场次/章节标题，默认 False。",
+        "required": false
+      }
+    ]
+  },
+  "retrieve_entity_by_name": {
+    "name": "retrieve_entity_by_name",
+    "description": "按名称、别名或简短描述检索实体，并可选加上实体类型约束。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "实体名称、别名或简短描述。",
+        "required": true
+      },
+      {
+        "name": "entity_type",
+        "type": "string",
+        "description": "可选实体类型。",
+        "required": false
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "返回实体数量上限，默认 8。",
+        "required": false
+      },
+      {
+        "name": "resolve_source_documents",
+        "type": "bool",
+        "description": "是否把 source_documents 映射成可读标题，默认 False。",
+        "required": false
+      }
+    ]
+  },
+  "get_entity_sections": {
+    "name": "get_entity_sections",
+    "description": "查看某个实体出现过哪些场次或章节。",
+    "parameters": [
+      {
+        "name": "entity_id",
+        "type": "string",
+        "description": "实体 ID。",
+        "required": true
+      },
+      {
+        "name": "include_document_ids",
+        "type": "bool",
+        "description": "是否同时返回对应的 document_id，默认 False。",
+        "required": false
+      }
+    ]
+  },
+  "find_paths_between_nodes": {
+    "name": "find_paths_between_nodes",
+    "description": "在图中抽取两个节点之间的无向路径（证据链），返回自然语言描述。",
+    "parameters": [
+      {
+        "name": "src_id",
+        "type": "string",
+        "description": "起点节点的 id",
+        "required": true
+      },
+      {
+        "name": "dst_id",
+        "type": "string",
+        "description": "终点节点的 id",
+        "required": true
+      },
+      {
+        "name": "max_depth",
+        "type": "integer",
+        "description": "路径最大边数（默认 4）",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "返回路径条数上限（默认 5）",
+        "required": false
+      }
+    ]
+  },
+  "get_co_section_entities": {
+    "name": "get_co_section_entities",
+    "description": "输入实体 id，按章节/场次分组返回与其共同出现的实体列表。",
+    "parameters": [
+      {
+        "name": "entity_id",
+        "type": "string",
+        "description": "实体ID",
+        "required": true
+      },
+      {
+        "name": "include_types",
+        "type": "array",
+        "description": "可选的实体类型过滤，如 ['Event','Character']",
+        "required": false
+      },
+      {
+        "name": "document_ids",
+        "type": "array",
+        "description": "可选的 document_id 列表；只返回这些章节/场次中的共同出现实体。",
+        "required": false
+      },
+      {
+        "name": "max_sections",
+        "type": "number",
+        "description": "可选；最多返回多少个章节/场次分组。",
+        "required": false
+      },
+      {
+        "name": "max_entities_per_section",
+        "type": "number",
+        "description": "可选；每个章节/场次最多返回多少个实体。",
+        "required": false
+      }
+    ]
+  },
+  "get_common_neighbors": {
+    "name": "get_common_neighbors",
+    "description": "返回两个实体的共同邻居。支持限定关系类型与方向；可选择是否附带从A/B到该邻居的关系类型列表。",
+    "parameters": [
+      {
+        "name": "id1",
+        "type": "string",
+        "description": "第一个实体ID（必填）",
+        "required": true
+      },
+      {
+        "name": "id2",
+        "type": "string",
+        "description": "第二个实体ID（必填）",
+        "required": true
+      },
+      {
+        "name": "rel_types",
+        "type": "array",
+        "description": "关系类型白名单（如 ['RELATED_TO']）",
+        "required": false
+      },
+      {
+        "name": "direction",
+        "type": "string",
+        "description": "方向：any/out/in（默认 any）",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "type": "number",
+        "description": "返回上限",
+        "required": false
+      },
+      {
+        "name": "include_rel_types",
+        "type": "bool",
+        "description": "是否附带从A/B出发的关系类型（默认 False）",
+        "required": false
+      }
+    ]
+  },
+  "get_k_hop_subgraph": {
+    "name": "get_k_hop_subgraph",
+    "description": "输入一个或多个中心节点 ID，返回其 k-hop 邻居子图（包含节点与关系）。\n⚠️ 注意：k 不能太大，建议 1–3 跳，否则图会爆炸性增长。",
+    "parameters": [
+      {
+        "name": "center_ids",
+        "type": "array",
+        "description": "中心节点 ID 列表",
+        "required": true
+      },
+      {
+        "name": "k",
+        "type": "integer",
+        "description": "邻居跳数，建议 1–3（默认 2）",
+        "required": false
+      },
+      {
+        "name": "limit_nodes",
+        "type": "integer",
+        "description": "返回的最大节点数上限（默认 200）",
+        "required": false
+      }
+    ]
+  },
+  "query_similar_entities": {
+    "name": "query_similar_entities",
+    "description": "根据输入文本进行语义相似度检索，返回最接近的实体节点（支持Top-K和类型过滤，带安全校验）。",
+    "parameters": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "required": false
+      },
+      {
+        "name": "entity_types",
+        "type": "array",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "required": false
+      }
+    ]
+  },
+  "retrieve_triple_facts": {
+    "name": "retrieve_triple_facts",
+    "description": "根据输入文本检索语义相关的事实三元组关系，仅返回包含 description 的关系。",
+    "parameters": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "required": false
+      },
+      {
+        "name": "min_score",
+        "type": "number",
+        "required": false
+      }
+    ]
+  },
+  "search_communities": {
+    "name": "search_communities",
+    "description": "检索 Community report 向量索引，并回填图结构信息，适合按社区主题和高层语义簇定位候选证据。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "检索文本（关键词或语义查询）。",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "最终返回条数，默认 5。",
+        "required": false
+      },
+      {
+        "name": "level",
+        "type": "number",
+        "description": "仅检索指定层级的 Community。",
+        "required": false
+      },
+      {
+        "name": "vector_top_k",
+        "type": "number",
+        "description": "向量候选数量，默认 3。",
+        "required": false
+      },
+      {
+        "name": "keyword_top_k",
+        "type": "number",
+        "description": "关键词候选数量，默认 2。",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "是否对召回候选做 LLM 相关性过滤。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "number",
+        "description": "进入 LLM 判断的候选数量，默认 8。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM 相关性保留阈值，默认 0.35。",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "是否输出更多 community properties。",
+        "required": false
+      },
+      {
+        "name": "include_member_preview",
+        "type": "bool",
+        "description": "是否展示社区代表成员预览。",
+        "required": false
+      },
+      {
+        "name": "member_preview_limit",
+        "type": "number",
+        "description": "代表成员预览条数上限，默认 5。",
+        "required": false
+      }
+    ]
+  },
+  "search_episodes": {
+    "name": "search_episodes",
+    "description": "检索 Episode（不依赖ID）。默认 hybrid：关键词Top2主召回，向量Top3补充。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "检索文本（关键词或语义查询）。",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "最终返回条数，默认 5。",
+        "required": false
+      },
+      {
+        "name": "vector_top_k",
+        "type": "number",
+        "description": "向量候选数量，默认 3。",
+        "required": false
+      },
+      {
+        "name": "keyword_top_k",
+        "type": "number",
+        "description": "关键词候选数量，默认 2。",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "是否对召回候选做 LLM 相关性过滤。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "number",
+        "description": "进入 LLM 判断的候选数量，默认 8。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM 相关性保留阈值，默认 0.35。",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "是否输出描述等详细信息，默认 False。",
+        "required": false
+      }
+    ]
+  },
+  "search_related_entities": {
+    "name": "search_related_entities",
+    "description": "给定实体 ID，检索与之相连的相关实体。可按谓词、关系类型与实体类型过滤；支持返回 (实体, 关系) 的详细模式或仅返回实体。",
+    "parameters": [
+      {
+        "name": "source_id",
+        "type": "string",
+        "description": "起点实体 ID。",
+        "required": true
+      },
+      {
+        "name": "predicate",
+        "type": "string",
+        "description": "关系谓词过滤（可选）。",
+        "required": false
+      },
+      {
+        "name": "relation_types",
+        "type": "array",
+        "description": "关系类型过滤（字符串数组，可选）。",
+        "required": false
+      },
+      {
+        "name": "entity_types",
+        "type": "array",
+        "description": "目标实体类型过滤（字符串数组，可选）。",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "type": "number",
+        "description": "返回条数上限（可选）。",
+        "required": false
+      },
+      {
+        "name": "return_relations",
+        "type": "bool",
+        "description": "是否返回 (实体, 关系) 对而非仅实体，默认 False。",
+        "required": false
+      }
+    ]
+  },
+  "search_sections": {
+    "name": "search_sections",
+    "description": "检索文档分节超节点（按 doc_type 自动映射为 Scene/Chapter/Document）。默认 hybrid：关键词Top2主召回，向量Top3补充。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "检索文本（关键词或语义查询）。",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "最终返回条数，默认 5。",
+        "required": false
+      },
+      {
+        "name": "vector_top_k",
+        "type": "number",
+        "description": "向量候选数量，默认 3。",
+        "required": false
+      },
+      {
+        "name": "keyword_top_k",
+        "type": "number",
+        "description": "关键词候选数量，默认 2。",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "是否对召回候选做 LLM 相关性过滤。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "number",
+        "description": "进入 LLM 判断的候选数量，默认 8。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM 相关性保留阈值，默认 0.35。",
+        "required": false
+      },
+      {
+        "name": "include_related_entities",
+        "type": "bool",
+        "description": "是否展示该章节关联的实体，默认 True。",
+        "required": false
+      },
+      {
+        "name": "related_entity_limit",
+        "type": "number",
+        "description": "每种实体类型最多展示多少个关联实体，默认 3。",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "是否输出 properties 等详细信息，默认 False。",
+        "required": false
+      }
+    ]
+  },
+  "search_storylines": {
+    "name": "search_storylines",
+    "description": "检索 Storyline（不依赖ID）。默认 hybrid：关键词Top2主召回，向量Top3补充。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "检索文本（关键词或语义查询）。",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "最终返回条数，默认 5。",
+        "required": false
+      },
+      {
+        "name": "vector_top_k",
+        "type": "number",
+        "description": "向量候选数量，默认 3。",
+        "required": false
+      },
+      {
+        "name": "keyword_top_k",
+        "type": "number",
+        "description": "关键词候选数量，默认 2。",
+        "required": false
+      },
+      {
+        "name": "use_llm_filter",
+        "type": "bool",
+        "description": "是否对召回候选做 LLM 相关性过滤。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_top_k",
+        "type": "number",
+        "description": "进入 LLM 判断的候选数量，默认 8。",
+        "required": false
+      },
+      {
+        "name": "llm_filter_threshold",
+        "type": "number",
+        "description": "LLM 相关性保留阈值，默认 0.35。",
+        "required": false
+      },
+      {
+        "name": "include_meta",
+        "type": "bool",
+        "description": "是否输出描述等详细信息，默认 False。",
+        "required": false
+      }
+    ]
+  },
+  "top_k_by_centrality": {
+    "name": "top_k_by_centrality",
+    "description": "按中心度指标返回 Top-K 节点排名（已写回到节点属性的中心度）。支持的指标：pagerank/pr、degree/deg、betweenness/btw。可选按节点标签过滤（如 ['Plot','Event']）。",
+    "parameters": [
+      {
+        "name": "metric",
+        "type": "string",
+        "description": "中心度指标：pagerank、degree、betweenness三选一。",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "number",
+        "description": "返回数量，默认 50；<=0 表示不限制（大图不建议）。",
+        "required": false
+      },
+      {
+        "name": "node_labels",
+        "type": "array",
+        "description": "可选的节点标签过滤（如 ['Episode', 'Scene']）；不传表示全图。",
+        "required": false
+      }
+    ]
+  },
+  "get_relations_between_entities": {
+    "name": "get_relations_between_entities",
+    "description": "给定两个实体 ID 与关系类型，返回这两个实体之间该关系的可读说明，适合核对两实体之间是否存在某种明确关系及其描述内容。",
+    "parameters": [
+      {
+        "name": "src_id",
+        "type": "string",
+        "description": "源实体ID（必填）",
+        "required": true
+      },
+      {
+        "name": "tgt_id",
+        "type": "string",
+        "description": "目标实体ID（必填）",
+        "required": true
+      },
+      {
+        "name": "relation_type",
+        "type": "string",
+        "description": "关系类型（如 'EVENT_CAUSES'）",
+        "required": true
+      }
+    ]
+  }
+}

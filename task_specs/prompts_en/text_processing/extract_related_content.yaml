@@ -1,0 +1,70 @@
+id: extract_related_content
+category: text_processing
+name: Extract Related Content
+description: >
+  Extract content directly relevant to the given goal from the provided text.
+  If no relevant content exists, return an empty string.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Original text to analyze.
+
+  - name: goal
+    type: string
+    required: true
+    description: Query goal to focus extraction.
+
+  - name: max_length
+    type: number
+    required: true
+    description: Maximum length of output (characters).
+
+template: |
+  You are a language expert in reading comprehension and key information extraction.
+
+  --------------------------------
+  TASK
+  --------------------------------
+  Based on the goal, extract only the content directly relevant to the goal from the text,
+  and keep the output within {max_length} characters.
+
+  --------------------------------
+  REQUIREMENTS
+  --------------------------------
+  1) Keep only information clearly relevant to the goal; ignore unrelated details.
+  2) Do NOT fabricate facts not present in the text.
+  3) Output concise key points; paraphrasing is allowed, avoid long verbatim copying.
+  4) If no important content in the text is relevant to the goal, you MUST return an empty string.
+
+  --------------------------------
+  INPUTS
+  --------------------------------
+  [Goal]
+  {goal}
+
+  [Text]
+  {text}
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+  Return JSON ONLY:
+
+  {{
+    "related_content": "..."
+  }}
+
+  If nothing is relevant, return:
+  {{
+    "related_content": ""
+  }}
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+  - Output JSON only.
+  - No markdown, no commentary.
+  - Do NOT exceed {max_length} characters.

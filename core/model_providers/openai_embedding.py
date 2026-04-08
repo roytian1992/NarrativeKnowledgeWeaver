@@ -1,11 +1,4 @@
-from typing import List, Dict, Any, Optional, Union
-import chromadb
-from chromadb.config import Settings
-from core.models.data import Document
-from core.utils.config import KAGConfig, EmbeddingConfig
-from langchain_openai import OpenAIEmbeddings
-from openai import OpenAI
-import time, random, string
+from typing import List, Optional, Union
 import math
 
 def _l2_normalize(vecs: List[List[float]]) -> List[List[float]]:
@@ -201,5 +194,3 @@ class OpenAIEmbeddingModel:
     # -------- 原生 chromadb 友好：可当 callable 使用 --------
     def __call__(self, texts: List[str]) -> List[List[float]]:
         return self.embed_documents(texts)
-
-

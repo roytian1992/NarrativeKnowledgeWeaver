@@ -1,0 +1,62 @@
+id: score_candidate_relevance
+category: text_processing
+name: Score Candidate Relevance
+description: >
+  Estimate how likely a text candidate is to contain information useful for answering a query.
+  Return a probability, a boolean decision, and a short reason in strict JSON.
+
+task_variables:
+  - name: goal
+    type: string
+    required: true
+    description: User query or retrieval goal.
+
+  - name: text
+    type: string
+    required: true
+    description: Candidate text to judge.
+
+template: |
+  You are a strict retrieval relevance evaluator.
+
+  Your task is to judge whether the candidate text is likely to contain information that helps answer the target query.
+
+  --------------------------------
+  EVALUATION RULES
+  --------------------------------
+  1) Raise the probability when the text directly mentions people, events, actions, causes, goals, outcomes, or key objects relevant to the query.
+  2) Give a lower probability for weakly related background, broad thematic overlap, or mentions that do not actually support an answer.
+  3) Do not over-score simple keyword overlap; judge true semantic usefulness.
+  4) If the text is clearly irrelevant, the probability should be close to 0.
+  5) Use only the given text. Do not rely on outside knowledge.
+
+  --------------------------------
+  INPUT
+  --------------------------------
+  [Target Query]
+  {goal}
+
+  [Candidate Text]
+  {text}
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+  Return JSON only:
+
+  {{
+    "probability": 0.0,
+    "is_relevant": false,
+    "reason": "..."
+  }}
+
+  Notes:
+  - probability must be between 0 and 1.
+  - is_relevant indicates whether this candidate should be kept as evidence.
+  - reason should be one short sentence.
+
+  --------------------------------
+  FINAL REQUIREMENTS
+  --------------------------------
+  - Output JSON only.
+  - No markdown, no extra commentary.

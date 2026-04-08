@@ -34,14 +34,12 @@ from core.functions.regular_functions import (
     MetadataParser, 
     SemanticSplitter, 
     ParagraphSummarizer, 
-    EntityMerger, 
     InsightExtractor, 
-    EntityTypeValidator, 
-    EntityScopeValidator,
-    TimelineParser,
-    AgenticSearch
+    RelatedContentExtractor,
+    CandidateRelevanceScorer,
 )
-from core.utils.prompt_loader import PromptLoader
+from core.functions.aggregation_functions import CommunityReportGenerator
+from core.utils.prompt_loader import YAMLPromptLoader
 import os
 
 
@@ -54,21 +52,21 @@ class DocumentParser:
     insight extraction, entity merging, and entity validation.
     """
 
-    def __init__(self, config: KAGConfig, llm):
+    def __init__(self, config: KAGConfig, llm, ):
         self.config = config
         self.llm = llm
-        prompt_dir = self.config.knowledge_graph_builder.prompt_dir
-        self.prompt_loader = PromptLoader(prompt_dir)
-
-        self.metadata_parser = MetadataParser(self.prompt_loader, self.llm)
-        self.semantic_splitter = SemanticSplitter(self.prompt_loader, self.llm)
-        self.paragraph_summarizer = ParagraphSummarizer(self.prompt_loader, self.llm)
-        self.entity_merger = EntityMerger(self.prompt_loader, self.llm)
-        self.insight_extractor = InsightExtractor(self.prompt_loader, self.llm)
-        self.entity_type_validator = EntityTypeValidator(self.prompt_loader, self.llm)
-        self.entity_scope_validator = EntityScopeValidator(self.prompt_loader, self.llm)
-        self.timeline_parser = TimelineParser(self.prompt_loader, self.llm)
-        self.agentic_search = AgenticSearch(self.prompt_loader, self.llm)
+        prompt_dir = self.config.global_config.prompt_dir
+        task_dir = self.config.global_config.task_dir
+        metadata_parsing_task = os.path.join(task_dir, "metadata_parsing_task.json")
+        insight_extraction_task = os.path.join(task_dir, "insight_extraction_task.json")
+        self.prompt_loader = YAMLPromptLoader(prompt_dir)
+        self.metadata_parser = MetadataParser(prompt_loader=self.prompt_loader, llm=self.llm, task_schema_path=metadata_parsing_task)
+        self.semantic_splitter = SemanticSplitter(prompt_loader=self.prompt_loader, llm=self.llm)
+        self.paragraph_summarizer = ParagraphSummarizer(prompt_loader=self.prompt_loader, llm=self.llm)
+        self.insight_extractor = InsightExtractor(prompt_loader=self.prompt_loader, llm=self.llm, task_schema_path=insight_extraction_task)
+        self.related_content_extractor = RelatedContentExtractor(prompt_loader=self.prompt_loader, llm=self.llm)
+        self.candidate_relevance_scorer = CandidateRelevanceScorer(prompt_loader=self.prompt_loader, llm=self.llm)
+        self.community_report_generator = CommunityReportGenerator(prompt_loader=self.prompt_loader, llm=self.llm)
 
     def parse_metadata(
         self,
@@ -88,21 +86,26 @@ class DocumentParser:
             params=json.dumps(params, ensure_ascii=False)
         )
         return result
-    
-    def parse_time_elements(
+
+    def generate_title_and_metadata(
         self,
         text: str,
-        existing: str = None,
-    ):
+        title: str = "",
+        subtitle: str = "",
+        doc_type: str = "general",
+    ) -> str:
+        """Generate a segment-specific title from content and extract metadata."""
         params = {
             "text": text,
-            "existing": existing or "",
+            "title": title,
+            "subtitle": subtitle,
+            "doc_type": doc_type,
         }
-        result = self.timeline_parser.call(
+        result = self.metadata_parser.generate_title_and_metadata(
             params=json.dumps(params, ensure_ascii=False)
         )
-        print(result)
         return result
+    
     
     def extract_insights(
         self,
@@ -148,57 +151,55 @@ class DocumentParser:
             params=json.dumps(params, ensure_ascii=False)
         )
         return result
-    
-    def search_content(
+
+    def search_related_content(
         self,
         text: str,
-        max_length: int = 200, 
-        goal: str = ""
+        goal: str,
+        max_length: int = 300,
     ) -> str:
-        """Summarize a paragraph, optionally using a previous rolling summary."""
+        """Extract goal-related content from one document text."""
         params = {
-            "text": text.strip(),
+            "text": (text or "").strip(),
+            "goal": (goal or "").strip(),
             "max_length": max_length,
-            "goal": goal
         }
-        result = self.agentic_search.call(
+        result = self.related_content_extractor.call(
             params=json.dumps(params, ensure_ascii=False)
         )
         return result
-    
-    def merge_entities(
+
+    def score_candidate_relevance(
         self,
-        entity_descriptions: str,
-        system_prompt: str = "",
-        related_context: str = ""
-    ):
-        """Merge similar or duplicate entities based on descriptions and context."""
+        text: str,
+        goal: str,
+    ) -> str:
+        """Estimate whether one candidate text is likely to help answer the goal."""
         params = {
-            "entity_descriptions": entity_descriptions,
-            "system_prompt": system_prompt,
-            "related_context": related_context
+            "text": (text or "").strip(),
+            "goal": (goal or "").strip(),
         }
-        result = self.entity_merger.call(params=json.dumps(params))
+        result = self.candidate_relevance_scorer.call(
+            params=json.dumps(params, ensure_ascii=False)
+        )
+        return result
+
+    def generate_community_report(
+        self,
+        text: str,
+        max_length: int = 1800,
+        max_findings: int = 6,
+        goal: str = "",
+    ) -> str:
+        """Generate a GraphRAG-style community report from structured community context."""
+        params = {
+            "text": (text or "").strip(),
+            "max_length": max_length,
+            "max_findings": max_findings,
+            "goal": (goal or "").strip(),
+        }
+        result = self.community_report_generator.call(
+            params=json.dumps(params, ensure_ascii=False)
+        )
         return result
     
-    def validate_entity_type(
-        self,
-        context: str
-    ):
-        """Validate whether an entity type is legal/consistent with the schema."""
-        params = {"context": context}
-        result = self.entity_type_validator.call(
-            params=json.dumps(params, ensure_ascii=False)
-        )
-        return result
-        
-    def validate_entity_scope(
-        self,
-        context: str
-    ):
-        """Validate whether the entity scope (e.g., local/global) is correct."""
-        params = {"context": context}
-        result = self.entity_scope_validator.call(
-            params=json.dumps(params, ensure_ascii=False)
-        )
-        return result

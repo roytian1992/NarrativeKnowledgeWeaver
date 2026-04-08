@@ -17,7 +17,7 @@ class DynamicReflector:
         self.config = config
         self.history_memory = VectorMemory(self.config, "history_memory")
         self.insight_memory = VectorMemory(self.config, "insight_memory")
-        self.reranker = OpenAIRerankModel(self.config)
+        # self.reranker = OpenAIRerankModel(self.config)
         self.entity_extraction_memory = dict()
         self.history_memory_size = self.config.memory.history_memory_size
         self.insight_memory_size = self.config.memory.insight_memory_size
@@ -161,16 +161,16 @@ class DynamicReflector:
         
         # Search history memory
         for sentence in sentences:
-            if len(sentence) > 500:
-                sentence = sentence[:500]
+            # if len(sentence) > 500:
+            #     sentence = sentence[:500]
             results = self.history_memory.get(sentence, self.history_memory_size)
             retrieved_docs = [
                 create_record(doc.page_content, doc.metadata.get("history")) 
                 for doc in results
             ]
-            query = f"Extract entities and relations from the following sentence:\n{sentence}"
-            retrieved_docs = self.reranker.rerank(query=query, documents=retrieved_docs)
-            retrieved_docs = [doc["document"]["text"] for doc in retrieved_docs if doc["relevance_score"] >= 0.5]
+            # query = f"Extract entities and relations from the following sentence:\n{sentence}"
+            # retrieved_docs = self.reranker.rerank(query=query, documents=retrieved_docs)
+            # retrieved_docs = [doc["document"]["text"] for doc in retrieved_docs if doc["relevance_score"] >= 0.5]
             related_history.extend(retrieved_docs)
         
         # Search insight memory
@@ -179,7 +179,7 @@ class DynamicReflector:
             documents = self.insight_memory.get(sentence, self.insight_memory_size)
             related_insights.extend([doc.page_content for doc in documents])
             
-        related_insights = self.reranker.rerank(query="Insights related to the text", documents=related_insights, top_n=10)
-        related_insights = [insight["document"]["text"] for insight in related_insights]
+        # related_insights = self.reranker.rerank(query="Insights related to the text", documents=related_insights, top_n=10)
+        # related_insights = [insight["document"]["text"] for insight in related_insights]
         
         return related_history, related_insights

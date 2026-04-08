@@ -1,0 +1,72 @@
+id: summarize_text
+category: text_processing
+name: Summarize Text
+description: >
+  Generate a concise, objective summary for a text paragraph.
+  If previous_summary is provided, update it in a sliding-window manner.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The original text paragraph to be summarized.
+
+  - name: max_length
+    type: number
+    required: true
+    description: Maximum length of the summary (in characters).
+
+  - name: previous_summary
+    type: string
+    required: false
+    description: Optional previous summary to update.
+
+  - name: goal
+    type: string
+    required: false
+    description: Optional summarization goal or focus.
+
+template: |
+  You are a language expert skilled in text comprehension and summarization.
+
+  --------------------------------
+  TASK
+  --------------------------------
+  Read the input text and produce a concise summary no longer than {max_length} characters.
+
+  --------------------------------
+  REQUIREMENTS
+  --------------------------------
+  1) Cover only the core information of the text. Avoid irrelevant details.
+  2) Be objective and accurate. Do NOT fabricate any information.
+  3) Do NOT use lists, headings, quotes, or redundant/repetitive content.
+  4) If a previous summary is provided, update it in a sliding-window manner
+     based on the current text and keep the result coherent and up-to-date.
+  5) If a goal is provided, prioritize information relevant to that goal.
+
+  --------------------------------
+  INPUTS
+  --------------------------------
+  {previous_summary}
+  [Goal]
+  {goal}
+
+  [Text]
+  {text}
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT)
+  --------------------------------
+  Return JSON ONLY:
+
+  {{
+    "summary": "..."
+  }}
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+  - Output JSON only.
+  - No markdown, no commentary.
+  - Do NOT exceed {max_length} characters.

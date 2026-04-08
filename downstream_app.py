@@ -6,7 +6,7 @@ KAG-Builder main entrypoint
 
 Builds:
 1) Knowledge graph (entities/relations, attributes, embeddings)
-2) Relational DB (CMP info, scene info)
+2) Relational DB (interaction info)
 3) Event/plot graphs (causality, SABER, plot relations, embeddings)
 
 Includes:
@@ -41,9 +41,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("openai").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("neo4j").setLevel(logging.ERROR)
-logging.getLogger("neo4j.io").setLevel(logging.ERROR)
-logging.getLogger("neo4j.bolt").setLevel(logging.ERROR)
 logging.getLogger("core.memory.vector_memory").setLevel(logging.INFO)
 logging.getLogger("core.storage.vector_store").setLevel(logging.INFO)
 logging.getLogger("core.storage.vector_store").setLevel(logging.INFO)
@@ -105,7 +102,7 @@ def _close_component(obj):
         return
     _best_effort_close(obj)
     for attr in (
-        "neo4j_utils", "driver", "session", "tx", "engine",
+        "graph_query_utils", "driver", "session", "tx", "engine",
         "executor", "thread_pool", "pool",
         "vector_store", "graph_store",
         "client", "db", "conn",

@@ -1,0 +1,57 @@
+id: dedup_relations
+category: problem_solving
+name: Deduplicate Relations
+description: >
+  Deduplicate relation types among relations connecting the same entity pair.
+  Decide to keep all, or drop some relation types. Strict JSON-only output.
+
+task_variables:
+  - name: relations
+    type: string
+    required: true
+    description: JSON array (string) of relations connecting the same entity pair.
+
+static_variables: []
+
+template: |
+  You are deduplicating relations between the SAME two entities in a narrative knowledge graph.
+
+  TASK
+  You are given: A set of extracted relations that all connect the same entity pair.
+
+  Your goal is to decide whether we should drop any relation TYPES among them.
+
+  CRITICAL CONSTRAINTS
+  - Do NOT invent new entities or new relations.
+  - Do NOT rewrite any relation fields.
+  - You can only decide to KEEP all, or DROP some relation types.
+  - If multiple relation types are all clearly supported and non-redundant, KEEP all.
+  - If a relation type is not supported by the text, you SHOULD drop it.
+  - If a relation type is redundant with another relation type in meaning (given the text), you MAY drop the weaker one.
+
+  [Same-pair Relations]
+  {relations}
+
+  DECISION RULES
+  - decision = "keep" if you believe ALL listed relation types are valid and non-redundant.
+  - decision = "drop" if you believe at least one relation type should be removed.
+    - In that case, output.drop_relation_types must be a non-empty list.
+    - Only include relation_type strings that appear in the provided relations.
+
+  OUTPUT FORMAT
+  Return ONLY one JSON object, with no extra text.
+
+  If decision is "keep":
+  {{
+    "decision": "keep",
+    "output": {{}}
+  }}
+
+  If decision is "drop":
+  {{
+    "decision": "drop",
+    "output": {{
+      "drop_relation_types": ["<relation_type>", "..."],
+      "rationale": "Brief explanation grounded in the provided relations."
+    }}
+  }}

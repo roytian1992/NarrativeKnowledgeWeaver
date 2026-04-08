@@ -1,0 +1,62 @@
+id: extract_insights
+category: text_processing
+name: Extract Document Facts
+description: >
+  Extract explicit factual points from text.
+  Strict JSON-only output.
+
+task_variables:
+  - name: doc_type
+    type: string
+    required: true
+    description: "narrative or general"
+
+  - name: text
+    type: string
+    required: true
+    description: Input text.
+
+static_variables:
+  - name: task_spec
+    type: string
+    required: true
+    description: Rendered task description and guidelines.
+
+template: |
+  You are extracting explicit factual points from a document.
+
+  --------------------------------
+  TASK DESCRIPTION
+  --------------------------------
+  {task_spec}
+
+  --------------------------------
+  EXTRACTION RULES (CRITICAL)
+  --------------------------------
+  - Extract ONLY what is explicitly stated in the text.
+  - Each item must be a concrete, self-contained factual point.
+  - Avoid vague or generic statements.
+  - Do NOT summarize the text as a whole.
+  - Do NOT interpret, analyze, or infer beyond the text.
+  - Prefer precision over completeness.
+
+  --------------------------------
+  TEXT
+  --------------------------------
+  {text}
+
+  --------------------------------
+  OUTPUT FORMAT (STRICT JSON ONLY)
+  --------------------------------
+  {{
+    "facts": [
+      "fact 1",
+      "fact 2"
+    ]
+  }}
+
+  --------------------------------
+  FINAL INSTRUCTIONS
+  --------------------------------
+  - Output JSON only.
+  - Do NOT include any extra keys.

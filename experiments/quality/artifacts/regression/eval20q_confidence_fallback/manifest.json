@@ -1,0 +1,25 @@
+{
+  "source_manifest": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/regression/eval20_manifest_seed20260318_first20.json",
+  "sampling_note": "First 20 eval questions across eval articles in manifest order",
+  "train": [],
+  "eval": [
+    {
+      "article_name": "a_01c24596502e2376",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_01c24596502e2376.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/regression/eval20q_confidence_fallback/qas/a_01c24596502e2376.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_01c24596502e2376.json",
+      "title": "Goings On About Town",
+      "content_words": 2108,
+      "qa_count": 17
+    },
+    {
+      "article_name": "a_0738452092642612",
+      "article_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/benchmarks/SCROLLS/quality/quality_processed/articles/a_0738452092642612.json",
+      "qa_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/regression/eval20q_confidence_fallback/qas/a_0738452092642612.csv",
+      "converted_path": "/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/artifacts/converted_articles/eval/a_0738452092642612.json",
+      "title": "Doctor Universe",
+      "content_words": 4529,
+      "qa_count": 3
+    }
+  ]
+}

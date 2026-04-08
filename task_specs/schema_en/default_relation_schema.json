@@ -1,0 +1,467 @@
+{
+  "event_occasion_relations": [
+    {
+      "type": "performs",
+      "description": "An entity actively carries out, initiates, or leads an event (agent/speaker/initiator/etc.).",
+      "from": [
+        "Character",
+        "Object",
+        "Concept"
+      ],
+      "to": [
+        "Event"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Captain Zhao",
+          "object": "Security Checkpoint Breach",
+          "relation_type": "performs",
+          "relation_name": "leads",
+          "description": "Captain Zhao leads the breach of the security checkpoint."
+        },
+        {
+          "subject": "United Earth Fleet",
+          "object": "Security Checkpoint Breach",
+          "relation_type": "performs",
+          "relation_name": "executes",
+          "description": "The breach is described as a coordinated military action carried out by the fleet."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "undergoes",
+      "description": "An entity is acted upon, targeted, or affected in an event (patient/target/beneficiary/etc.).",
+      "from": [
+        "Character",
+        "Object",
+        "Concept"
+      ],
+      "to": [
+        "Event"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Orbital Station Helios",
+          "object": "Emergency Evacuation",
+          "relation_type": "undergoes",
+          "relation_name": "is impacted by",
+          "description": "The station's state or occupancy changes because the evacuation happens."
+        },
+        {
+          "subject": "Encrypted Data Chip",
+          "object": "Data Theft",
+          "relation_type": "undergoes",
+          "relation_name": "is stolen in",
+          "description": "The chip is explicitly the item taken during the theft event."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "experiences",
+      "description": "A character experiences an internal mental, perceptual, or emotional event (experiencer/thinker/feeler/etc.).",
+      "from": [
+        "Character"
+      ],
+      "to": [
+        "Event"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "The Old Librarian",
+          "object": "Silent Realization",
+          "relation_type": "experiences",
+          "relation_name": "realizes",
+          "description": "The event is an internal cognition attributed to the Librarian rather than an external action."
+        },
+        {
+          "subject": "Captain Zhao",
+          "object": "Panic Spikes",
+          "relation_type": "experiences",
+          "relation_name": "feels",
+          "description": "The text frames the panic as Zhao's internal emotional state during the moment."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "participates_in",
+      "description": "An entity participates in, is present at, or is involved in an occasion as a participant/attendee/delegate/member.",
+      "from": [
+        "Character",
+        "Concept"
+      ],
+      "to": [
+        "Occasion"
+      ],
+      "persistence": "phase",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Benny",
+          "object": "Recovery meeting",
+          "relation_type": "participates_in",
+          "relation_name": "participates in",
+          "description": "Benny is present at the meeting and speaks as part of the gathering."
+        },
+        {
+          "subject": "Captain Zhao",
+          "object": "United Nations Climate Summit 2026",
+          "relation_type": "participates_in",
+          "relation_name": "takes part in",
+          "description": "Captain Zhao participates in the United Nations Climate Summit 2026 as a delegate."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "initiates",
+      "description": "An entity organizes, convenes, sponsors, or runs an occasion as the responsible organizer (generalized 'host').",
+      "from": [
+        "Concept",
+        "Character"
+      ],
+      "to": [
+        "Occasion"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Alcoholics Anonymous",
+          "object": "Recovery meeting",
+          "relation_type": "initiates",
+          "relation_name": "organizes",
+          "description": "Alcoholics Anonymous is the institutional organizer of the meeting."
+        },
+        {
+          "subject": "United Nations",
+          "object": "United Nations Climate Summit 2026",
+          "relation_type": "initiates",
+          "relation_name": "convenes",
+          "description": "The United Nations convenes the summit as the organizing institution."
+        }
+      ],
+      "allow_self_loop": false
+    }
+  ],
+  "social_relations": [
+    {
+      "type": "kinship_with",
+      "description": "A legally, biologically, or culturally recognized familial or marital relationship between two characters, such as parent-child, siblings, spouses, or other formal family ties. This relation applies ONLY when the narrative explicitly establishes an actual family or marital bond. It MUST NOT be inferred from metaphorical language, emotional closeness, caretaking behavior, role similarity (e.g., 'like a mother'), temporary guardianship, or interaction-level dynamics.",
+      "from": [
+        "Character"
+      ],
+      "to": [
+        "Character"
+      ],
+      "persistence": "stable",
+      "direction": "symmetric",
+      "samples": [
+        {
+          "subject": "Anna",
+          "object": "Mark",
+          "relation_type": "kinship_with",
+          "relation_name": "is sister of",
+          "description": "The text establishes Anna and Mark as siblings, with Anna in the sister role."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "affinity_with",
+      "description": "A positive social relationship state between two parties characterized by trust, loyalty, cooperation, or alignment that is presented as currently established within the narrative. This relation reflects an ongoing bond during the present phase of the story, but it may change as events unfold. Use this ONLY when the scene provides strong, explicit evidence of an existing positive relationship state (e.g., declared trust, established partnership, repeated mutual reliance within the scene). Do NOT infer this from politeness, brief cooperation, flirtation, or a single favorable interaction, to avoid mistaking momentary interactions for stable relations.",
+      "from": [
+        "Character",
+        "Concept"
+      ],
+      "to": [
+        "Character",
+        "Concept"
+      ],
+      "persistence": "phase",
+      "direction": "symmetric",
+      "opposite": "hostility_with",
+      "samples": [
+        {
+          "subject": "Captain Zhao",
+          "object": "Engineer Lin",
+          "relation_type": "affinity_with",
+          "relation_name": "trusted partners",
+          "description": "Zhao explicitly refers to Lin as a trusted partner and acts in coordination with Lin in ways that signal an established cooperative relationship during this phase of the story."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "hostility_with",
+      "description": "A negative or adversarial relationship state between two parties characterized by rivalry, opposition, or intent to undermine the other, as presented during the current phase of the narrative. This relation represents an ongoing hostile stance at this point in the story, but it may shift or resolve as circumstances change. Use this ONLY when the scene provides strong, explicit evidence of an established adversarial relationship (e.g., declared enmity, standing threats, references to prior conflict). Do NOT infer this from a single argument, isolated threat, or momentary confrontation, to avoid mistaking momentary interactions for stable relations.",
+      "from": [
+        "Character",
+        "Concept"
+      ],
+      "to": [
+        "Character",
+        "Concept"
+      ],
+      "persistence": "phase",
+      "direction": "symmetric",
+      "opposite": "affinity_with",
+      "samples": [
+        {
+          "subject": "Rebel Leader",
+          "object": "United Earth Fleet",
+          "relation_type": "hostility_with",
+          "relation_name": "ongoing adversaries",
+          "description": "The rebel leader frames the fleet as an enemy with a standing opposition, indicating an established hostile relationship during the current phase of the narrative."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "allied_with",
+      "description": "A cooperative or alliance relationship between organizations, institutions, or factions that are aligned in purpose, strategy, or action. This relation applies ONLY when the Concept entities represent collective social entities (e.g., organizations, institutions, factions, or social groups). It MUST NOT be used for temporary cooperation in a single interaction, individual friendships, or abstract alignment with ideologies or technologies.",
+      "from": [
+        "Concept"
+      ],
+      "to": [
+        "Concept"
+      ],
+      "persistence": "stable",
+      "direction": "symmetric",
+      "samples": [
+        {
+          "subject": "Rebel Faction",
+          "object": "Outer Colonies Alliance",
+          "relation_type": "allied_with",
+          "relation_name": "are allied with",
+          "description": "The text explicitly describes the two groups as allied forces coordinating their efforts toward shared goals."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "member_of",
+      "description": "Membership, belonging, or institutional affiliation to an organization/faction/collective.",
+      "from": [
+        "Character"
+      ],
+      "to": [
+        "Concept"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "The Old Librarian",
+          "object": "Secret Archive Council",
+          "relation_type": "member_of",
+          "relation_name": "belongs to",
+          "description": "The text identifies the Librarian as part of the Council (member, agent, or official affiliate)."
+        }
+      ],
+      "allow_self_loop": false
+    }
+  ],
+  "spatiotemporal_relations": [
+    {
+      "type": "occurs_at",
+      "description": "An event or occasion occurs at a specific location.",
+      "from": [
+        "Event",
+        "Occasion"
+      ],
+      "to": [
+        "Location"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Emergency Evacuation",
+          "object": "Orbital Station Helios",
+          "relation_type": "occurs_at",
+          "relation_name": "takes place at",
+          "description": "The emergency evacuation takes place at Orbital Station Helios."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "occurs_on",
+      "description": "An event or occasion occurs at a specific time point or time span.",
+      "from": [
+        "Event",
+        "Occasion"
+      ],
+      "to": [
+        "TimePoint"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Emergency Evacuation",
+          "object": "2084-07-16 18:00",
+          "relation_type": "occurs_on",
+          "relation_name": "happens at",
+          "description": "A precise timestamp is given for when the evacuation occurs."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "occurs_during",
+      "description": "An atomic event takes place within the time span or context of an occasion.",
+      "from": [
+        "Event"
+      ],
+      "to": [
+        "Occasion"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Benny describes burying a bottle",
+          "object": "Recovery meeting",
+          "relation_type": "occurs_during",
+          "relation_name": "happens during",
+          "description": "Benny’s speech occurs during the recovery meeting."
+        },
+        {
+          "subject": "Agreement is signed",
+          "object": "United Nations Climate Summit 2026",
+          "relation_type": "occurs_during",
+          "relation_name": "takes place during",
+          "description": "The agreement signing takes place during the United Nations Climate Summit 2026."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "located_at",
+      "description": "A character or object is located at a place over a period of time (general location, not tied to a single event).",
+      "from": [
+        "Character",
+        "Object"
+      ],
+      "to": [
+        "Location"
+      ],
+      "persistence": "phase",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Captain Zhao",
+          "object": "Orbital Station Helios",
+          "relation_type": "located_at",
+          "relation_name": "is stationed at",
+          "description": "Captain Zhao is stationed at Orbital Station Helios."
+        },
+        {
+          "subject": "Encrypted Data Chip",
+          "object": "Abandoned Theater",
+          "relation_type": "located_at",
+          "relation_name": "is hidden in",
+          "description": "The encrypted data chip is hidden in the abandoned theater."
+        }
+      ],
+      "allow_self_loop": false
+    }
+  ],
+  "semantic_relations": [
+    {
+      "type": "is_a",
+      "description": "Type-instance or subclass classification relationship. ",
+      "from": [
+        "Character",
+        "Object",
+        "Location",
+        "Concept",
+        "Event",
+        "Occasion"
+      ],
+      "to": [
+        "Concept"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Orbital Station Helios",
+          "object": "Space Station",
+          "relation_type": "is_a",
+          "relation_name": "is an instance of",
+          "description": "Orbital Station Helios is a space station."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "part_of",
+      "description": "Part-whole or hierarchical containment relationship.",
+      "from": [
+        "Location",
+        "Object",
+        "Concept",
+        "Occasion"
+      ],
+      "to": [
+        "Location",
+        "Object",
+        "Concept",
+        "Occasion"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Control Room",
+          "object": "Orbital Station Helios",
+          "relation_type": "part_of",
+          "relation_name": "is part of",
+          "description": "The control room is part of Orbital Station Helios."
+        },
+        {
+          "subject": "Orbital Science Council",
+          "object": "United Earth Government",
+          "relation_type": "part_of",
+          "relation_name": "is subordinate unit of",
+          "description": "The Orbital Science Council is part of the United Earth Government."
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "possesses",
+      "description": "A character or concept (must be an organization, institution, or faction) owns, holds, or keeps an object over a period of time (custody/ownership).",
+      "from": [
+        "Character",
+        "Concept"
+      ],
+      "to": [
+        "Object"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "Secret Archive Council",
+          "object": "Forbidden Ledger",
+          "relation_type": "possesses",
+          "relation_name": "safeguards",
+          "description": "The council holds and safeguards the Forbidden Ledger."
+        }
+      ],
+      "allow_self_loop": false
+    }
+  ]
+}

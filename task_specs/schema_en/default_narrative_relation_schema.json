@@ -1,0 +1,126 @@
+{
+  "inter_episode_relations": [
+    {
+      "type": "precedes",
+      "description": "Episode A occurs earlier than Episode B in local narrative or discourse order.",
+      "from": ["Episode"],
+      "to": ["Episode"],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "The heist plan is revealed to the crew",
+          "object": "The team executes the vault break-in",
+          "relation_type": "precedes",
+          "description": "The plan disclosure happens before the vault break-in.",
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "type": "causes",
+      "description": "Episode A directly triggers Episode B as an immediate consequence. Use only when the text provides clear causal evidence.",
+      "from": ["Episode"],
+      "to": ["Episode"],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "A containment breach releases a lethal pathogen",
+          "object": "The city is placed under emergency lockdown",
+          "relation_type": "causes",
+          "description": "The breach directly results in a citywide lockdown.",
+          "confidence": 0.55
+        }
+      ]
+    },
+    {
+      "type": "contrasts_with",
+      "description": "Two episodes are juxtaposed to emphasize contrast or reversal in tone, state, or outcome.",
+      "from": ["Episode"],
+      "to": ["Episode"],
+      "persistence": "stable",
+      "direction": "symmetric",
+      "samples": [
+        {
+          "subject": "A hero is celebrated at a public ceremony",
+          "object": "The same hero privately admits fear and doubt",
+          "relation_type": "contrasts_with",
+          "description": "Public acclaim contrasts with private vulnerability.",
+          "confidence": 0.75
+        }
+      ]
+    },
+    {
+      "type": "elaborates",
+      "description": "Episode A provides additional detail, explanation, or background that expands Episode B.",
+      "from": ["Episode"],
+      "to": ["Episode"],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "A suspect refuses to talk during interrogation",
+          "object": "A flashback reveals the suspect’s prior deal with the police",
+          "relation_type": "elaborates",
+          "description": "The flashback expands the interrogation by supplying prior context.",
+          "confidence": 0.40
+        }
+      ]
+    }
+  ],
+  "inter_storyline_relations": [
+    {
+      "type": "enables",
+      "description": "Storyline A creates conditions that make Storyline B possible or significantly more likely by providing necessary context, state, opportunity, or resources. This relation captures positive causal influence at the storyline level.",
+      "from": ["Storyline"],
+      "to": ["Storyline"],
+      "persistence": "stable",
+      "direction": "directed",
+      "direction_format": "A->B",
+      "reasoning_semantics": {
+        "logic": "A.impact aligns with or satisfies B.cause",
+        "polarity": "positive_causal"
+      },
+      "constraints": {
+        "max_outgoing_per_storyline": 2,
+        "confidence_required": true
+      },
+      "samples": [
+        {
+          "subject": "Discovery of the true nature of the simulated world",
+          "object": "Organized resistance against the controlling system",
+          "relation_type": "enables",
+          "direction": "A->B",
+          "description": "Recognizing that reality is artificially constructed provides the shared understanding required for coordinated resistance to emerge."
+        }
+      ]
+    },
+    {
+      "type": "blocks",
+      "description": "Storyline A obstructs, delays, or undermines the progress or resolution of Storyline B by weakening its necessary conditions, disrupting its process, or preventing its intended outcome. This relation captures negative causal influence at the storyline level.",
+      "from": ["Storyline"],
+      "to": ["Storyline"],
+      "persistence": "stable",
+      "direction": "directed",
+      "direction_format": "A->B",
+      "reasoning_semantics": {
+        "logic": "A.impact contradicts or degrades B.cause, B.process, or B.result",
+        "polarity": "negative_causal"
+      },
+      "constraints": {
+        "max_outgoing_per_storyline": 1,
+        "confidence_required": true
+      },
+      "samples": [
+        {
+          "subject": "Internal betrayal within the resistance movement",
+          "object": "Overthrow of the authoritarian regime",
+          "relation_type": "blocks",
+          "direction": "A->B",
+          "description": "Betrayal disrupts trust and coordination, directly obstructing the resistance’s ability to overthrow the regime."
+        }
+      ]
+    }
+  ]
+}

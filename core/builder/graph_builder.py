@@ -1,130 +1,365 @@
 # core/builder/graph_builder.py
 from __future__ import annotations
 
-from collections import defaultdict
-import networkx as nx
 import json
 import os
-import sqlite3
-import pickle
-import multiprocessing as mp
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError, wait, FIRST_COMPLETED
-from collections import defaultdict
-from copy import deepcopy
-from typing import Any, Awaitable, Callable, Dict, Hashable, Iterable, List, Tuple, Optional
-import hashlib
-import asyncio
-import pandas as pd
-import random
-import re
-import glob
-import logging
-from tqdm import tqdm
-from core.utils.function_manager import run_async_with_retries
-from core.utils.prompt_loader import PromptLoader
-from core.utils.format import correct_json_format
-from core.models.data import Entity, KnowledgeGraph, Relation, TextChunk, Document
-from ..storage.graph_store import GraphStore
-from ..storage.vector_store import VectorStore
-from ..utils.config import KAGConfig
-from ..utils.neo4j_utils import Neo4jUtils
-from core.model_providers.openai_llm import OpenAILLM
-from core.agent.knowledge_extraction_agent import InformationExtractionAgent
-from core.agent.attribute_extraction_agent import AttributeExtractionAgent
-from core.agent.graph_probing_agent import GraphProbingAgent
-from .document_processor import DocumentProcessor
-from core.builder.graph_preprocessor import GraphPreprocessor
-from core.utils.format import DOC_TYPE_META
-from core.builder.reflection import DynamicReflector
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from core.utils.function_manager import run_async_with_retries
-import unicodedata
-import re
 import shutil
+import hashlib
+import logging
+import re
+import pickle
+import threading
+from typing import Any, Dict, List, Optional, Tuple, Set
+from collections import defaultdict
 
-_BRACKET_NUM_SUFFIX_RE = re.compile(r'[\s\u3000]*[\(\[\{（【]\s*\d+\s*[\)\]\}）】]$')
-# 任意内容的末尾括注（用于人物类），限长避免把整句吃掉：1~12 字符
-_BRACKET_ANY_SUFFIX_RE = re.compile(r'[\s\u3000]*[\(\[\{（【]\s*([^\s()[\]{}（）【】]{1,12})\s*[\)\]\}）】]$')
+import networkx as nx
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-_ZERO_WIDTH_RE = re.compile(r'[\u200b-\u200f\u202a-\u202e\u2060\uFEFF]')
-_MULTISPACE_RE = re.compile(r'\s+')
+from core.models.data import Entity, KnowledgeGraph, Relation, TextChunk, Document
+from core.utils.format import DOC_TYPE_META
+from core.utils.config import KAGConfig
+from core.model_providers.openai_llm import OpenAILLM
+from core.builder.document_processor import DocumentProcessor
+from core.agent.knowledge_extraction_agent import InformationExtractionAgent
+from core.agent.property_extraction_agent import PropertyExtractionAgent
+from core.agent.interaction_extraction_agent import InteractionExtractionAgent
+from core.builder.graph_refiner import GraphRefiner
+from ..storage.graph_store import GraphStore
+from ..storage.sql_store import SQLStore
+from ..storage.vector_store import VectorStore
+from ..utils.graph_query_utils import GraphQueryUtils
+from core.utils.function_manager import run_concurrent_with_retries
 
+# unified utils (moved out from this file)
+from core.utils.general_utils import (
+    load_json,
+    dump_json,
+    dump_pickle,
+    load_pickle,
+    safe_title,
+    safe_str,
+    is_nonempty_str,
+    order_key,
+    document_metadata_from_first_chunk,
+    strip_part_suffix,
+    word_len,
+    compute_centrality,
+    filter_nodes_by_centrality,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _normalize_type(t):
-    """
-    Normalize entity type.
-
-    - Input can be str or list.
-    - If contains 'Event', put 'Event' at the first position.
-    - De-duplicate while preserving original order.
-    - If empty -> return 'Concept'.
-    """
-    if not t:
-        return "Concept"
-    if isinstance(t, str):
-        return t
-
-    # list case
-    seen = set()
-    ordered = []
-    for x in t:
-        if x and x not in seen:
-            seen.add(x)
-            ordered.append(x)
-
-    if "Event" in seen:
-        ordered = ["Event"] + [x for x in ordered if x != "Event"]
-
-    return ordered if len(ordered) > 1 else (ordered[0] if ordered else "Concept")
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-#                               Builder
-# ═════════════════════════════════════════════════════════════════════════════
 class KnowledgeGraphBuilder:
-    """Knowledge graph builder (supports multiple document formats)."""
+    """
+    Lite Builder (non-async):
+      1) prepare_chunks -> doc2chunks.json keyed by title (with collision handling)
+      2) document-level entity/relation extraction (threaded concurrency, checkpoint, multi-round retries)
+      3) refinement (GraphRefiner)
+      4) build entity_basic_info.json and relation_basic_info.json
+      5) postprocess relations, build graph, compute degrees
+      6) extract properties from graph
+      7) extract interactions to JSON
+      8) save interaction JSON-list to SQL (optional, explicit step-2)
+      9) save to the local graph store (optional)
 
-    def __init__(self, config: KAGConfig, doc_type: str = None):
-        self.doc_type = doc_type if doc_type else config.knowledge_graph_builder.doc_type
-        if self.doc_type not in DOC_TYPE_META:
-            raise ValueError(f"Unsupported doc_type: {self.doc_type}")
+    Notes:
+    - Uses new YAML layout:
+        global: prompt_dir, task_dir, schema_dir, doc_type
+        knowledge_graph_builder: file_path, max_workers, max_retries, per_task_timeout
+        llm / embedding / rerank / storage follow the new config.py
+    - ENTITY_SCHEMA is single-source-of-truth loaded from entity_schema_path
+    """
 
+    def __init__(
+        self,
+        config: KAGConfig,
+        *,
+        doc_type: Optional[str] = None,
+        use_memory: bool = True,
+    ):
         self.config = config
-        self.max_workers = config.knowledge_graph_builder.max_workers
-        self.meta = DOC_TYPE_META[self.doc_type]
-        self.section_chunk_ids = defaultdict(set)
 
-        prompt_dir = config.knowledge_graph_builder.prompt_dir
-        self.prompt_loader = PromptLoader(prompt_dir)
+        # doc_type and meta
+        self.doc_type = doc_type or config.global_config.doc_type
+        self.meta = DOC_TYPE_META[self.doc_type]
+
+        # dirs from global
+        self.prompt_dir = config.global_config.prompt_dir
+        self.task_dir = config.global_config.task_dir
+        self.schema_dir = config.global_config.schema_dir
+
+        # builder configs
+        self.max_workers = int(getattr(config.knowledge_graph_builder, "max_workers", 8))
+        self.max_retries = int(getattr(config.knowledge_graph_builder, "max_retries", 2))
+        self.per_task_timeout = float(getattr(config.knowledge_graph_builder, "per_task_timeout", 2400))
+
+        # output base path from knowledge_graph_builder.file_path
+        self.file_path = safe_str(getattr(config.knowledge_graph_builder, "file_path", "")) or "data/knowledge_graph"
+
+        # schema/task paths
+        self.entity_schema_path = os.path.join(self.schema_dir, "default_entity_schema.json")
+        self.relation_schema_path = os.path.join(self.schema_dir, "default_relation_schema.json")
+        self.interaction_schema_path = os.path.join(self.schema_dir, "default_interaction_schema.json")
+        self.entity_extraction_task_path = os.path.join(self.task_dir, "entity_extraction_task.json")
+        self.relation_extraction_task_path = os.path.join(self.task_dir, "relation_extraction_task.json")
+        self.interaction_extraction_task_path = os.path.join(self.task_dir, "interaction_extraction_task.json")
+
+        # validate paths
+        if not os.path.exists(self.entity_schema_path):
+            raise FileNotFoundError(f"Entity schema not found: {self.entity_schema_path}")
+        if not os.path.exists(self.relation_schema_path):
+            raise FileNotFoundError(f"Relation schema not found: {self.relation_schema_path}")
+        if not os.path.exists(self.interaction_schema_path):
+            raise FileNotFoundError(f"Interaction schema not found: {self.interaction_schema_path}")
+        if not os.path.exists(self.entity_extraction_task_path):
+            raise FileNotFoundError(f"Entity extraction task not found: {self.entity_extraction_task_path}")
+        if not os.path.exists(self.relation_extraction_task_path):
+            raise FileNotFoundError(f"Relation extraction task not found: {self.relation_extraction_task_path}")
+        if not os.path.exists(self.interaction_extraction_task_path):
+            raise FileNotFoundError(f"Interaction extraction task not found: {self.interaction_extraction_task_path}")
+
+        # shared LLM for the whole pipeline
         self.llm = OpenAILLM(config)
+
+        # document processor
         self.processor = DocumentProcessor(config, self.llm, self.doc_type)
 
-        # Stores / Databases
-        self.graph_store = GraphStore(config)
-        self.neo4j_utils = Neo4jUtils(self.graph_store.driver, doc_type=self.doc_type)
-        self.document_vector_store = VectorStore(config, "documents")
-        self.sentence_vector_store = VectorStore(config, "sentences")
+        # storage helpers
+        self.graph_store = GraphStore(self.config)
+        self.graph_query_utils = GraphQueryUtils(self.graph_store, doc_type=self.doc_type)
 
-        # Memory / Reflection
-        self.reflector = DynamicReflector(config)
+        # load schemas/tasks and build derived runtime structures
+        self.load_entity_schema_and_tasks()
 
-        # Runtime data
-        self.kg = KnowledgeGraph()
-        self.probing_mode = self.config.probing.probing_mode
-        self.graph_probing_agent = GraphProbingAgent(self.config, self.llm, self.reflector)
+        # load relation schema once
+        with open(self.relation_schema_path, "r", encoding="utf-8") as f:
+            self.RELATION_SCHEMA = json.load(f)
+        with open(self.interaction_schema_path, "r", encoding="utf-8") as f:
+            self.INTERACTION_SCHEMA = json.load(f)
 
-    def clear_directory(self, path: str):
+        # initialize extraction memory store (if enabled)
+        self._memory_store = None
+        self._memory_distiller = None
+        self._memory_distill_lock = threading.Lock()
+        mem_cfg = getattr(self.config, "extraction_memory", None)
+        if use_memory and mem_cfg is not None and getattr(mem_cfg, "enabled", True):
+            try:
+                from core.memory.extraction_store import ExtractionMemoryStore
+                from core.memory.memory_distiller import MemoryDistiller
+
+                raw_store_path = str(getattr(mem_cfg, "raw_store_path", "") or "data/memory/raw_memory")
+                distilled_store_path = str(
+                    getattr(mem_cfg, "distilled_store_path", "") or "data/memory/distilled_memory"
+                )
+                realtime_store_path = str(
+                    getattr(mem_cfg, "realtime_store_path", "") or "data/memory/realtime_memory"
+                )
+                for p in [raw_store_path, distilled_store_path, realtime_store_path]:
+                    os.makedirs(p, exist_ok=True)
+
+                self._memory_store = ExtractionMemoryStore.from_config(self.config)
+                logger.info("ExtractionMemoryStore initialized at %s", raw_store_path)
+                self._memory_distiller = MemoryDistiller(
+                    llm=self.llm,
+                    memory_store=self._memory_store,
+                    problem_solver=None,
+                    store_path=distilled_store_path,
+                    prompt_dir=self.prompt_dir,
+                    enabled=bool(getattr(mem_cfg, "distill_enabled", True)),
+                    cycle_every_n_docs=int(getattr(mem_cfg, "distill_every_n_docs", 20)),
+                    min_new_entries=int(getattr(mem_cfg, "distill_min_new_entries", 100)),
+                    max_source_entries=int(getattr(mem_cfg, "distill_max_source_entries", 200)),
+                    max_new_memories=int(getattr(mem_cfg, "distill_max_new_memories", 30)),
+                )
+            except Exception as _e:
+                logger.warning("ExtractionMemoryStore init failed, running without memory: %s", _e)
+
+        # initialize extraction agent once
+        self.extract_agent = InformationExtractionAgent(
+            config=self.config,
+            llm=self.llm,
+            entity_schema=self.ENTITY_SCHEMA,
+            relation_schema=self.RELATION_SCHEMA,
+            memory_store=self._memory_store,
+        )
+        if self._memory_distiller is not None:
+            try:
+                self._memory_distiller.problem_solver = getattr(self.extract_agent, "problem_solver", None)
+            except Exception:
+                pass
+
+        self.graph_refiner: Optional[GraphRefiner] = None
+        self.interaction_agent = InteractionExtractionAgent(
+            config=self.config,
+            llm=self.llm,
+            interaction_schema=self.INTERACTION_SCHEMA,
+        )
+
+    # -------------------------
+    # Schema/task loading
+    # -------------------------
+    def load_entity_schema_and_tasks(self) -> None:
         """
-        Delete ALL contents under `path` (files + subdirectories),
-        but keep the directory itself.
+        Load entity schema + entity extraction task config, and derive
+        runtime structures.
+
+        Single source of truth:
+          self.ENTITY_SCHEMA is exactly what's loaded from entity_schema_path
         """
+
+        with open(self.entity_schema_path, "r", encoding="utf-8") as f:
+            entity_schema = json.load(f)
+
+        with open(self.entity_extraction_task_path, "r", encoding="utf-8") as f:
+            extraction_tasks = json.load(f)
+
+        if not isinstance(entity_schema, list):
+            raise ValueError("default_entity_schema.json must be a list of entity type definitions")
+        if not isinstance(extraction_tasks, list):
+            raise ValueError("entity_extraction_task.json must be a list")
+
+        # category priority (used for stable type ordering)
+        self.CATEGORY_PRIORITY: Dict[str, int] = {
+            "induced": 0,
+            "anchor": 1,
+            "referential": 2,
+            "general_semantic": 3,
+        }
+
+        type2category: Dict[str, str] = {}
+        category2types: Dict[str, List[str]] = defaultdict(list)
+
+        induced_types: Set[str] = set()
+        general_semantic_types: List[str] = []
+
+        for ent in entity_schema:
+            if not isinstance(ent, dict):
+                continue
+
+            t = ent.get("type")
+            cat = ent.get("category")
+
+            if not isinstance(t, str) or not t.strip():
+                continue
+            if not isinstance(cat, str) or not cat.strip():
+                continue
+
+            t = t.strip()
+            cat = cat.strip()
+
+            type2category[t] = cat
+            category2types[cat].append(t)
+
+            if cat == "induced":
+                induced_types.add(t)
+            if cat == "general_semantic":
+                general_semantic_types.append(t)
+
+        if not general_semantic_types:
+            raise ValueError("No general_semantic entity type found in entity schema")
+
+        if len(general_semantic_types) > 1:
+            raise ValueError(
+                f"Multiple general_semantic types found: {general_semantic_types}. "
+                f"Schema should define exactly one."
+            )
+
+        general_semantic_type = general_semantic_types[0]
+        allowed_types = set(type2category.keys())
+
+        # parse extraction task config for default scopes
+        type2default_scope: Dict[str, str] = {}
+
+        for task in extraction_tasks:
+            if not isinstance(task, dict):
+                continue
+
+            for tdef in task.get("types", []) or []:
+                if not isinstance(tdef, dict):
+                    continue
+
+                t = tdef.get("type")
+                if not isinstance(t, str) or not t.strip():
+                    continue
+                t = t.strip()
+
+                if "default_scope" in tdef:
+                    ds = tdef.get("default_scope")
+                    if isinstance(ds, str) and ds in ("global", "local"):
+                        type2default_scope[t] = ds
+                        continue
+
+                scope_rules = tdef.get("scope_rules")
+                if isinstance(scope_rules, dict) and len(scope_rules) == 1:
+                    only_scope = next(iter(scope_rules.keys()))
+                    if only_scope in ("global", "local"):
+                        type2default_scope[t] = only_scope
+
+        # build TYPE_PRIORITY by category priority only
+        cat_prio = self.CATEGORY_PRIORITY
+
+        def _type_rank(t: str) -> int:
+            cat = type2category.get(t, "general_semantic")
+            return int(cat_prio.get(cat, 9999))
+
+        type_priority = tuple(sorted(allowed_types, key=_type_rank))
+
+        # write back
+        self.ENTITY_SCHEMA = entity_schema
+        self.ENTITY_EXTRACTION_TASKS = extraction_tasks
+
+        self.TYPE2CATEGORY = type2category
+        self.CATEGORY2TYPES = dict(category2types)
+
+        self.INDUCED_TYPES = induced_types
+        self.GENERAL_SEMANTIC_TYPE = general_semantic_type
+
+        self.TYPE2DEFAULT_SCOPE = type2default_scope
+        self.ALLOWED_TYPES = allowed_types
+        self.TYPE_PRIORITY = type_priority
+
+    # -------------------------
+    # Paths / tmp
+    # -------------------------
+    def _base_dir(self) -> str:
+        base = safe_str(getattr(self, "file_path", "")) or "data/knowledge_graph"
+        os.makedirs(base, exist_ok=True)
+        return base
+
+    def _interaction_base_dir(self) -> str:
+        base = "data/narrative_interactions"
+        os.makedirs(base, exist_ok=True)
+        return base
+
+    def _tmp_dir(self) -> str:
+        tmp = os.path.join(self._base_dir(), "document_extraction_tmp")
+        os.makedirs(tmp, exist_ok=True)
+        return tmp
+
+    def _tmp_path(self, key: str) -> str:
+        h = hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+        return os.path.join(self._tmp_dir(), f"document_{h}.json")
+
+    def _tmp_exists(self, key: str) -> bool:
+        return os.path.exists(self._tmp_path(key))
+
+    def _save_tmp(self, key: str, payload: Dict[str, Any]) -> None:
+        dump_json(self._tmp_path(key), payload)
+
+    def _load_tmp(self, key: str) -> Optional[Dict[str, Any]]:
+        p = self._tmp_path(key)
+        if not os.path.exists(p):
+            return None
+        try:
+            return load_json(p)
+        except Exception as e:
+            logger.warning(f"Failed to load tmp {p}: {e}")
+            return None
+
+    def clear_directory_keep_root(self, path: str) -> None:
         if not os.path.exists(path):
             return
-
         for entry in os.scandir(path):
             try:
                 if entry.is_file() or entry.is_symlink():
@@ -134,118 +369,259 @@ class KnowledgeGraphBuilder:
             except Exception as e:
                 logger.warning(f"Failed to delete {entry.path} -> {e}")
 
-    def construct_system_prompt(self, background, abbreviations):
-        background_info = self.get_background_info(background, abbreviations)
-        system_prompt_id = "agent_prompt_screenplay" if self.doc_type == "screenplay" else "agent_prompt_novel"
-        system_prompt_text = self.prompt_loader.render_prompt(system_prompt_id, {"background_info": background_info})
-        return system_prompt_text
+    def maybe_distill_memory(
+        self,
+        *,
+        docs_processed: int = 0,
+        force: bool = False,
+        reason: str = "",
+        extra_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        if self._memory_distiller is None:
+            return {"ran": False, "trigger": "distiller_unavailable"}
+        if not self._memory_distill_lock.acquire(blocking=False):
+            return {"ran": False, "trigger": "distiller_busy"}
+        try:
+            return self._memory_distiller.maybe_run(
+                docs_processed=docs_processed,
+                force=force,
+                reason=reason,
+                extra_context=extra_context,
+            )
+        except Exception as e:
+            logger.warning("Memory distillation failed: %s", e)
+            return {"ran": False, "trigger": "distiller_exception", "error": str(e)}
+        finally:
+            self._memory_distill_lock.release()
 
-    def get_background_info(self, background, abbreviations):
-        bg_block = f"**Background**: {background}\n" if background else ""
+    def clear_all_memories(self) -> None:
+        """
+        Clear raw memory, distilled memory artifacts, and memory dump snapshots.
+        """
+        mem_cfg = getattr(self.config, "extraction_memory", None)
+        raw_store_path = (
+            str(getattr(mem_cfg, "raw_store_path", "") or "")
+            if mem_cfg is not None
+            else ""
+        ) or "data/memory/raw_memory"
+        distilled_store_path = (
+            str(getattr(mem_cfg, "distilled_store_path", "") or "")
+            if mem_cfg is not None
+            else ""
+        ) or "data/memory/distilled_memory"
+        realtime_store_path = (
+            str(getattr(mem_cfg, "realtime_store_path", "") or "")
+            if mem_cfg is not None
+            else ""
+        ) or "data/memory/realtime_memory"
 
-        def fmt(item: dict) -> str:
-            """
-            Turn an abbreviation item into a Markdown bullet.
-            Any field is optional. Title preference: abbr > full > any non-empty field > N/A.
-            """
-            if not isinstance(item, dict):
-                return ""
+        if self._memory_store is not None:
+            try:
+                self._memory_store.clear()
+            except Exception as e:
+                logger.warning("clear_all_memories: memory store clear failed: %s", e)
 
-            title = (
-                item.get("abbr")
-                or item.get("full")
-                or next((v for k, v in item.items() if isinstance(v, str) and v.strip()), "N/A")
+        if self._memory_distiller is not None:
+            try:
+                self._memory_distiller.clear_artifacts()
+            except Exception as e:
+                logger.warning("clear_all_memories: distiller artifact cleanup failed: %s", e)
+
+        for fn in [
+            "memory_dump_realtime.json",
+            "raw_memories_realtime.jsonl",
+            "distilled_memories_realtime.jsonl",
+        ]:
+            p = os.path.join(realtime_store_path, fn)
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception as e:
+                    logger.warning("clear_all_memories: failed to remove %s: %s", p, e)
+
+        for fn in [
+            "distill_state.json",
+            "distilled_memories_latest.json",
+            "distilled_memory_summaries.json",
+        ]:
+            p = os.path.join(distilled_store_path, fn)
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception as e:
+                    logger.warning("clear_all_memories: failed to remove %s: %s", p, e)
+
+        logger.info(
+            "All extraction memories cleared: raw=%s distilled=%s realtime=%s",
+            raw_store_path,
+            distilled_store_path,
+            realtime_store_path,
+        )
+
+    def _store_vectordb_from_doc2chunks(
+        self,
+        *,
+        doc2chunks: Dict[str, Dict[str, Any]],
+        reset_collections: bool = True,
+        sentence_chunk_size: int = 200,
+        sentence_chunk_overlap: int = 50,
+        verbose: bool = True,
+    ) -> None:
+        """
+        Persist chunked raw texts into two vector stores:
+        - document level: one vector per extraction document_id (must match source_documents IDs)
+        - sentence level: finer segments with metadata pointing to parent document_id
+        """
+        if not isinstance(doc2chunks, dict) or not doc2chunks:
+            if verbose:
+                logger.warning("Skip vector persistence: doc2chunks is empty.")
+            return
+
+        document_vector_store = VectorStore(self.config, category="document")
+        sentence_vector_store = VectorStore(self.config, category="sentence")
+
+        if reset_collections:
+            document_vector_store.delete_collection()
+            document_vector_store._initialize()
+            sentence_vector_store.delete_collection()
+            sentence_vector_store._initialize()
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=max(10, int(sentence_chunk_size)),
+            chunk_overlap=max(0, int(sentence_chunk_overlap)),
+            length_function=lambda t: word_len(t, lang="auto"),
+            separators=[
+                "\n\n", "### ", "## ", "# ",
+                "\n",
+                "。", "！", "？", "；", "：", "、", "，",
+                ". ", "? ", "! ",
+                " ",
+                "",
+            ],
+            keep_separator=True,
+        )
+
+        document_items: List[Document] = []
+        sentence_items: List[Document] = []
+
+        for part_id, pack in doc2chunks.items():
+            if not isinstance(part_id, str) or not part_id.strip():
+                continue
+            if not isinstance(pack, dict):
+                continue
+            chunks = pack.get("chunks") or []
+            if not isinstance(chunks, list):
+                chunks = []
+            base_md = dict(pack.get("document_metadata") or {})
+            base_md["document_id"] = part_id
+
+            # Store vector "document" collection at chunk granularity:
+            # - vector id = chunk_id
+            # - metadata.document_id = logical document id (many chunks can share one document_id)
+            for cidx, c in enumerate(chunks, start=1):
+                if not isinstance(c, dict):
+                    continue
+                chunk_id = safe_str(c.get("id")).strip() or f"{part_id}_chunk_{cidx}"
+                chunk_text = str(c.get("content", "") or "").strip()
+                if not chunk_text:
+                    continue
+
+                chunk_md = dict(base_md)
+                cmeta = c.get("metadata") or {}
+                if isinstance(cmeta, dict):
+                    for mk, mv in cmeta.items():
+                        if mk not in chunk_md:
+                            chunk_md[mk] = mv
+                chunk_md["chunk_id"] = chunk_id
+                chunk_md["vector_granularity"] = "document"
+                chunk_md["parent_document_id"] = part_id
+
+                document_items.append(Document(id=chunk_id, content=chunk_text, metadata=chunk_md))
+
+                if word_len(chunk_text, lang="auto") > int(sentence_chunk_size):
+                    segments = splitter.split_text(chunk_text)
+                else:
+                    segments = [chunk_text]
+
+                for sidx, seg in enumerate(segments, start=1):
+                    seg_txt = str(seg or "").replace("\\n", "\n").strip()
+                    if not seg_txt:
+                        continue
+                    seg_md = dict(chunk_md)
+                    seg_md["vector_granularity"] = "sentence"
+                    seg_md["parent_document_id"] = chunk_id
+                    seg_md["sentence_order"] = sidx
+                    sentence_items.append(Document(id=f"{chunk_id}<->{sidx}", content=seg_txt, metadata=seg_md))
+
+        document_vector_store.store_documents(document_items)
+        sentence_vector_store.store_documents(sentence_items)
+
+        if verbose:
+            logger.info(
+                "Vector stores persisted: document=%d sentence=%d (collections=document,sentence)",
+                len(document_items),
+                len(sentence_items),
             )
 
-            parts = []
-            for k, v in item.items():
-                if k in ("abbr", "full"):
-                    continue
-                if isinstance(v, str) and v.strip():
-                    parts.append(v.strip())
-
-            return f"- **{title}**: " + " - ".join(parts) if parts else f"- **{title}**"
-
-        abbr_block = "\n".join(fmt(item) for item in abbreviations if isinstance(item, dict)) if abbreviations else ""
-
-        if bg_block and abbr_block:
-            background_info = f"{bg_block}\n{abbr_block}"
-        else:
-            background_info = bg_block or abbr_block
-
-        return background_info
-
+    # -------------------------
+    # 1) prepare_chunks
+    # -------------------------
     def prepare_chunks(
         self,
         json_file_path: str,
+        *,
         verbose: bool = True,
         retries: int = 2,
         per_task_timeout: float = 600.0,
-        retry_backoff: float = 1.0,  # kept for signature compatibility; not used by the unified runner
-        *,
         use_semantic_split: bool = True,
         extract_summary: bool = True,
         extract_metadata: bool = True,
-        extract_timelines: bool = True,
         summary_max_words: int = 200,
-    ):
+        reset_output_dir: bool = True,
+        store_vector_chunks: Optional[bool] = None,
+        sentence_chunk_size: Optional[int] = None,
+        sentence_chunk_overlap: Optional[int] = None,
+        reset_vector_collections: Optional[bool] = None,
+    ) -> None:
         """
-        Build TextChunks from a JSON corpus using a single-pass pipeline:
+        Naming conventions (unified):
+        - raw_doc_id: original source doc id from input.
+        - doc_segment_id: pre-split segment id, e.g. "{raw_doc_id}_seg_1".
+        - document_id: retrieval/extraction unit id, e.g. "{section_label}_{x}_part_1".
+        - chunk_id: "{doc_segment_id}_chunk_{k}" (stored in chunk["id"]).
 
-        1) base_splitter.split_text(document) -> (optional) sliding_semantic_split(...)
-        2) (optional) sliding-window summaries on the split chunks
-        3) (optional) one-shot document-level metadata from (Title + Aggregated Summary),
-           copied to each chunk as `doc_metadata`
-
-        Concurrency, soft timeouts and retries are handled by
-        `core.utils.function_manager.run_concurrent_with_retries`.
-
-        Args:
-            json_file_path: input JSON path
-            verbose: whether to log progress info
-            retries: total rounds (round 1 + (retries-1) retries)
-            per_task_timeout: soft timeout per *document* (seconds), measured after task start
-            retry_backoff: kept for compatibility (not used)
-            use_semantic_split / extract_summary / extract_metadata / summary_max_words:
-                control the single-pass behavior (see DocumentProcessor.prepare_chunk)
+        Outputs:
+        - all_document_chunks.json : flat list with stable chunk_id + metadata ids.
+        - doc2chunks.json         : {document_id -> {"document_metadata": {...}, "chunks":[chunk_dicts...]}}
+        - doc2chunks_index.json   : legacy index maps (kept for convenience)
         """
-        # Init / cleanup
-        self.reflector.clear()
-        base = self.config.storage.knowledge_graph_path
-        self.clear_directory(base)
+        base = self._base_dir()
+        if reset_output_dir:
+            self.clear_directory_keep_root(base)
 
         if verbose:
-            logger.info(f"Starting knowledge graph build from: {json_file_path}")
-            logger.info("Loading documents...")
+            logger.info(f"Chunking from: {json_file_path}")
 
-        # Load items; each item becomes ONE document
         documents = self.processor.load_from_json(json_file_path)
         n_docs = len(documents)
 
-        if verbose:
-            logger.info(f"Loaded {n_docs} documents")
-
-        # Per-document task
-        def _task(doc: Dict) -> Dict[str, List[TextChunk]]:
-            # Expect a dict: {"document_chunks": List[TextChunk]}
+        def _task(doc: Dict[str, Any]) -> Dict[str, List[Any]]:
             return self.processor.prepare_chunk(
                 doc,
                 use_semantic_split=use_semantic_split,
                 extract_summary=extract_summary,
                 extract_metadata=extract_metadata,
-                extract_timelines=extract_timelines,
                 summary_max_words=summary_max_words,
             )
 
-        # Run concurrent with retries
-        from core.utils.function_manager import run_concurrent_with_retries
+        max_workers = int(getattr(self.processor, "max_workers", self.max_workers))
+        rounds = max(1, int(retries))
 
-        max_workers = getattr(self.processor, "max_workers", getattr(self, "max_workers", 4))
         results_map, failed_indices = run_concurrent_with_retries(
             items=documents,
             task_fn=_task,
             per_task_timeout=per_task_timeout,
-            max_retry_rounds=max(1, retries),
+            max_retry_rounds=rounds,
             max_in_flight=max_workers,
             max_workers=max_workers,
             thread_name_prefix="chunk",
@@ -254,1597 +630,2036 @@ class KnowledgeGraphBuilder:
             is_empty_fn=lambda r: (not r) or (not isinstance(r, dict)) or (not r.get("document_chunks")),
         )
 
-        # Flatten results (keep only successful chunks)
-        all_chunks: List[TextChunk] = []
+        def _split_chunks_into_parts(chunks: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+            n = len(chunks)
+            if n <= 2:
+                return [chunks]
+
+            parts: List[List[Dict[str, Any]]] = []
+            start = 0
+            if n % 2 == 1:
+                parts.append(chunks[0:1])
+                start = 1
+
+            while start < n:
+                parts.append(chunks[start : start + 2])
+                start += 2
+
+            return parts
+
+        section_prefix = re.sub(
+            r"[^A-Za-z0-9_]+",
+            "_",
+            safe_str(self.meta.get("section_label", "document")).strip().lower(),
+        ).strip("_") or "document"
+        section_id_key = f"{section_prefix}_id"
+
+        def _build_base_key(md0: Dict[str, Any], doc_index: int, doc_segment_id: str) -> str:
+            # Prefer doc-type specific section id key, e.g. scene_id/chapter_id/document_id.
+            section_id_val = md0.get(section_id_key, None)
+            # Backward compatibility for older screenplay metadata.
+            if section_id_val is None and section_id_key != "scene_id":
+                section_id_val = md0.get("scene_id", None)
+
+            if section_id_val is not None:
+                s = str(section_id_val).strip()
+                if s:
+                    return f"{section_prefix}_{s}"
+
+            order = md0.get("order", None)
+            if order is not None:
+                try:
+                    return f"{section_prefix}_{int(order)}"
+                except Exception:
+                    pass
+
+            source_id = safe_str(doc_segment_id).strip()
+            if source_id:
+                return source_id
+
+            return f"doc_{doc_index}"
+
+        def _ensure_unique_base_key(base_key: str, used_base_keys: Dict[str, int]) -> str:
+            if base_key not in used_base_keys:
+                used_base_keys[base_key] = 1
+                return base_key
+            used_base_keys[base_key] += 1
+            return f"{base_key}_dup_{used_base_keys[base_key]}"
+
+        def _sanitize_id_component(x: str) -> str:
+            s = safe_str(x).strip()
+            if not s:
+                return ""
+            s = re.sub(r"[^A-Za-z0-9_]+", "_", s)
+            s = s.strip("_")
+            return s
+
+        all_chunks: List[Dict[str, Any]] = []
+        doc2chunks: Dict[str, Dict[str, Any]] = {}
+
+        # legacy index maps
+        title2keys: Dict[str, List[str]] = {}
+        key2title: Dict[str, str] = {}
+        key2doc_index: Dict[str, int] = {}
+
+        used_base_keys: Dict[str, int] = {}
+
         for i in range(n_docs):
             res = results_map.get(i)
             if not res:
                 continue
-            chunks = res.get("document_chunks", [])
-            if isinstance(chunks, list):
-                all_chunks.extend(chunks)
 
-        # Persist successful chunks
-        os.makedirs(base, exist_ok=True)
-        out_path = os.path.join(base, "all_document_chunks.json")
-        with open(out_path, "w", encoding="utf-8") as fw:
-            json.dump([c.dict() for c in all_chunks], fw, ensure_ascii=False, indent=2)
-
-        # Final report
-        if verbose:
-            logger.info(f"Generated {len(all_chunks)} chunks, written to: {out_path}")
-            if failed_indices:
-                logger.warning(f"{len(failed_indices)} documents failed after {retries} round(s): {sorted(failed_indices)}")
-
-    # ═════════════════════════════════════════════════════════════════════
-    #  2) Store chunks (RDB + VDB)
-    # ═════════════════════════════════════════════════════════════════════
-    def store_chunks(self, verbose: bool = True):
-        base = self.config.storage.knowledge_graph_path
-
-        # Description chunks
-        doc_chunks = [TextChunk(**o) for o in
-                      json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
-
-        # Write into KG (Document + Chunk)
-        for ch in doc_chunks:
-            self.kg.add_document(self.processor.prepare_document(ch))
-            self.kg.add_chunk(ch)
-
-        # Vector DB
-        if verbose:
-            logger.info("Storing to vector databases...")
-        self._store_vectordb(verbose)
-
-    def run_graph_probing(self, verbose: bool = True, sample_ratio: float = None):
-        """Run (or skip) schema probing and persist schema/settings."""
-        self.reflector.clear()
-
-        base = self.config.storage.graph_schema_path
-        os.makedirs(base, exist_ok=True)
-        self.clear_directory(base)
-
-        if self.probing_mode in ("fixed", "adjust"):
-            schema = json.load(open(self.config.probing.default_graph_schema_path, "r", encoding="utf-8"))
-            if os.path.exists(self.config.probing.default_background_path):
-                settings = json.load(open(self.config.probing.default_background_path, "r", encoding="utf-8"))
-                if "abbreviations" not in settings:
-                    settings["abbreviations"] = []
-            else:
-                settings = {"background": "", "abbreviations": []}
-        else:
-            schema = {}
-            settings = {"background": "", "abbreviations": []}
-
-        if self.probing_mode != "fixed":
-            schema, settings = self.update_schema(
-                schema,
-                background=settings.get("background", ""),
-                abbreviations=settings.get("abbreviations", []),
-                verbose=verbose,
-                sample_ratio=sample_ratio,
-            )
-        else:
-            if verbose:
-                logger.info("Skipping probing step (fixed schema mode).")
-
-        with open(os.path.join(base, "graph_schema.json"), "w", encoding="utf-8") as f:
-            json.dump(schema, f, ensure_ascii=False, indent=2)
-
-        with open(os.path.join(base, "settings.json"), "w", encoding="utf-8") as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
-
-    def initialize_agents(self):
-        """Initialize extraction agents and graph preprocessor using persisted schema/settings."""
-        base = self.config.storage.graph_schema_path
-        schema_path = os.path.join(base, "graph_schema.json")
-        settings_path = os.path.join(base, "settings.json")
-
-        if os.path.exists(schema_path):
-            schema = json.load(open(schema_path, "r", encoding="utf-8"))
-        elif os.path.exists(self.config.probing.default_graph_schema_path):
-            schema = json.load(open(self.config.probing.default_graph_schema_path, "r", encoding="utf-8"))
-        else:
-            raise FileNotFoundError("Graph schema not found. Provide a valid path or run probing first.")
-
-        if os.path.exists(settings_path):
-            settings = json.load(open(settings_path, "r", encoding="utf-8"))
-        elif os.path.exists(self.config.probing.default_background_path):
-            settings = json.load(open(self.config.probing.default_background_path, "r", encoding="utf-8"))
-        else:
-            settings = {"background": "", "abbreviations": []}
-
-        self.system_prompt_text = self.construct_system_prompt(
-            background=settings.get("background", ""),
-            abbreviations=settings.get("abbreviations", ""),
-        )
-
-        # Agents
-        self.information_extraction_agent = InformationExtractionAgent(
-            self.config, self.llm, self.system_prompt_text, schema, self.reflector
-        )
-        self.attribute_extraction_agent = AttributeExtractionAgent(
-            self.config, self.llm, self.system_prompt_text, schema
-        )
-        self.graph_preprocessor = GraphPreprocessor(self.config, self.llm, system_prompt=self.system_prompt_text)
-
-    def update_schema(
-        self,
-        schema: Dict = {},
-        background: str = "",
-        abbreviations: List = [],
-        verbose: bool = True,
-        sample_ratio: float = None,
-        documents: List[Document] = None,
-    ):
-        """
-        Update schema by probing on sampled chunks and saving insights into reflection memory.
-        Returns (schema, settings).
-        """
-        if documents:
-            doc_chunks = documents
-        else:
-            base = self.config.storage.knowledge_graph_path
-            doc_chunks = [TextChunk(**o) for o in
-                          json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))]
-
-        # Collect one unique summary per document_id, sorted by numeric suffix if present
-        summaries = [
-            (ch.document_id, ch.metadata.get("summary", ""))
-            for ch in doc_chunks if ch.metadata.get("summary", "")
-        ]
-        unique_summaries = {}
-        for doc_id, summary in summaries:
-            if doc_id not in unique_summaries:
-                unique_summaries[doc_id] = summary
-
-        summaries_sorted = sorted(
-            unique_summaries.items(),
-            key=lambda x: int(str(x[0]).split("_")[-1]) if str(x[0]).split("_")[-1].isdigit() else float("inf")
-        )
-        summaries = [s for _, s in summaries_sorted]
-
-        if not sample_ratio:
-            sample_ratio = 0.35
-        k = int(len(doc_chunks) * sample_ratio)
-        sampled_chunks = random.sample(doc_chunks, k=k)
-
-        # Save insights into memory for later retrieval
-        sampled_chunks = self.processor.extract_insights(sampled_chunks)
-        for chunk in tqdm(sampled_chunks, desc="Saving insights", total=len(sampled_chunks)):
-            insights = chunk.metadata.get("insights", [])
-            for item in insights:
-                self.reflector.insight_memory.add(text=item, metadata={})
-        if verbose:
-            logger.info("Insight saving completed.")
-
-        params = dict()
-        params["documents"] = sampled_chunks
-        params["schema"] = schema
-        params["background"] = background
-        params["abbreviations"] = abbreviations
-        params["summaries"] = summaries
-
-        result = self.graph_probing_agent.run(params)
-        return result["schema"], result["settings"]
-
-    # ═════════════════════════════════════════════════════════════════════
-    #  3) Entity / Relation extraction
-    # ═════════════════════════════════════════════════════════════════════
-    def _get_tmp_dir(self):
-        base = self.config.storage.knowledge_graph_path
-        tmp_dir = os.path.join(base, "extraction_tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-        return tmp_dir
-
-    def _save_chunk_result(self, chunk_id: str, payload: dict):
-        """保存单个 chunk 抽取结果，路径：extraction_tmp/<chunk_id>.json"""
-        tmp_dir = self._get_tmp_dir()
-        path = os.path.join(tmp_dir, f"{chunk_id}.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-
-    def _load_existing_chunk_ids(self):
-        """读取 extraction_tmp 目录下已有的 chunk 文件，返回 set(chunk_id)。"""
-        tmp_dir = self._get_tmp_dir()
-        if not os.path.exists(tmp_dir):
-            return set()
-        files = os.listdir(tmp_dir)
-        done_ids = set()
-        for name in files:
-            if name.endswith(".json"):
-                done_ids.add(name[:-5])  # 去掉 .json
-        return done_ids
-
-    def _load_all_tmp_results(self):
-        """加载全部 extraction_tmp/<id>.json，返回 list of payload。"""
-        tmp_dir = self._get_tmp_dir()
-        if not os.path.exists(tmp_dir):
-            return []
-        results = []
-        for name in os.listdir(tmp_dir):
-            if not name.endswith(".json"):
+            chunks = res.get("document_chunks", []) or []
+            if not chunks:
                 continue
-            path = os.path.join(tmp_dir, name)
+
+            chunk_dicts = [c.dict() for c in chunks]
+
             try:
-                with open(path, "r", encoding="utf-8") as f:
-                    results.append(json.load(f))
+                chunk_dicts.sort(key=order_key)
             except Exception as e:
-                logger.warning(f"Failed to load tmp result {path}: {e}")
-        return results
+                if verbose:
+                    logger.warning(f"Sort failed for doc {i}: {e}")
 
+            md0 = (chunk_dicts[0].get("metadata", {}) or {})
+            title = safe_title(md0.get("doc_title") or md0.get("title") or f"doc_{i}")
 
+            raw_doc = documents[i] if (0 <= i < len(documents)) else {}
+            raw_id = None
+            if isinstance(raw_doc, dict):
+                raw_id = raw_doc.get("_id", None)
+                if raw_id is None:
+                    raw_id = raw_doc.get("id", None)
 
-    def extract_entity_and_relation(self, verbose: bool = True):
-        return asyncio.run(self.extract_entity_and_relation_async(verbose=verbose))
+            doc_segment_id = str(raw_id).strip() if raw_id is not None else f"doc_{i}_seg_1"
+            doc_segment_id = _sanitize_id_component(doc_segment_id) or f"doc_{i}_seg_1"
+            raw_doc_id = ""
+            if isinstance(raw_doc, dict):
+                raw_doc_id = safe_str(
+                    raw_doc.get("raw_doc_id")
+                    or (raw_doc.get("metadata") or {}).get("raw_doc_id")
+                ).strip()
+            if not raw_doc_id:
+                m = re.match(r"^(.*)_seg_\d+$", doc_segment_id)
+                raw_doc_id = m.group(1) if m else doc_segment_id
 
-    
-    async def extract_entity_and_relation_async(self, verbose: bool = True):
-        """
-        多轮重试 + 并发 + 真正断点续跑（集中重试版）：
+            # stable chunk ids + metadata
+            for cidx in range(len(chunk_dicts)):
+                cd = chunk_dicts[cidx]
+                if not isinstance(cd, dict):
+                    continue
+                chunk_id = f"{doc_segment_id}_chunk_{cidx}"
+                cd["id"] = chunk_id
+                md = cd.get("metadata") or {}
+                if not isinstance(md, dict):
+                    md = {}
+                md["raw_doc_id"] = raw_doc_id
+                md["doc_segment_id"] = doc_segment_id
+                md["source_title"] = title
+                cd["metadata"] = md
 
-        - 每个 chunk 的抽取结果独立保存为:  knowledge_graph_path/extraction_tmp/<chunk_id>.json
-        - 再次运行时，会跳过已有 tmp 文件的 chunk（断点续跑）。
-        - 失败的 chunk 不在本地 while 重试，而是交给 run_async_with_retries 做「按轮集中重试」。
-        - 超时 / CancelledError 都视为该轮失败，不中断全局，只在最后几轮仍失败的 chunk 上打标记。
-        """
-        base = self.config.storage.knowledge_graph_path
-        desc_chunks: List[TextChunk] = [
-            TextChunk(**o)
-            for o in json.load(open(os.path.join(base, "all_document_chunks.json"), "r", encoding="utf-8"))
-        ]
+            base_key_raw = _build_base_key(md0, i, doc_segment_id)
+            base_key = _ensure_unique_base_key(base_key_raw, used_base_keys)
 
-        # ---- 1) 基于 tmp 文件做断点续跑：已有文件的 id 视为已完成 ----
-        done_ids = self._load_existing_chunk_ids()
+            parts = _split_chunks_into_parts(chunk_dicts)
+
+            for pidx, part_chunks in enumerate(parts, start=1):
+                document_id = f"{base_key}_part_{pidx}"
+
+                if document_id in doc2chunks:
+                    kk = 2
+                    while f"{document_id}_dup_{kk}" in doc2chunks:
+                        kk += 1
+                    document_id = f"{document_id}_dup_{kk}"
+
+                document_md = document_metadata_from_first_chunk(part_chunks)
+                document_md["raw_doc_id"] = raw_doc_id
+                document_md["doc_segment_id"] = doc_segment_id
+                document_md["source_title"] = title
+
+                for cd in part_chunks:
+                    if not isinstance(cd, dict):
+                        continue
+                    md = cd.get("metadata") or {}
+                    if not isinstance(md, dict):
+                        md = {}
+                    md["document_id"] = document_id
+                    md["raw_doc_id"] = raw_doc_id
+                    md["doc_segment_id"] = doc_segment_id
+                    cd["metadata"] = md
+
+                doc2chunks[document_id] = {
+                    "document_metadata": document_md,
+                    "chunks": part_chunks,
+                }
+
+                title2keys.setdefault(title, []).append(document_id)
+                key2title[document_id] = title
+                key2doc_index[document_id] = i
+
+            all_chunks.extend(chunk_dicts)
+
+        dump_json(os.path.join(base, "all_document_chunks.json"), all_chunks)
+        dump_json(os.path.join(base, "doc2chunks.json"), doc2chunks)
+        dump_json(
+            os.path.join(base, "doc2chunks_index.json"),
+            {
+                "title2keys": title2keys,
+                "key2title": key2title,
+                "key2doc_index": key2doc_index,
+            },
+        )
+
+        dp_cfg = getattr(self.config, "document_processing", None)
+        if store_vector_chunks is None:
+            store_vector_chunks = bool(getattr(dp_cfg, "store_vector_chunks", True))
+        if sentence_chunk_size is None:
+            sentence_chunk_size = int(getattr(dp_cfg, "sentence_chunk_size", 200))
+        if sentence_chunk_overlap is None:
+            sentence_chunk_overlap = int(getattr(dp_cfg, "sentence_chunk_overlap", 50))
+        if reset_vector_collections is None:
+            reset_vector_collections = bool(getattr(dp_cfg, "reset_vector_collections", True))
+
+        if store_vector_chunks:
+            self._store_vectordb_from_doc2chunks(
+                doc2chunks=doc2chunks,
+                reset_collections=reset_vector_collections,
+                sentence_chunk_size=sentence_chunk_size,
+                sentence_chunk_overlap=sentence_chunk_overlap,
+                verbose=verbose,
+            )
+
         if verbose:
-            logger.info(f"Found {len(done_ids)} completed chunks in extraction_tmp/.")
+            logger.info(f"Chunking done. documents={len(doc2chunks)} chunks={len(all_chunks)}")
+            if failed_indices:
+                try:
+                    failed_show = sorted(failed_indices)
+                except Exception:
+                    failed_show = failed_indices
+                logger.warning(f"{len(failed_indices)} docs failed after {rounds} round(s): {failed_show}")
 
-        pending_chunks: List[TextChunk] = [ch for ch in desc_chunks if ch.id not in done_ids]
-        if not pending_chunks:
+    # -------------------------
+    # 2) document extraction (threaded)
+    # -------------------------
+    def _extract_one_document(
+        self,
+        document_id: str,
+        document_pack: Dict[str, Any],
+        *,
+        aggressive_clean: bool = True,
+    ) -> Dict[str, Any]:
+        chunks = document_pack.get("chunks") or []
+        chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and c.get("id")]
+
+        out = self.extract_agent.run_document(
+            chunks,
+            aggressive_clean=aggressive_clean,
+            document_rid_namespace=f"document:{document_id}",
+        )
+
+        return {
+            "ok": True,
+            "document_id": document_id,
+            "document_metadata": document_pack.get("document_metadata") or {},
+            "chunk_ids": chunk_ids,
+            "entities": out.get("entities", []) or [],
+            "relations": out.get("relations", []) or [],
+            "error": "",
+        }
+
+    def extract_entity_and_relation(
+        self,
+        *,
+        verbose: bool = True,
+        retries: int = 3,
+        per_task_timeout: float = 1200.0,
+        concurrency: Optional[int] = None,
+        reset_outputs: bool = False,
+        aggressive_clean: bool = True,
+    ) -> None:
+        """
+        document-level extraction (threaded, like property_extraction):
+        - Parallel by documents using run_concurrent_with_retries
+        - Resume via tmp checkpoint
+        - Multi-round retries
+        """
+        base = self._base_dir()
+
+        doc2chunks_path = os.path.join(base, "doc2chunks.json")
+        if not os.path.exists(doc2chunks_path):
+            raise FileNotFoundError(f"doc2chunks.json not found at {doc2chunks_path}. Run prepare_chunks() first.")
+
+        doc2chunks: Dict[str, Dict[str, Any]] = load_json(doc2chunks_path)
+        document_ids = list(doc2chunks.keys())
+
+        if not document_ids:
             if verbose:
-                logger.info("All chunks already processed. Skipping extraction.")
-            # 合并一次结果，确保 extraction_results.json 存在
-            all_results = self._load_all_tmp_results()
-            out_path = os.path.join(base, "extraction_results.json")
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(all_results, f, ensure_ascii=False, indent=2)
+                logger.warning("doc2chunks.json is empty. Nothing to extract.")
             return
 
+        if concurrency is None:
+            concurrency = max(1, int(getattr(self, "max_workers", 8)))
+
+        tmp_dir = self._tmp_dir()
+        out_results = os.path.join(base, "extraction_results.json")
+        out_ent_jsonl = os.path.join(base, "document_entities.jsonl")
+        out_rel_jsonl = os.path.join(base, "document_relations.jsonl")
+
+        if reset_outputs:
+            self.clear_directory_keep_root(tmp_dir)
+            for p in [out_results, out_ent_jsonl, out_rel_jsonl]:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+
+        done: List[str] = []
+        pending: List[str] = []
+
+        for doc_id in document_ids:
+            if not self._tmp_exists(doc_id):
+                pending.append(doc_id)
+                continue
+            payload = self._load_tmp(doc_id) or {}
+            if isinstance(payload, dict) and payload.get("ok") is True:
+                done.append(doc_id)
+            else:
+                pending.append(doc_id)
+
         if verbose:
-            logger.info(f"Pending chunks to process: {len(pending_chunks)}")
+            logger.info(
+                f"document extraction total={len(document_ids)} done={len(done)} pending={len(pending)} "
+                f"concurrency={concurrency} timeout={per_task_timeout}s retries={retries}"
+            )
 
-        from core.utils.function_manager import run_async_with_retries
+        if not pending:
+            merged: Dict[str, Any] = {}
+            for doc_id in document_ids:
+                p = self._load_tmp(doc_id)
+                if isinstance(p, dict):
+                    merged[doc_id] = p
+            dump_json(out_results, merged)
 
-        # 为了方便最后给 still_failed 写 stub，做个快速索引
-        chunk_by_id: Dict[str, TextChunk] = {ch.id: ch for ch in desc_chunks}
+            if verbose:
+                ok_cnt = sum(1 for v in merged.values() if isinstance(v, dict) and v.get("ok"))
+                fail_cnt = sum(1 for v in merged.values() if isinstance(v, dict) and (not v.get("ok")))
+                logger.info(f"All documents already processed. ok={ok_cnt} failed={fail_cnt} output={out_results}")
+            return
 
-        async def _work(ch: TextChunk) -> Dict[str, Any]:
-            """
-            对单个 chunk 做一次尝试（不在内部 while 重试）。
-            返回结构：
-                {
-                    "ok": bool,
-                    "error_kind": str,   # "ok"/"empty"/"timeout"/"cancelled"/"downstream"/"other"
-                    "error": str,
-                    "payload": {...}     # chunk 结果（即将写入 tmp 的内容）
-                }
-            """
-            # 默认 payload（失败兜底）
-            def _empty_payload(kind: str, msg: str) -> Dict[str, Any]:
+        items: List[str] = pending
+
+        def _task(doc_id: str) -> Dict[str, Any]:
+            pack = doc2chunks.get(doc_id, {}) or {}
+            try:
+                return self._extract_one_document(doc_id, pack, aggressive_clean=aggressive_clean)
+            except Exception as e:
+                chunks = pack.get("chunks") or []
+                chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and c.get("id")]
                 return {
                     "ok": False,
-                    "error_kind": kind,
-                    "error": msg,
-                    "payload": {
-                        "chunk_id": ch.id,
-                        "chunk_metadata": ch.metadata,
-                        "entities": [],
-                        "relations": [],
-                    },
-                }
-
-            try:
-                if not (ch.content or "").strip():
-                    # 无内容：视为「非重试型失败」，后续不重试
-                    return _empty_payload("empty", "no content")
-
-                res = await self.information_extraction_agent.arun(
-                    ch.content,
-                    timeout=self.config.agent.async_timeout,
-                    max_attempts=self.config.agent.async_max_attempts,
-                    backoff_seconds=self.config.agent.async_backoff_seconds,
-                )
-
-                # 下游主动返回 error
-                if isinstance(res, dict) and res.get("error"):
-                    msg = str(res["error"])
-                    # 这里不区分 retryable / non-retryable，统一交给 run_async_with_retries 做多轮重试
-                    return _empty_payload("downstream", msg)
-
-                if isinstance(res, dict):
-                    res = dict(res)
-                else:
-                    res = {}
-
-                res.update(chunk_id=ch.id, chunk_metadata=ch.metadata)
-                if "entities" not in res:
-                    res["entities"] = []
-                if "relations" not in res:
-                    res["relations"] = []
-
-                payload = res
-
-                # ⭐ 成功时，直接写 tmp，避免后面异常丢失结果
-                self._save_chunk_result(ch.id, payload)
-
-                return {
-                    "ok": True,
-                    "error_kind": "ok",
-                    "error": "",
-                    "payload": payload,
-                }
-
-            # Python 3.11+ 下 CancelledError 是 BaseException，要单独抓
-            except asyncio.CancelledError as e:
-                # 把 CancelledError 当作一次「可重试失败」，不要让它向外冒
-                return _empty_payload("cancelled", f"cancelled: {e}")
-
-            except asyncio.TimeoutError:
-                # 超时：这轮失败，之后由 run_async_with_retries 在下一轮集中重试
-                return _empty_payload("timeout", "timeout")
-
-            except Exception as e:
-                return _empty_payload("other", f"{type(e).__name__}: {e}")
-
-        def _key_fn(ch: TextChunk) -> str:
-            return ch.id
-
-        def _is_success(res: Dict[str, Any]) -> bool:
-            """
-            控制哪些结果视为「完成，不再重试」：
-            - ok == True → 完成
-            - error_kind == "empty" → 视为完成（无内容没必要重试）
-            其它（timeout/cancelled/downstream/other）都视为失败，会在后续轮次重试。
-            """
-            if not isinstance(res, dict):
-                return False
-            if res.get("ok"):
-                return True
-            if res.get("error_kind") == "empty":
-                return True
-            return False
-
-        max_rounds = getattr(self.config.agent, "async_max_attempts", 3)
-        concurrency = getattr(self, "max_workers", 16)
-        backoff = getattr(self.config.agent, "async_backoff_seconds", 1.0)
-        timeout = getattr(self.config.agent, "async_timeout", 600.0)
-
-        # ---- 2) 交给 run_async_with_retries 做多轮并发调度 ----
-        final_map, still_failed_ids = await run_async_with_retries(
-            items=pending_chunks,
-            work_fn=_work,
-            key_fn=_key_fn,
-            is_success_fn=_is_success,
-            max_rounds=max_rounds,
-            concurrency=concurrency,
-            desc_label="Entity/Relation extraction",
-            retry_backoff_seconds=backoff,
-            per_task_timeout=timeout,
-            decay_per_round=0.7,
-            use_exponential_backoff=True,
-        )
-
-        # ---- 3) 对仍然失败的 chunk 写入 stub 结果（空实体 + 错误信息），保证每个 chunk 都有文件 ----
-        if still_failed_ids:
-            for cid in still_failed_ids:
-                ch = chunk_by_id.get(cid)
-                md = ch.metadata if ch is not None else {}
-                payload = {
-                    "chunk_id": cid,
-                    "chunk_metadata": md,
+                    "document_id": doc_id,
+                    "document_metadata": pack.get("document_metadata") or {},
+                    "chunk_ids": chunk_ids,
                     "entities": [],
                     "relations": [],
-                    "error": f"extraction failed after {max_rounds} rounds",
-                }
-                self._save_chunk_result(cid, payload)
-
-        # ---- 4) 合并所有 tmp 结果为 extraction_results.json ----
-        all_results = self._load_all_tmp_results()
-        out_path = os.path.join(base, "extraction_results.json")
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(all_results, f, ensure_ascii=False, indent=2)
-
-        if verbose:
-            logger.info(
-                f"Entity & relation extraction finished. "
-                f"Total chunks: {len(desc_chunks)}, results written: {len(all_results)}"
-            )
-            if still_failed_ids:
-                logger.warning(
-                    f"{len(still_failed_ids)} chunks still failed after {max_rounds} rounds. "
-                    f"Examples: {list(still_failed_ids)[:10]} ..."
-                )
-
-    # ═════════════════════════════════════════════════════════════════════
-    #  4) Attribute extraction & refinement
-    # ═════════════════════════════════════════════════════════════════════
-    def run_extraction_refinement(self, verbose=False):
-        KW = ("闪回", "一组蒙太奇")
-        base = self.config.storage.knowledge_graph_path
-        extraction_results = json.load(open(os.path.join(base, "extraction_results.json"), "r", encoding="utf-8"))
-
-        # ★ 新增：别名/编号归一化（提前去掉诸如 “周喆直[73]” 的编号后缀）
-        extraction_results = self._pre_refine_alias_canonicalize(extraction_results)
-
-        # 下面保持你原有的清洗与 refine 流程
-        for doc in extraction_results:
-            ents = doc.get("entities", [])
-            removed_names = {e.get("name", "") for e in ents if any(k in e.get("name", "") for k in KW)}
-            doc["entities"] = [e for e in ents if e.get("name", "") not in removed_names]
-
-            rels = doc.get("relations", [])
-            doc["relations"] = [
-                r for r in rels
-                if not any(k in r.get("subject", "") or k in r.get("object", "") for k in KW)
-                and r.get("subject", "") not in removed_names
-                and r.get("object", "") not in removed_names
-            ]
-
-        if verbose:
-            logger.info("Refining entity types...")
-        extraction_results = self.graph_preprocessor.refine_entity_types(extraction_results)
-        # with open(os.path.join(base, "extraction_results_1.json"), "w", encoding="utf-8") as f:
-        #     json.dump(extraction_results, f, ensure_ascii=False, indent=2)
-
-        if verbose:
-            logger.info("Refining entity scope...")
-        extraction_results = self.graph_preprocessor.refine_entity_scope(extraction_results)
-
-        if verbose:
-            logger.info("Running entity disambiguation...")
-        extraction_results = self.graph_preprocessor.run_entity_disambiguation(extraction_results)
-
-        with open(os.path.join(base, "extraction_results_refined.json"), "w", encoding="utf-8") as f:
-            json.dump(extraction_results, f, ensure_ascii=False, indent=2)
-
-
-
-    def extract_entity_attributes(self, verbose: bool = True) -> Dict[str, Entity]:
-        return asyncio.run(self.extract_entity_attributes_async(verbose=verbose))
-
-    async def extract_entity_attributes_async(
-        self,
-        verbose: bool = True,
-        degree_threshold: int = 2,
-    ) -> Dict[str, Any]:
-        """
-        基于 entity_basic_info.json 的实体属性抽取（多轮重试 + 断点续跑版）
-
-        只对 total_degree > degree_threshold 的实体调用 LLM 抽属性；
-        其余实体直接写回，properties 设为空字典。
-        """
-
-        base = self.config.storage.knowledge_graph_path
-        # 先重新跑一遍 merge_entities_info，确保 total_degree 已经写入 entity_basic_info.json
-        with open(os.path.join(base, "extraction_results_refined.json"), "r", encoding="utf-8") as f:
-            extraction_results = json.load(f)
-        self.merge_entities_info(extraction_results)
-
-        basic_path = os.path.join(base, "entity_basic_info.json")
-        if not os.path.exists(basic_path):
-            raise FileNotFoundError(
-                f"entity_basic_info.json not found at {basic_path}. "
-                f"Please make sure merge_entities_info() has been called before attribute extraction."
-            )
-
-        # 1) 读取 basic info（id -> Entity）
-        ent_raw = json.load(open(basic_path, "r", encoding="utf-8"))
-        entities_by_id: Dict[str, Entity] = {
-            eid: Entity(**d) for eid, d in ent_raw.items()
-        }
-
-        # ---------- 断点续跑相关工具 ----------
-        def _get_attr_tmp_dir() -> str:
-            tmp_dir = os.path.join(base, "entity_attr_tmp")
-            os.makedirs(tmp_dir, exist_ok=True)
-            return tmp_dir
-
-        def _load_existing_attr_ids() -> Set[str]:
-            tmp_dir = _get_attr_tmp_dir()
-            if not os.path.exists(tmp_dir):
-                return set()
-            ids = set()
-            for name in os.listdir(tmp_dir):
-                if name.endswith(".json"):
-                    ids.add(name[:-5])
-            return ids
-
-        def _save_attr_result(entity_id: str, payload: Dict[str, Any]) -> None:
-            tmp_dir = _get_attr_tmp_dir()
-            path = os.path.join(tmp_dir, f"{entity_id}.json")
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-
-        # ---------- 2) 按 total_degree 分组：低度数跳过， 高度数跑 LLM ----------
-        done_ids = _load_existing_attr_ids()
-        all_ids = list(entities_by_id.keys())
-
-        # 注意：有些旧数据可能没有 total_degree 字段，这里默认 0
-        high_degree_ids: List[str] = []
-        low_degree_ids: List[str] = []
-        for eid, ent in entities_by_id.items():
-            td = getattr(ent, "total_degree", 0)
-            if td > degree_threshold or ent.type == "Event":
-                high_degree_ids.append(eid)
-            else:
-                low_degree_ids.append(eid)
-
-        # 对 total_degree <= threshold 且尚未有 tmp 的实体：直接写 stub，properties 设为空
-        low_pending_ids = [eid for eid in low_degree_ids if eid not in done_ids]
-        for eid in low_pending_ids:
-            ent = deepcopy(entities_by_id[eid])
-            # 明确将 properties 清空
-            ent.properties = {}
-            payload = {
-                "entity_id": eid,
-                "entity": ent.dict(),
-                "error": f"skipped: total_degree={getattr(ent, 'total_degree', 0)} <= threshold={degree_threshold}",
-            }
-            _save_attr_result(eid, payload)
-
-        # 这些低度数实体已经“完成”，加入 done 集合
-        done_ids |= set(low_pending_ids)
-
-        # 只对 high_degree_ids 里尚未处理的实体跑 LLM
-        pending_ids = [eid for eid in high_degree_ids if eid not in done_ids]
-
-        if verbose:
-            logger.info(
-                "Starting async attribute extraction with checkpointing (degree-filtered). "
-                f"#entities(total): {len(all_ids)}, "
-                f"high_degree(>{degree_threshold}): {len(high_degree_ids)}, "
-                f"low_degree(<= {degree_threshold}): {len(low_degree_ids)}, "
-                f"already_done(tmp exists): {len(done_ids)}, "
-                f"pending_high_degree_for_LLM: {len(pending_ids)}"
-            )
-
-        # 如果没有任何高 degree pending 实体：直接合并 tmp -> entity_info.json
-        if not pending_ids:
-            if verbose:
-                logger.info("No high-degree entities pending. Skipping LLM attribute extraction.")
-            tmp_dir = _get_attr_tmp_dir()
-            merged_entities: Dict[str, Dict[str, Any]] = {}
-
-            for name in os.listdir(tmp_dir):
-                if not name.endswith(".json"):
-                    continue
-                path = os.path.join(tmp_dir, name)
-                try:
-                    data = json.load(open(path, "r", encoding="utf-8"))
-                except Exception as e:
-                    logger.warning(f"Failed to load attr tmp {path}: {e}")
-                    continue
-
-                eid = data.get("entity_id")
-                ent_data = data.get("entity")
-                if eid and isinstance(ent_data, dict):
-                    merged_entities[eid] = ent_data
-
-            output_path = os.path.join(base, "entity_info.json")
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(merged_entities, f, ensure_ascii=False, indent=2)
-
-            return {
-                "status": "success",
-                "processed_entities": len(merged_entities),
-                "output_path": output_path,
-                "failed_entities": [],
-            }
-
-        # 为仍然失败的情况准备一个索引，方便最后写 stub
-        def _get_orig_entity(eid: str) -> Entity:
-            return entities_by_id[eid]
-
-        async def _work(entity_id: str) -> Dict[str, Any]:
-            """
-            对单个实体做一次属性抽取尝试（不在内部 while 重试）。
-            返回：
-                {
-                    "ok": bool,
-                    "error_kind": str,   # "ok"/"empty"/"timeout"/"cancelled"/"downstream"/"other"
-                    "error": str,
-                    "payload": (entity_id, Entity or None)
-                }
-            """
-            ent = entities_by_id[entity_id]
-
-            def _empty_ret(kind: str, msg: str) -> Dict[str, Any]:
-                return {
-                    "ok": False,
-                    "error_kind": kind,
-                    "error": msg,
-                    "payload": (entity_id, None),
+                    "error": f"{type(e).__name__}: {e}",
                 }
 
-            # 描述为空：视为完成，不调 LLM，直接保持原实体
-            txt = ent.description or ""
-            if not txt.strip():
-                payload_ent = deepcopy(ent)
-                payload = {
-                    "entity_id": entity_id,
-                    "entity": payload_ent.dict(),
-                    "error": "no description",
-                }
-                _save_attr_result(entity_id, payload)
-                return {
-                    "ok": True,
-                    "error_kind": "empty",
-                    "error": "no description",
-                    "payload": (entity_id, payload_ent),
-                }
-
-            try:
-                res = await self.attribute_extraction_agent.arun(
-                    text=txt,
-                    entity_name=ent.name,
-                    entity_type=ent.type,
-                    version=ent.version,
-                    source_chunks=ent.source_chunks,
-                    additional_chunks=ent.additional_chunks,
-                    timeout=1200,
-                    max_attempts=self.config.agent.async_max_attempts,
-                    backoff_seconds=self.config.agent.async_backoff_seconds,
-                )
-
-                if isinstance(res, dict) and res.get("error"):
-                    msg = str(res["error"])
-                    return _empty_ret("downstream", msg)
-
-                attrs = res.get("attributes", {}) if isinstance(res, dict) else {}
-                if isinstance(attrs, str):
-                    try:
-                        attrs = json.loads(attrs)
-                    except json.JSONDecodeError:
-                        return _empty_ret("validation", "attr JSON decode failed")
-
-                new_ent = deepcopy(ent)
-                new_ent.properties = attrs or {}
-
-                nd = (res.get("new_description", "") if isinstance(res, dict) else "")
-                if nd:
-                    new_ent.description = nd
-
-                # 成功：写 tmp
-                payload = {
-                    "entity_id": entity_id,
-                    "entity": new_ent.dict(),
-                    "error": "",
-                }
-                _save_attr_result(entity_id, payload)
-
-                return {
-                    "ok": True,
-                    "error_kind": "ok",
-                    "error": "",
-                    "payload": (entity_id, new_ent),
-                }
-
-            except asyncio.CancelledError as e:
-                # 把 CancelledError 当作一次可重试失败，不向外冒
-                return _empty_ret("cancelled", f"cancelled: {e}")
-
-            except asyncio.TimeoutError:
-                return _empty_ret("timeout", "timeout")
-
-            except Exception as e:
-                return _empty_ret("other", f"{type(e).__name__}: {e}")
-
-        def _key_fn(entity_id: str) -> str:
-            return entity_id
-
-        def _is_success(res: Dict[str, Any]) -> bool:
-            """
-            认为“完成、不再重试”的条件：
-            - ok == True → 完成
-            - error_kind == "empty" → 描述为空，不必重试
-            """
+        def _is_empty_fn(res: Any) -> bool:
             if not isinstance(res, dict):
-                return False
-            if res.get("ok"):
                 return True
-            if res.get("error_kind") == "empty":
+            if res.get("ok") is not True:
                 return True
             return False
 
-        max_rounds = getattr(self.config.agent, "async_max_attempts", 3)
-        concurrency = getattr(self, "max_workers", 16)
-        backoff = getattr(self.config.agent, "async_backoff_seconds", 1.0)
-        timeout = getattr(self.config.agent, "async_timeout", 600.0)
+        mem_cfg = getattr(self.config, "extraction_memory", None)
+        mem_store_path = (
+            str(getattr(mem_cfg, "realtime_store_path", "") or "")
+            if mem_cfg is not None
+            else ""
+        ) or "data/memory/realtime_memory"
+        os.makedirs(mem_store_path, exist_ok=True)
+        mem_dump_path = os.path.join(mem_store_path, "memory_dump_realtime.json")
+        mem_realtime_every = max(1, int(getattr(mem_cfg, "flush_every_n_docs", 10) or 10))
+        mem_realtime_ok_count = 0
+        distill_every = max(1, int(getattr(mem_cfg, "distill_every_n_docs", 20) or 20))
+        distill_docs_pending = 0
 
-        final_map, still_failed = await run_async_with_retries(
-            items=pending_ids,
-            work_fn=_work,
-            key_fn=_key_fn,
-            is_success_fn=_is_success,
-            max_rounds=max_rounds,
-            concurrency=concurrency,
-            desc_label="Attribute extraction",
-            retry_backoff_seconds=backoff,
-            per_task_timeout=timeout,
-            decay_per_round=0.7,
-            use_exponential_backoff=True,
+        def _attempt_checkpoint(idx: int, res: Any, ok: bool, attempt_idx: int) -> None:
+            nonlocal mem_realtime_ok_count, distill_docs_pending
+            if not (0 <= idx < len(items)):
+                return
+            doc_id = items[idx]
+            if ok and isinstance(res, dict):
+                self._save_tmp(doc_id, res)
+                if self._memory_store is not None:
+                    try:
+                        self._memory_store.mark_doc_processed()
+                    except Exception:
+                        pass
+                    mem_realtime_ok_count += 1
+                    if mem_realtime_ok_count >= mem_realtime_every:
+                        try:
+                            self._memory_store.flush()
+                            self._memory_store.dump_to_json(mem_dump_path, silent=True)
+                        except Exception as e:
+                            logger.warning("Realtime memory checkpoint failed: %s", e)
+                        mem_realtime_ok_count = 0
+                if self._memory_distiller is not None:
+                    distill_docs_pending += 1
+                    if distill_docs_pending >= distill_every:
+                        self.maybe_distill_memory(
+                            docs_processed=distill_docs_pending,
+                            force=False,
+                            reason="during_extract",
+                            extra_context={"checkpoint_doc_id": doc_id},
+                        )
+                        distill_docs_pending = 0
+                return
+            pack = doc2chunks.get(doc_id, {}) or {}
+            chunks = pack.get("chunks") or []
+            chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and c.get("id")]
+            payload = {
+                "ok": False,
+                "document_id": doc_id,
+                "document_metadata": pack.get("document_metadata") or {},
+                "chunk_ids": chunk_ids,
+                "entities": [],
+                "relations": [],
+                "error": f"attempt_{attempt_idx+1}_failed",
+            }
+            self._save_tmp(doc_id, payload)
+
+        results_map, failed_indices = run_concurrent_with_retries(
+            items=items,
+            task_fn=_task,
+            per_task_timeout=per_task_timeout,
+            max_retry_rounds=max(1, int(retries)),
+            max_in_flight=concurrency,
+            max_workers=concurrency,
+            thread_name_prefix="extract",
+            desc_prefix="Extracting documents",
+            treat_empty_as_failure=True,
+            is_empty_fn=_is_empty_fn,
+            on_attempt_result=_attempt_checkpoint,
         )
 
-        # ---------- 对仍失败的实体写 stub 结果 ----------
-        failed_entities = sorted(list(still_failed))
-        if failed_entities:
-            for eid in failed_entities:
-                orig_ent = _get_orig_entity(eid)
-                payload = {
-                    "entity_id": eid,
-                    "entity": orig_ent.dict(),
-                    "error": f"attribute extraction failed after {max_rounds} rounds",
+        # persist
+        for idx, doc_id in enumerate(items):
+            res = results_map.get(idx)
+            if not isinstance(res, dict):
+                pack = doc2chunks.get(doc_id, {}) or {}
+                res = {
+                    "ok": False,
+                    "document_id": doc_id,
+                    "document_metadata": pack.get("document_metadata") or {},
+                    "chunk_ids": [],
+                    "entities": [],
+                    "relations": [],
+                    "error": "unknown failure",
                 }
-                _save_attr_result(eid, payload)
 
-        # ---------- 合并 tmp -> entity_info.json ----------
-        tmp_dir = _get_attr_tmp_dir()
-        merged_entities: Dict[str, Dict[str, Any]] = {}
+            self._save_tmp(doc_id, res)
 
-        for name in os.listdir(tmp_dir):
-            if not name.endswith(".json"):
-                continue
-            path = os.path.join(tmp_dir, name)
+            if res.get("ok") is True:
+                try:
+                    with open(out_ent_jsonl, "a", encoding="utf-8") as f:
+                        f.write(
+                            json.dumps(
+                                {
+                                    "document_id": doc_id,
+                                    "document_metadata": res.get("document_metadata") or {},
+                                    "entities": res.get("entities") or [],
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                    with open(out_rel_jsonl, "a", encoding="utf-8") as f:
+                        f.write(
+                            json.dumps(
+                                {
+                                    "document_id": doc_id,
+                                    "document_metadata": res.get("document_metadata") or {},
+                                    "relations": res.get("relations") or [],
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                except Exception:
+                    pass
+
+        # merge all
+        merged: Dict[str, Any] = {}
+        for doc_id in document_ids:
+            p = self._load_tmp(doc_id)
+            if isinstance(p, dict):
+                merged[doc_id] = p
+        dump_json(out_results, merged)
+
+        if verbose:
+            ok_cnt = sum(1 for v in merged.values() if isinstance(v, dict) and v.get("ok"))
+            fail_cnt = sum(1 for v in merged.values() if isinstance(v, dict) and (not v.get("ok")))
+            logger.info(f"document extraction finished. ok={ok_cnt} failed={fail_cnt} output={out_results}")
+
+            if failed_indices:
+                failed_docs = [items[i] for i in failed_indices if 0 <= i < len(items)]
+                logger.warning(f"Failed documents after retries: {failed_docs[:10]} (total={len(failed_docs)})")
+
+        # Flush memory store at batch end
+        if self._memory_store is not None:
             try:
-                data = json.load(open(path, "r", encoding="utf-8"))
-            except Exception as e:
-                logger.warning(f"Failed to load attr tmp {path}: {e}")
+                self._memory_store.flush()
+            except Exception as _e:
+                logger.warning("Memory store flush failed: %s", _e)
+
+        if self._memory_distiller is not None and distill_docs_pending > 0:
+            self.maybe_distill_memory(
+                docs_processed=distill_docs_pending,
+                force=False,
+                reason="post_extract_batch_remainder",
+                extra_context={
+                    "ok_documents": sum(1 for v in merged.values() if isinstance(v, dict) and v.get("ok") is True),
+                    "failed_documents": sum(1 for v in merged.values() if isinstance(v, dict) and v.get("ok") is not True),
+                },
+            )
+
+    # -------------------------
+    # 3) Extraction refinement
+    # -------------------------
+    def run_extraction_refinement(
+        self,
+        *,
+        verbose: bool = True,
+        extraction_results_path: Optional[str] = None,
+        refined_results_path: Optional[str] = None,
+        reset_outputs: bool = False,
+        enable_scope_refine_llm: bool = False,
+        type_timeout: float = 120.0,
+        scope_timeout: float = 180.0,
+        disambig_timeout_summary: float = 180.0,
+        disambig_timeout_merge: float = 120.0,
+    ) -> None:
+        base = self._base_dir()
+
+        if extraction_results_path is None:
+            extraction_results_path = os.path.join(base, "extraction_results.json")
+
+        if refined_results_path is None:
+            refined_results_path = os.path.join(base, "extraction_results_refined.json")
+
+        if not os.path.exists(extraction_results_path):
+            raise FileNotFoundError(f"Extraction results not found: {extraction_results_path}")
+
+        if reset_outputs and os.path.exists(refined_results_path):
+            try:
+                os.remove(refined_results_path)
+            except Exception:
+                pass
+
+        with open(extraction_results_path, "r", encoding="utf-8") as f:
+            document_results: Dict[str, Dict[str, Any]] = json.load(f)
+
+        if not isinstance(document_results, dict) or not document_results:
+            if verbose:
+                logger.warning("extraction_results is empty or invalid. Nothing to refine.")
+            with open(refined_results_path, "w", encoding="utf-8") as f:
+                json.dump({}, f, ensure_ascii=False, indent=2)
+            return
+
+        self.graph_refiner = GraphRefiner(self.config, self.llm, memory_store=self._memory_store)
+        refined = self.graph_refiner.run_all(
+            document_results,
+            verbose=verbose,
+            type_timeout=type_timeout,
+            scope_timeout=scope_timeout,
+            disambig_timeout_summary=disambig_timeout_summary,
+            disambig_timeout_merge=disambig_timeout_merge,
+            enable_scope_refine_llm=enable_scope_refine_llm,
+        )
+
+        os.makedirs(os.path.dirname(refined_results_path), exist_ok=True)
+        with open(refined_results_path, "w", encoding="utf-8") as f:
+            json.dump(refined, f, ensure_ascii=False, indent=2)
+
+        if self._memory_store is not None:
+            try:
+                self._memory_store.flush()
+            except Exception as _e:
+                logger.warning("Memory store flush after refinement failed: %s", _e)
+
+        # Distillation is intentionally triggered in extraction stage only.
+
+    # -------------------------
+    # 4) Build entity_basic_info.json + relation_basic_info.json
+    # -------------------------
+    def build_entity_and_relation_basic_info(
+        self,
+        *,
+        verbose: bool = True,
+        refined_results_path: Optional[str] = None,
+        entity_output_path: Optional[str] = None,
+        relation_output_path: Optional[str] = None,
+        merge_induced_across_documents: bool = False,
+    ) -> None:
+        base = self._base_dir()
+
+        if refined_results_path is None:
+            refined_results_path = os.path.join(base, "extraction_results_refined.json")
+        if entity_output_path is None:
+            entity_output_path = os.path.join(base, "entity_basic_info.json")
+        if relation_output_path is None:
+            relation_output_path = os.path.join(base, "relation_basic_info.json")
+
+        if not os.path.exists(refined_results_path):
+            raise FileNotFoundError(f"Refined results not found: {refined_results_path}")
+
+        document_results: Dict[str, Dict[str, Any]] = load_json(refined_results_path)
+        if not isinstance(document_results, dict) or not document_results:
+            dump_json(entity_output_path, {})
+            dump_json(relation_output_path, [])
+            if verbose:
+                logger.warning("Refined results empty. Wrote empty outputs.")
+            return
+
+        def _stable_id(key: str, prefix: str) -> str:
+            return prefix + hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+
+        def _as_type_list(t: Any) -> List[str]:
+            if isinstance(t, str) and t.strip():
+                return [t.strip()]
+            if isinstance(t, list):
+                out: List[str] = []
+                for x in t:
+                    if isinstance(x, str) and x.strip():
+                        out.append(x.strip())
+                return out
+            return []
+
+        def _norm_type_value(t: Any) -> Any:
+            tl = _as_type_list(t)
+            if not tl:
+                return self.GENERAL_SEMANTIC_TYPE
+
+            allowed = set(getattr(self, "ALLOWED_TYPES", []) or [])
+            if allowed:
+                tl = [x for x in tl if x in allowed] or [self.GENERAL_SEMANTIC_TYPE]
+
+            seen = set()
+            tl2: List[str] = []
+            for x in tl:
+                if x not in seen:
+                    seen.add(x)
+                    tl2.append(x)
+
+            t2c = getattr(self, "TYPE2CATEGORY", {}) or {}
+            cprio = getattr(self, "CATEGORY_PRIORITY", {}) or {}
+
+            def _rank(tp: str) -> Tuple[int, str]:
+                cat = t2c.get(tp, "general_semantic")
+                return (int(cprio.get(cat, 9999)), tp)
+
+            tl2.sort(key=_rank)
+            return tl2[0] if len(tl2) == 1 else tl2
+
+        def _merge_types(a: Any, b: Any) -> Any:
+            al = _as_type_list(a)
+            bl = _as_type_list(b)
+            merged = al + bl
+            return _norm_type_value(merged)
+
+        def _primary_type(t: Any) -> str:
+            tl = _as_type_list(t)
+            if not tl:
+                return self.GENERAL_SEMANTIC_TYPE
+
+            allowed = set(getattr(self, "ALLOWED_TYPES", []) or [])
+            if allowed:
+                tl = [x for x in tl if x in allowed] or [self.GENERAL_SEMANTIC_TYPE]
+
+            t2c = getattr(self, "TYPE2CATEGORY", {}) or {}
+            cprio = getattr(self, "CATEGORY_PRIORITY", {}) or {}
+
+            def _rank(tp: str) -> Tuple[int, str]:
+                cat = t2c.get(tp, "general_semantic")
+                return (int(cprio.get(cat, 9999)), tp)
+
+            tl.sort(key=_rank)
+            return tl[0] if tl else self.GENERAL_SEMANTIC_TYPE
+
+        def _is_induced_primary(primary_type: str) -> bool:
+            induced = set(getattr(self, "INDUCED_TYPES", set()) or set())
+            return primary_type in induced
+
+        def _merge_text(a: str, b: str) -> str:
+            a, b = (a or "").strip(), (b or "").strip()
+            if not b:
+                return a
+            if not a or b in a:
+                return b if not a else a
+            return a + "\n" + b
+
+        # 1) bucket entities
+        buckets: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+        bucket_source_documents: Dict[Tuple[Any, ...], set] = defaultdict(set)
+
+        for document_id, payload in document_results.items():
+            if not isinstance(payload, dict) or payload.get("ok") is False:
                 continue
 
-            eid = data.get("entity_id")
-            ent_data = data.get("entity")
-            if eid and isinstance(ent_data, dict):
-                merged_entities[eid] = ent_data
+            base_document = strip_part_suffix(document_id)
 
-        output_path = os.path.join(base, "entity_info.json")
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(merged_entities, f, ensure_ascii=False, indent=2)
+            for e in (payload.get("entities") or []):
+                if not isinstance(e, dict):
+                    continue
+
+                raw_name = safe_str(e.get("name"))
+                if not raw_name:
+                    continue
+
+                t_raw = e.get("type")
+                t_norm = _norm_type_value(t_raw)
+                t_primary = _primary_type(t_raw)
+
+                scope = safe_str(e.get("scope") or "local").lower() or "local"
+                desc = safe_str(e.get("description"))
+                summ = safe_str(e.get("summary"))
+
+                aliases = e.get("aliases") or []
+                if not isinstance(aliases, list):
+                    aliases = []
+                aliases = [a.strip() for a in aliases if isinstance(a, str) and a.strip()]
+
+                force_local = _is_induced_primary(t_primary) and (not merge_induced_across_documents)
+
+                if scope == "local" or force_local:
+                    bkey = ("local", base_document, t_primary, raw_name)
+                    out_scope = "local"
+                else:
+                    bkey = ("global", t_primary, raw_name)
+                    out_scope = "global"
+
+                if bkey not in buckets:
+                    buckets[bkey] = {
+                        "raw_name": raw_name,
+                        "type": t_norm,
+                        "scope": out_scope,
+                        "description": desc,
+                        "summary": summ,
+                        "aliases": set(aliases),
+                    }
+                else:
+                    ex = buckets[bkey]
+                    ex["type"] = _merge_types(ex.get("type"), t_norm)
+                    ex["description"] = _merge_text(ex.get("description", ""), desc)
+                    ex["summary"] = _merge_text(ex.get("summary", ""), summ)
+                    ex.setdefault("aliases", set()).update(aliases)
+
+                bucket_source_documents[bkey].add(document_id)
+
+        # 2) materialize entities
+        entities_by_id: Dict[str, Dict[str, Any]] = {}
+        local_name_map: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        global_name_map: Dict[str, List[str]] = defaultdict(list)
+
+        for bkey, info in buckets.items():
+            kind = bkey[0]
+            raw_name = info.get("raw_name")
+            aliases = sorted(a for a in info.get("aliases", []) if a != raw_name)
+
+            if kind == "local":
+                _, base_document, t_primary, raw_name = bkey
+                # Keep local entity display name unchanged; uniqueness is handled by id + scope.
+                final_name = raw_name
+                # Legacy behavior (kept for reference):
+                # final_name = f"{raw_name} ({base_document})"
+                ent_id = _stable_id(f"{raw_name}||{t_primary}||{base_document}||local", "ent_")
+                src_docs = sorted(bucket_source_documents[bkey])
+
+                entities_by_id[ent_id] = {
+                    "id": ent_id,
+                    "name": final_name,
+                    "type": info.get("type", self.GENERAL_SEMANTIC_TYPE),
+                    "scope": "local",
+                    "description": info.get("description", ""),
+                    "summary": info.get("summary", ""),
+                    "aliases": aliases,
+                    "source_documents": src_docs,
+                }
+                local_name_map[(base_document, raw_name)].append(ent_id)
+            else:
+                _, t_primary, raw_name = bkey
+                final_name = raw_name
+                ent_id = _stable_id(f"{raw_name}||{t_primary}||global", "ent_")
+                src_docs = sorted(bucket_source_documents[bkey])
+
+                entities_by_id[ent_id] = {
+                    "id": ent_id,
+                    "name": final_name,
+                    "type": info.get("type", self.GENERAL_SEMANTIC_TYPE),
+                    "scope": "global",
+                    "description": info.get("description", ""),
+                    "summary": info.get("summary", ""),
+                    "aliases": aliases,
+                    "source_documents": src_docs,
+                }
+                global_name_map[raw_name].append(ent_id)
+
+        # 3) build relations
+        def _resolve_ids(base_document: str, name: str) -> List[str]:
+            if not name:
+                return []
+            if (base_document, name) in local_name_map:
+                return local_name_map[(base_document, name)]
+            return global_name_map.get(name, [])
+
+        def _choose_one(ids: List[str]) -> str:
+            return ids[0] if ids else ""
+
+        relations_out: List[Dict[str, Any]] = []
+
+        for document_id, payload in document_results.items():
+            if not isinstance(payload, dict) or payload.get("ok") is False:
+                continue
+
+            base_document = strip_part_suffix(document_id)
+            for idx, r in enumerate(payload.get("relations") or []):
+                if not isinstance(r, dict):
+                    continue
+
+                subj = safe_str(r.get("subject"))
+                obj = safe_str(r.get("object"))
+                pred = safe_str(r.get("relation_type") or r.get("predicate"))
+                persist = r.get("persistence") or "phase"
+
+                s_id = _choose_one(_resolve_ids(base_document, subj))
+                o_id = _choose_one(_resolve_ids(base_document, obj))
+
+                if s_id and o_id and pred:
+                    rid_key = f"{s_id}||{pred}||{o_id}||{base_document}"
+                else:
+                    rid_key = f"{subj}||{pred}||{obj}||{base_document}||{idx}"
+
+                rel_id = _stable_id(rid_key, "rel_")
+
+                relations_out.append(
+                    {
+                        "id": rel_id,
+                        "relation_type": pred,
+                        "subject": subj,
+                        "object": obj,
+                        "subject_id": s_id,
+                        "object_id": o_id,
+                        "relation_name": safe_str(r.get("relation_name")),
+                        "description": safe_str(r.get("description")),
+                        "persistence": persist,
+                        "base_document": base_document,
+                        "document_id": document_id,
+                    }
+                )
+
+        dump_json(entity_output_path, entities_by_id)
+        dump_json(relation_output_path, relations_out)
 
         if verbose:
             logger.info(
-                f"Attribute extraction finished. "
-                f"Total entities: {len(all_ids)}, "
-                f"high_degree(>{degree_threshold}) with LLM: {len(high_degree_ids)}, "
-                f"written to entity_info.json: {len(merged_entities)}"
+                "Built basic infos. "
+                f"entity_out={entity_output_path} relation_out={relation_output_path}"
             )
-            if failed_entities:
-                logger.warning(
-                    f"{len(failed_entities)} high-degree entities still failed after {max_rounds} rounds. "
-                    f"Examples: {failed_entities[:10]} ..."
-                )
 
-        return {
-            "status": "success",
-            "processed_entities": len(merged_entities),
-            "output_path": output_path,
-            "failed_entities": failed_entities,
-        }
-
-    # ═════════════════════════════════════════════════════════════════════
-    #  5) Build and store the graph
-    # ═════════════════════════════════════════════════════════════════════
-    def build_graph_from_results(self, verbose: bool = True) -> KnowledgeGraph:
-        """
-        从 refined 抽取结果和实体信息构建内存 KnowledgeGraph，
-        然后落到存储，并在 Neo4j 上做补充与中心性计算。
-
-        关键点：
-        - 使用 entity_info.json 中的实体（id 已经是 stable id）
-        - 用 (name/alias + version) → id 的映射解析关系端点
-        - 场景/章节节点来自 chunk_metadata，通过 contains 关系连接到实体
-        """
-        if verbose:
-            logger.info("Loading refined extraction results and entity info...")
-
-        base = self.config.storage.knowledge_graph_path
-        results_path = os.path.join(base, "extraction_results_refined.json")
-        ent_info_path = os.path.join(base, "entity_info.json")
-        sec_coll_path = os.path.join(base, "section_entities_collection.pkl")
-
-        # chunk 级 refined 结果
-        results = json.load(open(results_path, "r", encoding="utf-8"))
-
-        # id -> Entity（注意 entity_info.json 的 key 当前是 id，我们用 values 更稳）
-        ent_raw = json.load(open(ent_info_path, "r", encoding="utf-8"))
-        entities_by_id: Dict[str, Entity] = {
-            d["id"]: Entity(**d) for d in ent_raw.values()
-        }
-
-        # section_entities_collection: {section_label -> List[Entity]}
-        with open(sec_coll_path, "rb") as f:
-            self.section_entities_collection = pickle.load(f)
-
-        # name+version -> id（含别名），用于从关系中的“名字”解析到实体 id
-        namever2id: Dict[str, str] = {}
-        for e in entities_by_id.values():
-            ver = e.version or "default"
-            key = f"{e.name}||{ver}"
-            namever2id[key] = e.id
-            for al in e.aliases:
-                namever2id.setdefault(f"{al}||{ver}", e.id)
-
-        # 先把实体装入内存图
-        for e in entities_by_id.values():
-            self.kg.add_entity(e)
-
-        if verbose:
-            logger.info("Building knowledge graph (sections, contains, relations)...")
-
-        self.section_names: List[str] = []
-
-        for res in results:
-            md = res.get("chunk_metadata", {}) or {}
-            chunk_id = res.get("chunk_id", "")
-            # version = res.get("version", "default")
-            version = md.get("version", "default")
-            # --------- 场景/章节实体 ---------
-            secs = self._create_section_entities(md, chunk_id, version)
-            for se in secs:
-                if se.name not in self.section_names and se.id not in self.kg.entities:
-                    self.kg.add_entity(se)
-                    self.section_names.append(se.name)
-                else:
-                    # 合并章节的 source_chunks（避免重复）
-                    exist = self.kg.entities.get(se.id)
-                    if exist:
-                        merged = list(dict.fromkeys(list(exist.source_chunks) + list(se.source_chunks)))
-                        exist.source_chunks = merged
-
-            # --------- contains 关系（section -> 实体）---------
-            label = md.get("doc_title", md.get("subtitle", md.get("title", "")))
-            inner_entities = self.section_entities_collection.get(label, [])
-            for se in secs:
-                # 当前版本的 _link_section_to_entities 已经不依赖 inner_entities，
-                # 但是参数保留不动，以兼容老签名。
-                self._link_section_to_entities(se, inner_entities, chunk_id)
-
-            # --------- 普通关系（实体间） ---------
-            for rdata in res.get("relations", []) or []:
-                rel = self._create_relation_from_data(
-                    rdata,
-                    chunk_id,
-                    entities_by_id,   # 目前签名里没用到，可以后面再删参数
-                    namever2id,
-                    version=version,
-                )
-                if rel:
-                    self.kg.add_relation(rel)
-
-        # --------- 落库与图增强 ---------
-        if verbose:
-            logger.info("Persisting graph to databases...")
-        self._store_knowledge_graph(verbose)
-
-        if verbose:
-            logger.info("Enriching event nodes and computing graph metrics...")
+        # Write extraction stats after entity/relation info is ready
         try:
-            self.neo4j_utils.enrich_event_nodes_with_context()
-            self.neo4j_utils.compute_centrality(exclude_rel_types=[self.meta["contains_pred"]])
-        except Exception as e:
-            if verbose:
-                logger.warning(f"Neo4j enrichment/metrics step encountered an issue: {e}")
+            self.write_extraction_stats(
+                entity_output_path=entity_output_path,
+                relation_output_path=relation_output_path,
+                verbose=verbose,
+            )
+        except Exception as _e:
+            logger.warning("write_extraction_stats failed: %s", _e)
 
-        if verbose:
-            st = self.kg.stats()
-            graph_stats = self.graph_store.get_stats()
-            logger.info("Knowledge graph construction completed.")
-            logger.info(f"  - Entities: {graph_stats.get('entities')}")
-            logger.info(f"  - Relations: {graph_stats.get('relations')}")
-            logger.info(f"  - Documents: {st.get('documents')}")
-            logger.info(f"  - Chunks: {st.get('chunks')}")
-
-        return self.kg
-
-    # ═════════════════════════════════════════════════════════════════════
-    #  Internal utilities
-    # ═════════════════════════════════════════════════════════════════════
-    def _ekey(self, name: str, version: str = None, entity_type: str = None) -> str:
+    # -------------------------
+    # 4b) Extraction statistics
+    # -------------------------
+    def write_extraction_stats(
+        self,
+        *,
+        extraction_results_path: Optional[str] = None,
+        entity_output_path: Optional[str] = None,
+        relation_output_path: Optional[str] = None,
+        output_path: Optional[str] = None,
+        verbose: bool = True,
+    ) -> None:
         """
-        生成实体在合并映射中的唯一键。
-        - name: 实体名称
-        - version: 文档版本（缺省视为 "default"）
+        Compile and write extraction statistics to audit_logs/extraction_stats.json.
+
+        Reads from (whichever files exist):
+          - extraction_results.json          : raw entity/relation counts per document
+          - entity_basic_info.json           : final entity counts by type and scope
+          - relation_basic_info.json         : final relation counts by relation_type
+          - audit_logs/refine_entity_types_audit.json        : type-conflict repair counts
+          - audit_logs/run_entity_disambiguation_audit.json  : disambiguation merge counts
         """
-        output_str = f"{name}"
-        if version:
-            output_str += f"||{version}"
-        if entity_type:
-            output_str += f"||{entity_type}"
+        import time as _time
 
-        return output_str
+        base = self._base_dir()
+        audit_dir = os.path.join(base, "audit_logs")
+        os.makedirs(audit_dir, exist_ok=True)
 
-    
-    def merge_entities_info(self, extraction_results):
-        """
-        Merge/deduplicate entities across chunks, **within the same version**.
+        if extraction_results_path is None:
+            extraction_results_path = os.path.join(base, "extraction_results.json")
+        if entity_output_path is None:
+            entity_output_path = os.path.join(base, "entity_basic_info.json")
+        if relation_output_path is None:
+            relation_output_path = os.path.join(base, "relation_basic_info.json")
+        if output_path is None:
+            output_path = os.path.join(audit_dir, "extraction_stats.json")
 
-        - 用 (name, version, primary_type) 作为内部合并 key
-        - Event 不做跨 chunk 合并（每个事件节点独立）
-        - 对 scope=local 和 Action/Emotion/Goal 这类“局部/动作类”：
-            * 同一 version 内，如已存在同名同主类型实体且出现在不同 section，
-            则自动重命名（name_1, name_2, ...），避免误合并
-        - 合并完成后：
-            * 为 Part_2 实体回填 additional_chunks = 同名同主类型 Part_1 实体的 source_chunks
-            * 持久化 self.section_entities_collection 到 section_entities_collection.pkl
-            * 基于 relations 构建有向图，写回 total_degree（入度+出度）
-
-        返回：
-            Dict[Tuple[name, version, primary_type], Entity]
-        """
-
-        # --- 主类型归一：list/空 → 字符串（Event 优先，其次首个，否则 Concept） ---
-        def _primary_type_local(t) -> str:
-            if isinstance(t, list):
-                return "Event" if "Event" in t else (t[0] if t else "Concept")
-            return t or "Concept"
-
-        # key: (name, version, primary_type) -> Entity
-        entity_map: Dict[tuple, Entity] = {}
-
-        # chunk_id -> section(doc_title) 映射，用于“局部/动作类跨 section 重命名”
-        self.chunk2section_map = {
-            result["chunk_id"]: (result.get("chunk_metadata", {}) or {}).get("doc_title", "")
-            for result in extraction_results
+        stats: Dict[str, Any] = {
+            "created_at": _time.strftime("%Y%m%d_%H%M%S", _time.localtime()),
         }
 
-        # section_label -> List[Entity]，用于后续 contains 关系构建
-        self.section_entities_collection = {}
+        # ------------------------------------------------------------------
+        # Raw extraction counts (before refinement)
+        # ------------------------------------------------------------------
+        if os.path.exists(extraction_results_path):
+            try:
+                doc_results = load_json(extraction_results_path)
+                if isinstance(doc_results, dict):
+                    ok_docs = [v for v in doc_results.values() if isinstance(v, dict) and v.get("ok")]
+                    fail_docs = [v for v in doc_results.values() if isinstance(v, dict) and not v.get("ok")]
+                    raw_ents = sum(len(v.get("entities") or []) for v in ok_docs)
+                    raw_rels = sum(len(v.get("relations") or []) for v in ok_docs)
+                    stats["extraction_raw"] = {
+                        "num_documents": len(doc_results),
+                        "num_documents_ok": len(ok_docs),
+                        "num_documents_failed": len(fail_docs),
+                        "entities_total": raw_ents,
+                        "relations_total": raw_rels,
+                    }
+            except Exception as _e:
+                logger.warning("write_extraction_stats: extraction_results read error: %s", _e)
 
-        base = self.config.storage.knowledge_graph_path
+        # ------------------------------------------------------------------
+        # Final entity counts (by type and scope)
+        # ------------------------------------------------------------------
+        if os.path.exists(entity_output_path):
+            try:
+                entities_by_id = load_json(entity_output_path)
+                if isinstance(entities_by_id, dict):
+                    by_type: Dict[str, int] = defaultdict(int)
+                    by_scope: Dict[str, int] = defaultdict(int)
+                    for ent in entities_by_id.values():
+                        if not isinstance(ent, dict):
+                            continue
+                        t = ent.get("type")
+                        t_str = t[0] if isinstance(t, list) and t else (safe_str(t) or "unknown")
+                        by_type[t_str] += 1
+                        sc = safe_str(ent.get("scope") or "unknown")
+                        by_scope[sc] += 1
+                    stats["entity_counts"] = {
+                        "total": len(entities_by_id),
+                        "by_type": dict(sorted(by_type.items(), key=lambda x: -x[1])),
+                        "by_scope": dict(by_scope),
+                    }
+            except Exception as _e:
+                logger.warning("write_extraction_stats: entity_basic_info read error: %s", _e)
 
-        # ------------------------- 第一阶段：按 chunk 汇总 & 合并实体 -------------------------
-        for result in extraction_results:
-            md = result.get("chunk_metadata", {}) or {}
-            chunk_id = result.get("chunk_id", "")
-            # section label：优先 doc_title，其次 subtitle/title
-            label = md.get("doc_title", md.get("subtitle", md.get("title", "")))
-            if label not in self.section_entities_collection:
-                self.section_entities_collection[label] = []
+        # ------------------------------------------------------------------
+        # Final relation counts (by relation_type)
+        # ------------------------------------------------------------------
+        if os.path.exists(relation_output_path):
+            try:
+                relations = load_json(relation_output_path)
+                if isinstance(relations, list):
+                    by_rtype: Dict[str, int] = defaultdict(int)
+                    for rel in relations:
+                        if not isinstance(rel, dict):
+                            continue
+                        rt = safe_str(rel.get("relation_type") or "unknown")
+                        by_rtype[rt] += 1
+                    stats["relation_counts"] = {
+                        "total": len(relations),
+                        "by_type": dict(sorted(by_rtype.items(), key=lambda x: -x[1])),
+                    }
+            except Exception as _e:
+                logger.warning("write_extraction_stats: relation_basic_info read error: %s", _e)
 
-            version = md.get("version", "default")
+        # ------------------------------------------------------------------
+        # Repair counts from audit logs
+        # ------------------------------------------------------------------
+        repairs: Dict[str, Any] = {}
 
-            # 记录本 chunk 内「旧名 → 新名」的映射，用于同步更新 relations
-            rename_map: Dict[str, str] = {}
+        # — Entity type conflict repairs —
+        type_audit_path = os.path.join(audit_dir, "refine_entity_types_audit.json")
+        if os.path.exists(type_audit_path):
+            try:
+                type_audit = load_json(type_audit_path)
+                if isinstance(type_audit, dict):
+                    audits = type_audit.get("audits") or []
+                    drop_count = sum(1 for a in audits if isinstance(a, dict) and a.get("decision") == "drop")
+                    keep_count = sum(1 for a in audits if isinstance(a, dict) and a.get("decision") == "keep")
+                    rename_count = sum(
+                        len([
+                            act for act in (a.get("actions") or [])
+                            if isinstance(act, dict) and act.get("new_name")
+                        ])
+                        for a in audits if isinstance(a, dict) and a.get("decision") == "keep"
+                    )
+                    relation_fix_count = sum(
+                        len(a.get("relation_fixes") or [])
+                        for a in audits if isinstance(a, dict)
+                    )
+                    repairs["entity_type_conflicts"] = {
+                        "num_entities_checked": int(type_audit.get("num_entities_checked", 0)),
+                        "num_conflict_cases": int(type_audit.get("num_audit_items", 0)),
+                        "drop": drop_count,
+                        "keep": keep_count,
+                        "entity_renames_from_keep": rename_count,
+                        "relation_fixes": relation_fix_count,
+                    }
+            except Exception as _e:
+                logger.warning("write_extraction_stats: refine_entity_types audit read error: %s", _e)
 
-            for ent_data in result.get("entities", []) or []:
-                # 原始类型 & 主类型
-                t_raw = ent_data.get("type", "Concept")
-                t_primary = _primary_type_local(t_raw)
+        # — Entity disambiguation —
+        disambig_audit_path = os.path.join(audit_dir, "run_entity_disambiguation_audit.json")
+        if os.path.exists(disambig_audit_path):
+            try:
+                disambig_audit = load_json(disambig_audit_path)
+                if isinstance(disambig_audit, dict):
+                    audits = disambig_audit.get("audits") or []
+                    meta_entry = next((a for a in audits if isinstance(a, dict) and a.get("kind") == "meta"), {})
+                    meta_stats = meta_entry.get("stats", {}) or {}
+                    merge_groups = [a for a in audits if isinstance(a, dict) and a.get("kind") == "merge_group"]
+                    rename_map_entry = next(
+                        (a for a in audits if isinstance(a, dict) and a.get("kind") == "apply_rename_map"), {}
+                    )
+                    rename_stats = rename_map_entry.get("stats", {}) or {}
+                    repairs["entity_disambiguation"] = {
+                        "entities_total": int(meta_stats.get("entities_total", 0)),
+                        "entities_considered": int(meta_stats.get("entities_considered", 0)),
+                        "entities_skipped_scope": int(meta_stats.get("entities_skipped_scope", 0)),
+                        "merge_groups_detected": len(merge_groups),
+                        "entities_merged_aliases": int(rename_stats.get("entity_renames", 0)),
+                        "relation_endpoint_renames": int(rename_stats.get("relation_endpoint_renames", 0)),
+                    }
+            except Exception as _e:
+                logger.warning("write_extraction_stats: disambiguation audit read error: %s", _e)
 
-                name = ent_data["name"]
-                key = (name, version, t_primary)
+        if repairs:
+            # Compute total repair actions across all repair types
+            total_actions = 0
+            tc = repairs.get("entity_type_conflicts", {})
+            total_actions += tc.get("drop", 0) + tc.get("entity_renames_from_keep", 0) + tc.get("relation_fixes", 0)
+            dg = repairs.get("entity_disambiguation", {})
+            total_actions += dg.get("entities_merged_aliases", 0)
+            repairs["total_repair_actions"] = total_actions
+            stats["repairs"] = repairs
 
-                # ---------- 局部/动作类实体：跨 section 重名时自动改名 ----------
-                is_event = (t_primary == "Event")
-                is_action_like = False
-                if not is_event:
-                    if isinstance(t_raw, str):
-                        is_action_like = t_raw in ["Action", "Emotion", "Goal"]
-                    elif isinstance(t_raw, list):
-                        is_action_like = any(x in ["Action", "Emotion", "Goal"] for x in t_raw)
+        # ------------------------------------------------------------------
+        # Write
+        # ------------------------------------------------------------------
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
 
-                if (ent_data.get("scope", "").lower() == "local" or is_action_like) and key in entity_map:
-                    # 已存在一个同 name/version/primary_type 的局部/动作类实体
-                    existing_entity = entity_map[key]
-                    existing_chunk_id = existing_entity.source_chunks[0] if existing_entity.source_chunks else ""
-                    existing_section_name = self.chunk2section_map.get(existing_chunk_id, "")
-                    current_section_name = md.get("doc_title", "")
+        if verbose:
+            ent_total = (stats.get("entity_counts") or {}).get("total", "?")
+            rel_total = (stats.get("relation_counts") or {}).get("total", "?")
+            repair_total = (stats.get("repairs") or {}).get("total_repair_actions", "?")
+            logger.info(
+                "Extraction stats written to %s "
+                "(entities=%s relations=%s total_repair_actions=%s)",
+                output_path, ent_total, rel_total, repair_total,
+            )
 
-                    # 出现在不同 section → 自动重命名
-                    if current_section_name and current_section_name != existing_section_name:
-                        base_name = name
-                        suffix = 1
-                        new_name = f"{base_name}_{suffix}"
-                        while (new_name, version, t_primary) in entity_map:
-                            suffix += 1
-                            new_name = f"{base_name}_{suffix}"
+    # -------------------------
+    # 5) Postprocess relations, build graph, compute degrees
+    # -------------------------
+    def postprocess_and_save(
+        self,
+        *,
+        relation_basic_info_path: Optional[str] = None,
+        entity_basic_info_path: Optional[str] = None,
+        relation_output_path: Optional[str] = None,
+        graph_output_path: Optional[str] = None,
+        enable_llm: bool = True,
+        verbose: bool = True,
+    ) -> None:
+        base = self._base_dir()
 
-                        # 1) 维护别名：旧名作为 alias 保留下来
-                        aliases = ent_data.get("aliases") or []
-                        if base_name not in aliases:
-                            aliases.append(base_name)
-                        ent_data["aliases"] = aliases
+        if relation_basic_info_path is None:
+            relation_basic_info_path = os.path.join(base, "relation_basic_info.json")
+        if entity_basic_info_path is None:
+            entity_basic_info_path = os.path.join(base, "entity_basic_info.json")
 
-                        # 2) 写回新名字
-                        ent_data["name"] = new_name
-                        name = new_name
-                        key = (name, version, t_primary)
+        if relation_output_path is None:
+            relation_output_path = os.path.join(base, "relation_info_refined.json")
 
-                        # 3) 记录本 chunk 内的重命名映射（用于后面同步 relations）
-                        rename_map[base_name] = new_name
+        if graph_output_path is None:
+            graph_output_path = os.path.join(base, "graph_nx.pkl")
 
-                # ---------- 创建实体对象 ----------
-                ent_obj = self._create_entity_from_data(ent_data, chunk_id, version)
+        entities_by_id = load_json(entity_basic_info_path)
+        if not isinstance(entities_by_id, dict):
+            entities_by_id = {}
 
-                # ---------- 仅对非 Event 类型尝试跨 chunk 合并 ----------
-                existing = None
-                if t_primary != "Event":
-                    # 1) 先看是否有同 key（name, version, primary_type）的实体
-                    if key in entity_map:
-                        existing = entity_map[key]
-                    else:
-                        # 2) 再用 alias 在同 version 内做一次模糊合并
-                        for (n_k, ver_k, t_k), candidate in entity_map.items():
-                            if ver_k != version:
-                                continue  # 版本必须一致
-                            # Event 不参与此类合并
-                            if _primary_type_local(candidate.type) == "Event":
-                                continue
-                            # name/alias 交集判断
-                            if ent_obj.name in candidate.aliases or candidate.name in ent_obj.aliases:
-                                existing = candidate
-                                break
-                            if ent_obj.aliases and candidate.aliases:
-                                if any(a in candidate.aliases for a in ent_obj.aliases):
-                                    existing = candidate
-                                    break
+        self.graph_refiner = GraphRefiner(self.config, self.llm, memory_store=self._memory_store)
 
-                # ---------- 合并或登记为新实体 ----------
-                if existing:
-                    self._merge_entities(existing, ent_obj)
-                    final_ent = existing
-                    # 注意：key 依然使用原始 (name, version, primary_type)。
-                    # 如果 existing 是通过 alias 匹配到的，它对应的 key 已经在 entity_map 里了，
-                    # 不需要再写一次。
-                else:
-                    entity_map[key] = ent_obj
-                    final_ent = ent_obj
+        merged_relations = self.graph_refiner.merge_relations(
+            input_path=relation_basic_info_path,
+            output_path=None,
+            enable_llm=enable_llm,
+        )
 
-                # 记录到对应 section（注意：同一个实体对象可以出现在多个 section 的列表中）
-                self.section_entities_collection[label].append(final_ent)
+        G = nx.MultiDiGraph()
 
-            # --- 本 chunk 的实体全部处理完之后：用 rename_map 同步更新 relations ---
-            if rename_map:
-                for rel in result.get("relations", []) or []:
-                    s = rel.get("subject")
-                    o = rel.get("object")
-                    if s in rename_map:
-                        rel["subject"] = rename_map[s]
-                    if o in rename_map:
-                        rel["object"] = rename_map[o]
-
-        # ---------------------- 第二阶段：Part_2 回填 additional_chunks ----------------------
-        # 建立 (name, primary_type, version) -> Entity 索引（只是换个字段顺序，方便阅读）
-        idx = {}
-        for (name, version, primary_type), ent in entity_map.items():
-            idx[(name, primary_type, version)] = ent
-
-        # 先清空 additional_chunks
-        for ent in entity_map.values():
-            ent.additional_chunks = []
-
-        # 对 Part_2 的实体：找到 Part_1 同名同主类型实体，复制其 source_chunks
-        for (name, version, primary_type), ent in entity_map.items():
-            if version == "Part_2":
-                p1_key = (name, primary_type, "Part_1")
-                if p1_key in idx:
-                    ent.additional_chunks = list(idx[p1_key].source_chunks)
-                else:
-                    ent.additional_chunks = []
-
-        # ---------------------- 第三阶段：基于 relations 计算 total_degree ----------------------
-        # 先构建 name+version -> {entity_id} 的索引，用于把 relation 的 subject/object 映射到实体
-        name_ver2ids: Dict[Tuple[str, str], Set[str]] = defaultdict(set)
-        for (name, version, _primary_type), ent in entity_map.items():
-            # 主名
-            name_ver2ids[(name, version)].add(ent.id)
-            # 所有 alias 也映射到同一个实体（兜底）
-            for alias in getattr(ent, "aliases", []) or []:
-                name_ver2ids[(alias, version)].add(ent.id)
-
-        # 对所有实体初始化 total_degree = 0（确保无边的节点也有字段）
-        for ent in entity_map.values():
-            # 假定 Entity 允许动态加字段；如果你在 Entity 里已经声明了 total_degree，这里就是正常赋值
-            ent.total_degree = 0
-
-        # 使用 entity id 构图
-        G = nx.DiGraph()
-
-        for result in extraction_results:
-            md = result.get("chunk_metadata", {}) or {}
-            version = md.get("version", "default")
-
-            for rel in result.get("relations", []) or []:
-                s_name = rel.get("subject")
-                o_name = rel.get("object")
-                if not s_name or not o_name:
-                    continue
-
-                # 在同一个 version 下按 name 找实体（支持 alias）
-                s_ids = name_ver2ids.get((s_name, version)) or set()
-                o_ids = name_ver2ids.get((o_name, version)) or set()
-                if not s_ids or not o_ids:
-                    continue
-
-                # 多个实体同名时，简单地对所有组合连边
-                for sid in s_ids:
-                    for oid in o_ids:
-                        G.add_edge(sid, oid)
-
-        # 把图中的度数写回到实体（simple DiGraph：不区分多重边）
-        if G.number_of_nodes() > 0:
-            # in_degree/out_degree 默认权重为 1，以边计数
-            in_deg_dict = dict(G.in_degree())
-            out_deg_dict = dict(G.out_degree())
-            for ent in entity_map.values():
-                d_in = in_deg_dict.get(ent.id, 0)
-                d_out = out_deg_dict.get(ent.id, 0)
-                ent.total_degree = int(d_in + d_out)
-
-        # ---------------------- 第四阶段：持久化 section_entities_collection ----------------------
-        output_path = os.path.join(base, "section_entities_collection.pkl")
-        with open(output_path, "wb") as f:
-            pickle.dump(self.section_entities_collection, f)
-
-        # 2) 对外统一用 id 作为 key
-        id_entity_map: Dict[str, Entity] = {}
-        for ent in entity_map.values():
-            # 后面如果有需要，可以在这里检查 id 冲突（同 id 不同内容），目前假定 _create_entity_from_data 已保证稳定唯一
-            id_entity_map[ent.id] = ent
-
-        # entity_basic_info.json 也用 id 作为 key（这里会带上 total_degree 字段）
-        basic_out_path = os.path.join(base, "entity_basic_info.json")
-        with open(basic_out_path, "w", encoding="utf-8") as f:
-            json.dump({eid: e.dict() for eid, e in id_entity_map.items()}, f, ensure_ascii=False, indent=2)
-
-        # return entity_map
-
-
-
-    def _find_existing_entity(self, entity: Entity, entity_map: Dict[str, Entity], version: str) -> Optional[Entity]:
-        """Find an existing entity to merge with, **only within the same version** (non-Event)."""
-        if (entity.type == "Event") or (isinstance(entity.type, list) and "Event" in entity.type):
-            return None
-        key = self._ekey(entity.name, version, entity.type)
-        if key in entity_map:
-            return entity_map[key]
-        # alias 命中也需在同一 version 的键空间查找
-        for ekey, existing_entity in entity_map.items():
-            # 仅同版本比较
-            if not ekey.endswith(f"||{version}"):
+        for eid, ent in entities_by_id.items():
+            if not isinstance(ent, dict):
                 continue
-            if entity.name in existing_entity.aliases:
-                return existing_entity
-            if any(alias in existing_entity.aliases for alias in entity.aliases):
-                return existing_entity
-        return None
+            node_id = safe_str(ent.get("id")) or safe_str(eid)
+            if not node_id:
+                continue
+            G.add_node(node_id, **ent)
 
+        skipped_missing_ids = 0
+        for r in merged_relations:
+            if not isinstance(r, dict):
+                continue
 
-    def _merge_types(self, a, b):
+            sid = r.get("subject_id")
+            oid = r.get("object_id")
+            if not is_nonempty_str(sid) or not is_nonempty_str(oid):
+                skipped_missing_ids += 1
+                continue
+
+            if sid not in G:
+                G.add_node(sid)
+            if oid not in G:
+                G.add_node(oid)
+
+            edge_key = safe_str(r.get("id")) or None
+            if edge_key is None:
+                G.add_edge(sid, oid, **r)
+            else:
+                G.add_edge(sid, oid, key=edge_key, **r)
+
+        dump_pickle(graph_output_path, G)
+        dump_json(relation_output_path, merged_relations)
+
+        if verbose:
+            logger.info(
+                "Postprocess done. "
+                f"relation_out={relation_output_path} graph_out={graph_output_path} "
+                f"(entities={len(entities_by_id)} relations={len(merged_relations)} "
+                f"graph_nodes={G.number_of_nodes()} graph_edges={G.number_of_edges()} "
+                f"skipped_edges_missing_ids={skipped_missing_ids})"
+            )
+
+    # -------------------------
+    # 6) Graph-based property extraction
+    # -------------------------
+    def extract_properties(
+        self,
+        *,
+        graph_path: Optional[str] = None,
+        entity_schema_path: Optional[str] = None,
+        entity_info_path: Optional[str] = None,
+        output_entity_info_path: Optional[str] = None,
+        verbose: bool = True,
+        # selection
+        scope: str = "global",
+        metric: str = "total_degree",
+        threshold: float = 2.0,
+        num_top: Optional[int] = None,
+        node_type: Optional[str] = None,
+        exclude_relation_types: Optional[Set[str]] = None,
+        include_relation_types: Optional[Set[str]] = None,
+        # chunking
+        chunk_size: int = 1200,
+        chunk_overlap: int = 200,
+        # concurrency
+        max_workers: Optional[int] = None,
+        per_task_timeout: float = 120.0,
+        retries: int = 2,
+        # merge
+        num_properties: int = 10,
+        merge_max_workers: Optional[int] = None,
+        merge_timeout: float = 120.0,
+        merge_retries: int = 2,
+    ) -> None:
+        base = self._base_dir()
+
+        if graph_path is None:
+            graph_path = os.path.join(base, "graph_nx.pkl")
+        if entity_info_path is None:
+            entity_info_path = os.path.join(base, "entity_basic_info.json")
+        if output_entity_info_path is None:
+            output_entity_info_path = os.path.join(base, "entity_info_refined.json")
+        if entity_schema_path is None:
+            entity_schema_path = self.entity_schema_path
+
+        if exclude_relation_types is None:
+            exclude_relation_types = set()
+
+        if not os.path.exists(graph_path):
+            raise FileNotFoundError(f"Graph not found: {graph_path}")
+        if not os.path.exists(entity_schema_path):
+            raise FileNotFoundError(f"Entity schema not found: {entity_schema_path}")
+
+        with open(graph_path, "rb") as f:
+            G: nx.Graph = pickle.load(f)
+
+        entities_by_id: Dict[str, Dict[str, Any]] = {}
+        if os.path.exists(entity_info_path):
+            try:
+                entities_by_id = load_json(entity_info_path)
+                if not isinstance(entities_by_id, dict):
+                    entities_by_id = {}
+            except Exception:
+                entities_by_id = {}
+
+        with open(entity_schema_path, "r", encoding="utf-8") as f:
+            entity_schema = json.load(f)
+        if not isinstance(entity_schema, list):
+            entity_schema = []
+
+        if max_workers is None:
+            max_workers = int(getattr(self, "max_workers", 8))
+
+        agent = PropertyExtractionAgent(self.config, self.llm)
+
+        res = agent.run(
+            G=G,
+            entities_by_id=entities_by_id,
+            entity_schema=entity_schema,
+            general_semantic_type=self.GENERAL_SEMANTIC_TYPE,
+            scope=scope,
+            metric=metric,
+            threshold=float(threshold),
+            num_top=num_top,
+            node_type=node_type,
+            exclude_relation_types=set(exclude_relation_types) if exclude_relation_types else None,
+            include_relation_types=set(include_relation_types) if include_relation_types else None,
+            chunk_size=int(chunk_size),
+            chunk_overlap=int(chunk_overlap),
+            max_workers=int(max_workers),
+            per_task_timeout=float(per_task_timeout),
+            retries=int(retries),
+            num_properties=int(num_properties),
+            merge_max_workers=merge_max_workers,
+            merge_timeout=float(merge_timeout),
+            merge_retries=int(merge_retries),
+            run_concurrent_with_retries_fn=run_concurrent_with_retries,
+            verbose=verbose,
+        )
+
+        dump_json(output_entity_info_path, res.entity_info)
+
+        if verbose:
+            logger.info(
+                f"[PropertyExtraction] done. selected_nodes={res.selected_nodes} "
+                f"flattened_tasks={res.flattened_tasks} updated_nodes={res.updated_nodes} "
+                f"failed_extract_tasks={res.failed_extract_tasks} failed_merge_nodes={res.failed_merge_nodes} "
+                f"entity_out={output_entity_info_path}"
+            )
+
+    # -------------------------
+    # 7) Interaction extraction (JSON + SQL)
+    # -------------------------
+    @staticmethod
+    def _interaction_primary_type(x: Any) -> str:
+        if isinstance(x, str):
+            return x.strip()
+        if isinstance(x, list) and x:
+            for t in x:
+                s = safe_str(t).strip()
+                if s:
+                    return s
+        return ""
+
+    def _build_interaction_entity_candidates_by_document(
+        self,
+        entities_by_id: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        by_doc: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        seen: Dict[str, Set[str]] = defaultdict(set)
+
+        for ent in entities_by_id.values():
+            if not isinstance(ent, dict):
+                continue
+
+            ent_id = safe_str(ent.get("id")).strip()
+            name = safe_str(ent.get("name")).strip()
+            etype = self._interaction_primary_type(ent.get("type"))
+            if not ent_id or not name or not etype:
+                continue
+            if etype not in {"Character", "Object"}:
+                continue
+
+            aliases = ent.get("aliases") or []
+            if not isinstance(aliases, list):
+                aliases = []
+            aliases = [safe_str(a).strip() for a in aliases if safe_str(a).strip()]
+
+            src_docs = ent.get("source_documents") or []
+            if not isinstance(src_docs, list):
+                src_docs = []
+
+            cand = {
+                "id": ent_id,
+                "name": name,
+                "type": etype,
+                "aliases": aliases,
+            }
+
+            for d in src_docs:
+                doc_id = safe_str(d).strip()
+                if not doc_id:
+                    continue
+                if ent_id in seen[doc_id]:
+                    continue
+                seen[doc_id].add(ent_id)
+                by_doc[doc_id].append(cand)
+
+        for doc_id, arr in by_doc.items():
+            arr.sort(key=lambda x: (safe_str(x.get("name")), safe_str(x.get("id"))))
+            by_doc[doc_id] = arr
+        return by_doc
+
+    def _interaction_doc_type_meta(self) -> Dict[str, str]:
+        section_label = safe_str(self.meta.get("section_label", "Document")).strip() or "Document"
+        section_id = re.sub(
+            r"[^A-Za-z0-9_]+",
+            "_",
+            section_label,
+        ).strip("_").lower() + "_id"
+        return {
+            "section_label": section_label,
+            "section_id": section_id,
+            "title": safe_str(self.meta.get("title", "title")).strip() or "title",
+            "subtitle": safe_str(self.meta.get("subtitle", "subtitle")).strip() or "subtitle",
+        }
+
+    def extract_interactions(
+        self,
+        *,
+        refined_results_path: Optional[str] = None,
+        all_chunks_path: Optional[str] = None,
+        entity_info_path: Optional[str] = None,
+        interaction_json_path: Optional[str] = None,
+        interaction_list_json_path: Optional[str] = None,
+        retries: int = 3,
+        per_task_timeout: float = 1200.0,
+        concurrency: Optional[int] = None,
+        show_progress: bool = True,
+        verbose: bool = True,
+    ) -> Dict[str, Any]:
         """
-        Union of types from a and b, normalized (Event first + de-dup, preserve order).
+        Extract interaction records and persist JSON only.
+
+        Placement in pipeline:
+        - after extract_properties() (entity dedup/refinement complete)
         """
-        a_list = a if isinstance(a, list) else ([a] if a else [])
-        b_list = b if isinstance(b, list) else ([b] if b else [])
-        merged = []
-        seen = set()
-        for x in a_list + b_list:
-            if x and x not in seen:
-                seen.add(x)
-                merged.append(x)
-        if "Event" in seen:
-            merged = ["Event"] + [x for x in merged if x != "Event"]
-        return merged if len(merged) > 1 else (merged[0] if merged else "Concept")
+        base = self._base_dir()
+        interaction_base = self._interaction_base_dir()
 
-    def _merge_entities(self, existing: Entity, new: Entity) -> None:
-        """Merge incoming entity into an existing one."""
-        for alias in new.aliases:
-            if alias not in existing.aliases:
-                existing.aliases.append(alias)
-        existing.properties.update(new.properties)
-        for chunk_id in new.source_chunks:
-            if chunk_id not in existing.source_chunks:
-                existing.source_chunks.append(chunk_id)
-        if new.description:
-            if not existing.description:
-                existing.description = new.description
-            elif new.description not in existing.description:
-                existing.description = existing.description + "\n" + new.description
+        if refined_results_path is None:
+            refined_results_path = os.path.join(base, "extraction_results_refined.json")
+        if all_chunks_path is None:
+            all_chunks_path = os.path.join(base, "all_document_chunks.json")
+        if entity_info_path is None:
+            p_refined = os.path.join(base, "entity_info_refined.json")
+            entity_info_path = p_refined if os.path.exists(p_refined) else os.path.join(base, "entity_basic_info.json")
+        if interaction_json_path is None:
+            interaction_json_path = os.path.join(interaction_base, "interaction_results.json")
+        if interaction_list_json_path is None:
+            interaction_list_json_path = os.path.join(
+                os.path.dirname(interaction_json_path),
+                "interaction_records_list.json",
+            )
 
-        existing.type = self._merge_types(existing.type, new.type)
+        if not os.path.exists(refined_results_path):
+            raise FileNotFoundError(f"Refined results not found: {refined_results_path}")
+        if not os.path.exists(all_chunks_path):
+            raise FileNotFoundError(f"all_document_chunks.json not found: {all_chunks_path}")
+        if not os.path.exists(entity_info_path):
+            raise FileNotFoundError(f"Entity info not found: {entity_info_path}")
 
-    def _ensure_entity_exists(self, entity_id: str, entity_map: Dict[str, Entity]) -> Optional[Entity]:
-        return entity_map.get(entity_id, None)
+        document_results = load_json(refined_results_path)
+        all_chunks = load_json(all_chunks_path)
+        entities_by_id = load_json(entity_info_path)
 
-    def _canonicalize_person_name(self, name: str, ent_type=None) -> str:
+        if not isinstance(document_results, dict):
+            document_results = {}
+        if not isinstance(all_chunks, list):
+            all_chunks = []
+        if not isinstance(entities_by_id, dict):
+            entities_by_id = {}
+
+        chunk_map: Dict[str, Dict[str, Any]] = {}
+        for c in all_chunks:
+            if not isinstance(c, dict):
+                continue
+            cid = safe_str(c.get("id")).strip()
+            if cid:
+                chunk_map[cid] = c
+
+        entities_by_doc = self._build_interaction_entity_candidates_by_document(entities_by_id)
+
+        if concurrency is None:
+            concurrency = max(1, int(getattr(self, "max_workers", 8)))
+
+        per_doc: Dict[str, Dict[str, Any]] = {}
+        flat: List[Dict[str, Any]] = []
+        pending_doc_ids: List[str] = []
+
+        for doc_id, payload in document_results.items():
+            if not isinstance(payload, dict):
+                continue
+
+            if payload.get("ok") is False:
+                per_doc[doc_id] = {
+                    "ok": False,
+                    "document_id": doc_id,
+                    "chunk_ids": payload.get("chunk_ids") or [],
+                    "interactions": [],
+                    "feedback_count": 0,
+                    "feedbacks": {},
+                    "error": safe_str(payload.get("error")),
+                }
+                continue
+
+            doc_candidates = entities_by_doc.get(doc_id, [])
+            chunk_ids = payload.get("chunk_ids") or []
+            if not doc_candidates or not isinstance(chunk_ids, list) or not chunk_ids:
+                per_doc[doc_id] = {
+                    "ok": True,
+                    "document_id": doc_id,
+                    "chunk_ids": chunk_ids if isinstance(chunk_ids, list) else [],
+                    "interactions": [],
+                    "feedback_count": 0,
+                    "feedbacks": {},
+                    "error": "",
+                }
+                continue
+
+            pending_doc_ids.append(doc_id)
+
+        if verbose:
+            logger.info(
+                "[InteractionExtraction] total=%s pending=%s skipped=%s concurrency=%s timeout=%ss retries=%s",
+                len(document_results),
+                len(pending_doc_ids),
+                max(0, len(document_results) - len(pending_doc_ids)),
+                concurrency,
+                per_task_timeout,
+                retries,
+            )
+
+        if pending_doc_ids:
+            items = pending_doc_ids
+
+            def _task(doc_id: str) -> Dict[str, Any]:
+                payload = document_results.get(doc_id) or {}
+                doc_candidates = entities_by_doc.get(doc_id, [])
+                try:
+                    return self.interaction_agent.run_document(
+                        document_id=doc_id,
+                        payload=payload,
+                        chunk_map=chunk_map,
+                        entity_candidates=doc_candidates,
+                        document_rid_namespace=f"interaction:{doc_id}",
+                    )
+                except Exception as e:
+                    chunk_ids = payload.get("chunk_ids") or []
+                    if not isinstance(chunk_ids, list):
+                        chunk_ids = []
+                    return {
+                        "ok": False,
+                        "document_id": doc_id,
+                        "chunk_ids": chunk_ids,
+                        "interactions": [],
+                        "feedback_count": 0,
+                        "feedbacks": {},
+                        "error": f"{type(e).__name__}: {e}",
+                    }
+
+            def _is_empty_fn(res: Any) -> bool:
+                return (not isinstance(res, dict)) or (res.get("ok") is not True)
+
+            results_map, failed_indices = run_concurrent_with_retries(
+                items=items,
+                task_fn=_task,
+                per_task_timeout=per_task_timeout,
+                max_retry_rounds=max(1, int(retries)),
+                max_in_flight=concurrency,
+                max_workers=concurrency,
+                thread_name_prefix="interaction_extract",
+                desc_prefix="Extracting interactions",
+                treat_empty_as_failure=True,
+                is_empty_fn=_is_empty_fn,
+                show_progress=bool(show_progress),
+            )
+
+            for idx, doc_id in enumerate(items):
+                res = results_map.get(idx)
+                if not isinstance(res, dict):
+                    payload = document_results.get(doc_id) or {}
+                    chunk_ids = payload.get("chunk_ids") or []
+                    if not isinstance(chunk_ids, list):
+                        chunk_ids = []
+                    res = {
+                        "ok": False,
+                        "document_id": doc_id,
+                        "chunk_ids": chunk_ids,
+                        "interactions": [],
+                        "feedback_count": 0,
+                        "feedbacks": {},
+                        "error": "unknown failure",
+                    }
+                per_doc[doc_id] = res
+                if res.get("ok") is True and isinstance(res.get("interactions"), list):
+                    flat.extend(res["interactions"])
+
+            if failed_indices and verbose:
+                try:
+                    failed_doc_ids = [items[i] for i in sorted(failed_indices) if 0 <= i < len(items)]
+                except Exception:
+                    failed_doc_ids = []
+                logger.warning(
+                    "[InteractionExtraction] failed after retries: count=%s docs=%s",
+                    len(failed_indices),
+                    failed_doc_ids,
+                )
+
+        flat.sort(
+            key=lambda x: (
+                safe_str(x.get("document_id")),
+                safe_str(x.get("chunk_id")),
+                safe_str(x.get("subject_name")),
+                safe_str(x.get("object_name")),
+                safe_str(x.get("interaction_type")),
+            )
+        )
+
+        dump_json(
+            interaction_json_path,
+            {
+                "doc_type_meta": self._interaction_doc_type_meta(),
+                "documents": per_doc,
+                "interactions": flat,
+            },
+        )
+        dump_json(interaction_list_json_path, flat)
+
+        if verbose:
+            ok_docs = sum(1 for v in per_doc.values() if isinstance(v, dict) and v.get("ok") is True)
+            fail_docs = sum(1 for v in per_doc.values() if isinstance(v, dict) and v.get("ok") is not True)
+            logger.info(
+                "[InteractionExtraction] done. docs_ok=%s docs_failed=%s interactions=%s json_out=%s list_out=%s",
+                ok_docs,
+                fail_docs,
+                len(flat),
+                interaction_json_path,
+                interaction_list_json_path,
+            )
+        return {
+            "interaction_json_path": interaction_json_path,
+            "interaction_list_json_path": interaction_list_json_path,
+            "documents": per_doc,
+            "interactions": flat,
+        }
+
+    def store_interactions_to_sql(
+        self,
+        *,
+        interaction_list_json_path: Optional[str] = None,
+        sql_db_path: Optional[str] = None,
+        sql_table_name: str = "Interaction_info",
+        include_auto_id: bool = True,
+        reset_database: bool = True,
+        reset_table: bool = True,
+        verbose: bool = True,
+    ) -> int:
         """
-        名称基准化：
-        - NFKC 全半角统一；去零宽字符；收敛空白
-        - 若为人物类（Character/Person），移除任意“末尾括注”（如：王强（父亲）、刘洋[青年]）
-        - 否则仅移除“纯数字编号括注”（如：周喆直[73]）
+        Step-2 only: load interaction list JSON from disk and persist to SQL.
+
+        This method does not run extraction; it only consumes the dumped list file.
         """
-        if not name:
-            return name
-        s = unicodedata.normalize("NFKC", name)
-        s = _ZERO_WIDTH_RE.sub("", s).strip()
-
-        is_person = False
-        if isinstance(ent_type, str):
-            is_person = ent_type.lower() in ("character", "person")
-        elif isinstance(ent_type, list):
-            is_person = any((str(t).lower() in ("character", "person")) for t in ent_type)
-
-        if is_person:
-            s = _BRACKET_ANY_SUFFIX_RE.sub("", s).strip()
+        base = self._interaction_base_dir()
+        if interaction_list_json_path is None:
+            interaction_list_json_path = os.path.join(base, "interaction_records_list.json")
+        if sql_db_path is None:
+            store = SQLStore(self.config)
         else:
-            s = _BRACKET_NUM_SUFFIX_RE.sub("", s).strip()
+            store = SQLStore(self.config, db_path=sql_db_path)
 
-        s = _MULTISPACE_RE.sub(" ", s)
+        # Requirement: SQL table should not include chunk_id / section_id columns.
+        records = store.load_json_list(json_path=interaction_list_json_path)
+        normalized: List[Dict[str, Any]] = []
+        for r in records:
+            if not isinstance(r, dict):
+                continue
+            rr = dict(r)
+            rr.pop("chunk_id", None)
+            rr.pop("section_id", None)
+            normalized.append(rr)
+        inserted = store.insert_records(
+            table_name=sql_table_name,
+            records=normalized,
+            include_auto_id=bool(include_auto_id),
+            reset_database=bool(reset_database),
+            reset_table=bool(reset_table),
+        )
+        if verbose:
+            logger.info(
+                "[InteractionSQL] saved rows=%s from=%s table=%s db=%s",
+                inserted,
+                interaction_list_json_path,
+                sql_table_name,
+                store.db_path,
+            )
+        return inserted
+
+    # -------------------------
+    # Local graph saving helpers
+    # -------------------------
+    def _sanitize_doc_node_id(self, source_doc_id: str) -> str:
+        s = safe_str(source_doc_id).strip()
+        if not s:
+            return ""
+        s = re.sub(r"[^A-Za-z0-9_]+", "_", s).strip("_")
         return s
 
-    def _pre_refine_alias_canonicalize(self, extraction_results: List[Dict]) -> List[Dict]:
-        out = []
-        for res in extraction_results:
-            ents = res.get("entities", []) or []
-            rels = res.get("relations", []) or []
+    def _create_document_entities_from_index(self) -> Dict[str, Dict[str, Any]]:
+        base = self._base_dir()
+        doc2chunks_path = os.path.join(base, "doc2chunks.json")
+        if not os.path.exists(doc2chunks_path):
+            raise FileNotFoundError(f"doc2chunks.json not found at {doc2chunks_path}. Run prepare_chunks() first.")
 
-            name_map = {}
-            canon_ents = []
-            for e in ents:
-                e = dict(e)
-                etype = e.get("type")
-                orig = e.get("name", "")
-                base = self._canonicalize_person_name(orig, etype)
+        doc2chunks = load_json(doc2chunks_path)
+        if not isinstance(doc2chunks, dict):
+            doc2chunks = {}
 
-                if base and base != orig:
-                    aliases = list(dict.fromkeys((e.get("aliases") or []) + [orig, base]))
-                    e["aliases"] = aliases
-                    e["name"] = base
-                    name_map[orig] = base
+        meta = self.meta
+        groups: Dict[str, Dict[str, Any]] = {}
 
-                if e.get("aliases"):
-                    new_aliases = []
-                    for a in e["aliases"]:
-                        ab = self._canonicalize_person_name(a, etype)
-                        new_aliases.append(a)
-                        if ab and ab != a:
-                            new_aliases.append(ab)
-                    e["aliases"] = list(dict.fromkeys([x for x in new_aliases if x]))
-
-                canon_ents.append(e)
-
-            # 合并同一 chunk 内同名同类实体（同之前给你的合并逻辑不变）
-            merged_by_key = {}
-            for e in canon_ents:
-                t = e.get("type")
-                if isinstance(t, list):
-                    primary_t = "Event" if "Event" in t else (t[0] if t else "Concept")
-                else:
-                    primary_t = t or "Concept"
-
-                key = (e.get("name", ""), primary_t)
-                if key not in merged_by_key:
-                    merged_by_key[key] = dict(e)
-                else:
-                    me = merged_by_key[key]
-                    me["aliases"] = list(dict.fromkeys((me.get("aliases") or []) + (e.get("aliases") or [])))
-                    da, db = (me.get("description") or "").strip(), (e.get("description") or "").strip()
-                    if db and db not in da:
-                        me["description"] = (da + ("\n" if da and db else "") + db).strip()
-                    sa, sb = (me.get("scope") or "").lower(), (e.get("scope") or "").lower()
-                    if sa != "global" and sb == "global":
-                        me["scope"] = "global"
-                    ta, tb = me.get("types"), e.get("types")
-                    if ta or tb:
-                        la = ta if isinstance(ta, list) else ([ta] if ta else [])
-                        lb = tb if isinstance(tb, list) else ([tb] if tb else [])
-                        merged_types, seen = [], set()
-                        for x in la + lb:
-                            if x and x not in seen:
-                                seen.add(x); merged_types.append(x)
-                        me["types"] = merged_types
-
-            new_entities = list(merged_by_key.values())
-
-            # 关系端点同步（对 subject/object 同样跑一遍规则；如果端点恰是人物类名字，前一步已在 name_map 中）
-            new_rels = []
-            for r in (rels or []):
-                r = dict(r)
-                subj = r.get("subject") or r.get("source") or r.get("head") or r.get("relation_subject")
-                obj  = r.get("object")  or r.get("target") or r.get("tail") or r.get("relation_object")
-
-                if subj:
-                    r["subject"] = name_map.get(subj) or self._canonicalize_person_name(subj, ent_type="Character")
-                if obj:
-                    r["object"] = name_map.get(obj) or self._canonicalize_person_name(obj, ent_type="Character")
-
-                if "predicate" not in r and "relation" in r:
-                    r["predicate"] = r.get("relation")
-                new_rels.append(r)
-
-            res_new = dict(res)
-            res_new["entities"]  = new_entities
-            res_new["relations"] = new_rels
-            out.append(res_new)
-
-        return out
-
-    
-    # -------- Section / Contains --------
-    def _create_section_entities(self, md: Dict[str, Any], chunk_id: str, version: str) -> List[Entity]:
-        """
-        Create section/scene entities.
-
-        - 'title'/'subtitle' are read directly.
-        - Entity.properties will contain mapped fields (e.g., scene_name) + other metadata fields.
-        """
-        raw_title = md.get("title", "").strip()
-        raw_subtitle = md.get("subtitle", "").strip()
-        order = md.get("order", None)
-
-        if not raw_title:
-            return []
-
-        label = self.meta["section_label"]
-        full_name = md.get("doc_title", f"{label}{raw_title}-{raw_subtitle}" if raw_subtitle else f"{label}{raw_title}")
-        eid = f"{label.lower()}_{order}" if order is not None else f"{label.lower()}_{hash(full_name) % 1_000_000}"
-
-        title_field = self.meta["title"]
-        subtitle_field = self.meta["subtitle"]
-
-        excluded = {"chunk_index", "chunk_type", "doc_title", "title", "subtitle", "total_description_chunks", "total_doc_chunks"}
-        properties = {
-            title_field: raw_title,
-            subtitle_field: raw_subtitle,
-        }
-
-        if order is not None:
-            properties["order"] = order
-
-        for k, v in md.items():
-            if k not in excluded:
-                properties[k] = v
-
-        self.section_chunk_ids[eid].add(chunk_id)
-        agg_chunks = sorted(self.section_chunk_ids[eid])
-
-        return [
-            Entity(
-                id=eid,
-                name=full_name,
-                type=label,
-                scope="local",
-                description=md.get("summary", ""),
-                properties=properties,
-                source_chunks=agg_chunks,
-                version=version
-            )
-        ]
-
-    # def _link_section_to_entities(self, section: Entity, inners: List[Entity], chunk_id: str):
-    #     pred = self.meta["contains_pred"]
-    #     for tgt in inners:
-    #         rid = f"rel_{hash(f'{section.id}_{pred}_{tgt.id}') % 1_000_000}"
-    #         self.kg.add_relation(
-    #             Relation(id=rid, subject_id=section.id, predicate=pred,
-    #                      object_id=tgt.id, properties={}, source_chunks=[chunk_id])
-    #         )
-
-    def _link_section_to_entities(self, section: Entity, inners: List[Entity], chunk_id: str):
-        """
-        修复：确保所有“在该 section 出现过”的实体都与 section 建立 contains 关系。
-        判定准则：
-        - 取该 section 的 chunk 集合（优先 self.section_chunk_ids[section.id]，否则回退到 section.source_chunks）
-        - 遍历图中所有实体（排除 section 自身 & 其他 section 实体）
-        - 若实体的 source_chunks 与 section 的 chunk 集合有交集 → 建立 contains 边
-        说明：
-        - 忽略传入的 inners（可能不完整），以避免漏连
-        - 使用确定性 rid，自动去重（若已存在同样的边，不会重复添加）
-        """
-        pred = self.meta["contains_pred"]
-
-        # 该 section 对应的 chunk 集
-        sec_chunk_ids = set(self.section_chunk_ids.get(section.id, set()))
-        if not sec_chunk_ids:
-            sec_chunk_ids = set(getattr(section, "source_chunks", []) or [])
-
-        # 备用：基于 doc_title 的回退匹配（当 sec_chunk_ids 仍为空时）
-        doc_title_key = ""
-        if not sec_chunk_ids:
-            # section.properties 在 _create_section_entities 时会包含原始 metadata（含 doc_title）
-            props = getattr(section, "properties", {}) or {}
-            doc_title_key = (props.get("doc_title") or "").strip()
-
-        # 为了避免重复添加：构造一个已存在的三元组集合
-        existing = set()
-        # 若你的 KnowledgeGraph 实现是 self.kg.relations: Dict[id, Relation]
-        for rel in getattr(self.kg, "relations", {}).values():
-            if rel.subject_id == section.id and rel.predicate == pred:
-                existing.add((rel.subject_id, rel.predicate, rel.object_id))
-
-        # 遍历当前图中所有实体，筛选真正出现于该 section 的实体
-        for ent in list(getattr(self.kg, "entities", {}).values()):
-            # 跳过：section 自身 以及 其他 section 实体（按类型名等于 section_label 判断）
-            if ent.id == section.id:
+        for part_id, pack in doc2chunks.items():
+            if not isinstance(part_id, str) or not part_id.strip():
                 continue
-            ent_type = getattr(ent, "type", "")
-            if (
-                ent_type == self.meta["section_label"] or
-                (isinstance(ent_type, list) and self.meta["section_label"] in ent_type)
-            ):
+            if not isinstance(pack, dict):
                 continue
 
-            e_chunks = set(getattr(ent, "source_chunks", []) or [])
-            if not e_chunks:
-                continue
+            md = pack.get("document_metadata") or {}
+            if not isinstance(md, dict):
+                md = {}
 
-            # 核心命中逻辑：chunk 交集 或 doc_title 映射相等（作为兜底）
-            hit = False
-            if sec_chunk_ids and (e_chunks & sec_chunk_ids):
-                hit = True
-            elif doc_title_key:
-                # 基于 chunk -> doc_title 的映射兜底（避免某些 section 未记录 chunk 集时漏连）
-                for cid in e_chunks:
-                    if self.chunk2section_map.get(cid, "") == doc_title_key:
-                        hit = True
-                        break
-
-            if not hit:
-                continue
-
-            key = (section.id, pred, ent.id)
-            if key in existing:
-                # 已有同样的 contains 边，跳过
-                continue
-
-            rid = f"rel_{hash(f'{section.id}_{pred}_{ent.id}') % 1_000_000}"
-
-            # 关系的 source_chunks：尽量标注真实的交集；若没有，则落回当前 chunk_id
-            rel_chunks = sorted((e_chunks & sec_chunk_ids)) if sec_chunk_ids else ([chunk_id] if chunk_id else [])
-
-            self.kg.add_relation(
-                Relation(
-                    id=rid,
-                    subject_id=section.id,
-                    predicate=pred,
-                    object_id=ent.id,
-                    properties={},
-                    source_chunks=rel_chunks if rel_chunks else ([chunk_id] if chunk_id else []),
+            raw_doc_id = safe_str(md.get("raw_doc_id")).strip()
+            doc_segment_id = safe_str(md.get("doc_segment_id")).strip()
+            source_doc_id = safe_str(md.get("source_doc_id")).strip()
+            generated_segment_title = bool(md.get("generated_segment_title"))
+            original_title = safe_str(md.get("original_title")).strip()
+            current_title = safe_str(md.get(meta.get("title", "title"))).strip()
+            use_segment_anchor = bool(
+                doc_segment_id
+                and (
+                    generated_segment_title
+                    or (
+                        raw_doc_id
+                        and doc_segment_id != raw_doc_id
+                        and original_title
+                        and current_title
+                        and current_title != original_title
+                    )
                 )
             )
-            existing.add(key)
+            anchor_id = (doc_segment_id if use_segment_anchor else raw_doc_id) or doc_segment_id or source_doc_id
+            if not anchor_id:
+                continue
 
+            title_key = meta.get("title", "title")
+            subtitle_key = meta.get("subtitle", "subtitle")
 
-    # -------- Entity / Relation creation --------
-    @staticmethod
-    def _create_entity_from_data(data: Dict, chunk_id: str, version: str = "default") -> Entity:
+            main_title = safe_str(md.get(title_key)).strip()
+            sub_title = safe_str(md.get(subtitle_key)).strip()
+
+            fallback_title = safe_str(md.get("source_title") or md.get("doc_title") or md.get("title")).strip()
+            if not main_title:
+                main_title = fallback_title
+
+            g = groups.setdefault(
+                anchor_id,
+                {
+                    "parts": [],
+                    "title": main_title,
+                    "subtitle": sub_title,
+                    "metadata": md,
+                    "doc_segment_id": doc_segment_id,
+                    "source_doc_id": source_doc_id,
+                },
+            )
+
+            g["parts"].append(part_id)
+
+            if (not g.get("title")) and main_title:
+                g["title"] = main_title
+            if (not g.get("subtitle")) and sub_title:
+                g["subtitle"] = sub_title
+            if (not safe_str(g.get("doc_segment_id")).strip()) and doc_segment_id:
+                g["doc_segment_id"] = doc_segment_id
+            if (not safe_str(g.get("source_doc_id")).strip()) and source_doc_id:
+                g["source_doc_id"] = source_doc_id
+
+        documents: Dict[str, Dict[str, Any]] = {}
+
+        for anchor_id, g in groups.items():
+            doc_id = self._sanitize_doc_node_id(anchor_id)
+            if not doc_id:
+                continue
+
+            parts = g.get("parts") or []
+            if not isinstance(parts, list) or not parts:
+                continue
+
+            documents[doc_id] = {
+                "id": doc_id,
+                "type": meta.get("section_label", "Document"),
+                "document_type": safe_str(self.doc_type) or "document",
+                "doc_segment_id": safe_str(g.get("doc_segment_id")).strip() or anchor_id,
+                "source_doc_id": (
+                    safe_str(g.get("source_doc_id")).strip()
+                    or safe_str(g.get("doc_segment_id")).strip()
+                    or anchor_id
+                ),
+                "title": safe_str(g.get("title")).strip(),
+                "subtitle": safe_str(g.get("subtitle")).strip(),
+                "metadata": g.get("metadata") or {},
+                "parts": sorted([p for p in parts if isinstance(p, str) and p.strip()]),
+            }
+
+        return documents
+
+    def build_doc_entities(
+        self,
+        *,
+        entity_info_path: Optional[str] = None,
+        doc2chunks_path: Optional[str] = None,
+        verbose: bool = True,
+    ) -> None:
         """
-        基于 (name, version, primary_type) 生成稳定 id：
-        - primary_type: Event 优先，其次 type[0]，否则 Concept
-        - id = "ent_" + md5(f"{name}||{version}||{primary_type}")[:12]
+        Build document-level supernode entities and their edges to regular entities,
+        then persist both to JSON files:
+          - doc_entities.json      : list of doc Entity dicts
+          - doc_entity_edges.json  : list of CONTAINS Relation dicts
+
+        Must be called after postprocess_and_save() so that entity_info_refined.json exists.
         """
-        name = data["name"]
+        base = self._base_dir()
 
-        # 先把原始 type 拿出来
-        t_raw = data.get("type", "Concept")
-        if isinstance(t_raw, list):
-            primary_type = "Event" if "Event" in t_raw else (t_raw[0] if t_raw else "Concept")
-        else:
-            primary_type = t_raw or "Concept"
+        if entity_info_path is None:
+            p_refined = os.path.join(base, "entity_info_refined.json")
+            entity_info_path = p_refined if os.path.exists(p_refined) else os.path.join(base, "entity_basic_info.json")
 
-        # 为 id 构造稳定 key
-        id_key = f"{name}||{version}||{primary_type}"
-        ent_id = "ent_" + hashlib.md5(id_key.encode("utf-8")).hexdigest()[:12]
+        if doc2chunks_path is None:
+            doc2chunks_path = os.path.join(base, "doc2chunks.json")
 
-        return Entity(
-            id=ent_id,
-            name=name,
-            type=_normalize_type(t_raw),
-            scope=data.get("scope", "local"),
-            description=data.get("description", ""),
-            aliases=data.get("aliases", []),
-            version=version,
-            source_chunks=[chunk_id],
-        )
+        entities_by_id = load_json(entity_info_path)
+        doc2chunks = load_json(doc2chunks_path)
 
+        if not isinstance(entities_by_id, dict):
+            entities_by_id = {}
+        if not isinstance(doc2chunks, dict):
+            doc2chunks = {}
 
-    @staticmethod
-    def _create_relation_from_data(
-        d: Dict, chunk_id: str, entity_map: Dict[str, Entity], namever2id: Dict[str, str], version: str = "default"
-    ) -> Optional[Relation]:
-        subj = d.get("subject") or d.get("source") or d.get("head") or d.get("relation_subject")
-        obj  = d.get("object")  or d.get("target") or d.get("tail") or d.get("relation_object")
-        pred = d.get("predicate") or d.get("relation") or d.get("relation_type")
-        if not subj or not obj or not pred:
-            return None
+        meta = self.meta
+        section_label = meta.get("section_label", "Document")
+        contains_pred = meta.get("contains_pred", "CONTAINS")
+        title_key = meta.get("title", "title")
+        subtitle_key = meta.get("subtitle", "subtitle")
 
-        sid = namever2id.get(f"{subj}||{version}")
-        oid = namever2id.get(f"{obj}||{version}")
-        if not sid or not oid:
-            return None
+        documents_map = self._create_document_entities_from_index()
 
-        rid = f"rel_{hash(f'{sid}_{pred}_{oid}_{version}') % 1_000_000}"
+        part2doc: Dict[str, str] = {}
+        doc_entity_dicts: List[Dict[str, Any]] = []
 
-        return Relation(
-            id=rid,
-            subject_id=sid,
-            predicate=pred,
-            object_id=oid,
-            version=version,
-            properties={
-                "description": d.get("description", ""),
-                "relation_name": d.get("relation_name", ""),
-            },
-            source_chunks=[chunk_id],
-        )
+        def _first_part_metadata(part_id: str) -> Dict[str, Any]:
+            pack = doc2chunks.get(part_id, {}) or {}
+            md = pack.get("document_metadata") or {}
+            return md if isinstance(md, dict) else {}
 
+        def _guess_description(md: Dict[str, Any]) -> str:
+            for k in ["summary", "description", "logline", "synopsis"]:
+                v = md.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+            return ""
 
-    def _store_vectordb(self, verbose: bool):
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=200,
-            chunk_overlap=50,
-            separators=[
-                "\n\n", "### ", "## ", "# ",
-                "\n",
-                "。", "！", "？", "；", "：", "、", "，",
-                ". ", "? ", "! ",
-                " ",
-                ""
-            ],
-            keep_separator=True,
-        )
+        def _clean_section_metadata(md: Dict[str, Any]) -> Dict[str, Any]:
+            """
+            Keep section metadata concise for section supernodes.
+            Remove preprocessing/internal fields that are noisy for retrieval.
+            """
+            if not isinstance(md, dict):
+                return {}
+            drop_keys = {
+                "doc_title",
+                "source_doc_id",
+                "raw_doc_id",
+            }
+            out: Dict[str, Any] = {}
+            for k, v in md.items():
+                kk = str(k).strip()
+                if not kk or kk in drop_keys:
+                    continue
+                if v is None:
+                    continue
+                if isinstance(v, str) and not v.strip():
+                    continue
+                out[kk] = v
+            return out
 
-        try:
-            all_documents = list(self.kg.documents.values())
-            self.document_vector_store.delete_collection()
-            self.document_vector_store._initialize()
-            self.document_vector_store.store_documents(all_documents)
+        for doc_group_id, d in documents_map.items():
+            if not isinstance(d, dict):
+                continue
 
-            self.sentence_vector_store.delete_collection()
-            self.sentence_vector_store._initialize()
+            parts = d.get("parts") or []
+            if not isinstance(parts, list) or not parts:
+                continue
 
-            all_sentences = []
-            for doc in tqdm(all_documents, desc="Persisting split sentences", total=len(all_documents)):
-                content = doc.content
-                if len(content) > 200:
-                    sentences = splitter.split_text(content)
-                else:
-                    sentences = [content]
-                for i, sentence in enumerate(sentences):
-                    sentence = sentence.replace("\\n", "").strip()
-                    all_sentences.append(
-                        Document(id=f"{doc.id}-{i+1}", content=sentence, metadata=doc.metadata)
-                    )
+            parts_clean = [p.strip() for p in parts if isinstance(p, str) and p.strip()]
+            if not parts_clean:
+                continue
 
-            self.sentence_vector_store.store_documents(all_sentences)
+            for p in parts_clean:
+                part2doc[p] = doc_group_id
 
-        except Exception as e:
-            if verbose:
-                logger.error(f"Vector store persistence failed: {e}")
+            md = _first_part_metadata(parts_clean[0])
 
-    def _store_knowledge_graph(self, verbose: bool):
-        try:
-            self.graph_store.reset_knowledge_graph()
-            self.graph_store.store_knowledge_graph(self.kg)
-        except Exception as e:
-            if verbose:
-                logger.error(f"Graph store persistence failed: {e}")
+            main_title = safe_str(d.get("title")).strip()
+            sub_title = safe_str(d.get("subtitle")).strip()
 
-    # ═════════════════════════════════════════════════════════════════════
-    #  Embedding & Stats
-    # ═════════════════════════════════════════════════════════════════════
-    def prepare_graph_embeddings(self):
-        """Compute and persist graph embeddings as configured."""
-        self.neo4j_utils.load_embedding_model(self.config.graph_embedding)
-        self.neo4j_utils.create_vector_index()
-        self.neo4j_utils.process_all_embeddings()
-        self.neo4j_utils.ensure_entity_superlabel()
-        logger.info("Graph embeddings prepared successfully.")
+            properties: Dict[str, Any] = {
+                "document_type": safe_str(self.doc_type) or "document"
+            }
 
-    def get_stats(self) -> Dict[str, Any]:
-        """Return a consolidated stats dictionary for current components."""
-        return {
-            "knowledge_graph": self.kg.stats(),
-            "graph_store": self.graph_store.get_stats(),
-            "document_vector_store": self.document_vector_store.get_stats(),
-            "sentence_vector_store": self.sentence_vector_store.get_stats(),
+            cleaned_md = _clean_section_metadata(md) if isinstance(md, dict) and md else {}
+            md_title = safe_str(cleaned_md.get("title")).strip()
+            md_subtitle = safe_str(cleaned_md.get("subtitle")).strip()
+
+            resolved_title = main_title or md_title
+            resolved_subtitle = sub_title or md_subtitle
+            if resolved_title:
+                properties[title_key] = resolved_title
+            if resolved_subtitle:
+                properties[subtitle_key] = resolved_subtitle
+
+            # flatten cleaned metadata into properties (no nested "metadata")
+            # keep doc_type-mapped title/subtitle keys as canonical keys
+            for mk, mv in cleaned_md.items():
+                if mk in {"title", "subtitle", "document_type"}:
+                    continue
+                if mk in {title_key, subtitle_key}:
+                    continue
+                properties[mk] = mv
+
+            doc_name = main_title or properties.get(title_key) or doc_group_id
+            doc_description = _guess_description(md)
+
+            doc_entity_dicts.append(
+                {
+                    "id": doc_group_id,
+                    "name": doc_name,
+                    "type": [section_label],
+                    "aliases": [],
+                    "description": doc_description,
+                    "scope": "global",
+                    "source_documents": sorted(set(parts_clean)),
+                    "properties": properties,
+                }
+            )
+
+        # build Document -> Entity edges via part intersection
+        doc2parts: Dict[str, Set[str]] = {
+            d["id"]: set(d["source_documents"])
+            for d in doc_entity_dicts
+            if d.get("id") and isinstance(d.get("source_documents"), list)
         }
+
+        def _stable_rel_id(key: str, prefix: str = "rel_") -> str:
+            return prefix + hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+
+        doc_entity_edges: List[Dict[str, Any]] = []
+
+        for eid, ent in entities_by_id.items():
+            if not isinstance(ent, dict):
+                continue
+            ent_id = safe_str(ent.get("id")) or safe_str(eid)
+            if not ent_id:
+                continue
+
+            src_docs = ent.get("source_documents") or []
+            if not isinstance(src_docs, list):
+                src_docs = []
+            src_docs_set = set([x for x in src_docs if isinstance(x, str) and x.strip()])
+            if not src_docs_set:
+                continue
+
+            touched_docs: Set[str] = set()
+            for p in src_docs_set:
+                dg = part2doc.get(p)
+                if dg:
+                    touched_docs.add(dg)
+
+            for dg in sorted(touched_docs):
+                parts = doc2parts.get(dg, set())
+                if not parts:
+                    continue
+                inter = parts.intersection(src_docs_set)
+                if not inter:
+                    continue
+
+                rid = _stable_rel_id(f"{dg}||{contains_pred}||{ent_id}", "rel_doc_ent_")
+                doc_entity_edges.append(
+                    {
+                        "id": rid,
+                        "subject_id": dg,
+                        "object_id": ent_id,
+                        "predicate": contains_pred,
+                        "relation_name": "contains",
+                        "persistence": "static",
+                        "confidence": 1.0,
+                        "description": f"{section_label} contains mentions of the entity.",
+                        "source_documents": sorted(list(inter)),
+                        "properties": {},
+                    }
+                )
+
+        # persist to JSON
+        doc_entities_path = os.path.join(base, "doc_entities.json")
+        doc_entity_edges_path = os.path.join(base, "doc_entity_edges.json")
+        dump_json(doc_entities_path, doc_entity_dicts)
+        dump_json(doc_entity_edges_path, doc_entity_edges)
+
+        if verbose:
+            logger.info(
+                f"[DocEntities] doc_label={section_label} contains_pred={contains_pred} "
+                f"doc_entities={len(doc_entity_dicts)} doc_entity_edges={len(doc_entity_edges)} "
+                f"saved to {doc_entities_path} and {doc_entity_edges_path}"
+            )
+
+    def load_json_to_graph_store(
+        self,
+        *,
+        verbose: bool = True,
+        entity_info_path: Optional[str] = None,
+        relation_info_path: Optional[str] = None,
+        doc_entities_path: Optional[str] = None,
+        doc_entity_edges_path: Optional[str] = None,
+    ) -> None:
+        """
+        Load all JSON files into the local runtime graph store,
+        then build embeddings and derived graph metrics.
+
+        Must be called after build_doc_entities() so that doc_entities.json and
+        doc_entity_edges.json exist.
+        """
+        base = self._base_dir()
+
+        if entity_info_path is None:
+            p_refined = os.path.join(base, "entity_info_refined.json")
+            entity_info_path = p_refined if os.path.exists(p_refined) else os.path.join(base, "entity_basic_info.json")
+
+        if relation_info_path is None:
+            relation_info_path = os.path.join(base, "relation_info_refined.json")
+
+        if doc_entities_path is None:
+            doc_entities_path = os.path.join(base, "doc_entities.json")
+
+        if doc_entity_edges_path is None:
+            doc_entity_edges_path = os.path.join(base, "doc_entity_edges.json")
+
+        entities_by_id = load_json(entity_info_path)
+        relations = load_json(relation_info_path)
+        doc_entity_dicts = load_json(doc_entities_path)
+        doc_entity_edges = load_json(doc_entity_edges_path)
+
+        if not isinstance(entities_by_id, dict):
+            entities_by_id = {}
+        if not isinstance(relations, list):
+            relations = []
+        if not isinstance(doc_entity_dicts, list):
+            doc_entity_dicts = []
+        if not isinstance(doc_entity_edges, list):
+            doc_entity_edges = []
+
+        if verbose:
+            logger.info(
+                f"[GraphLoad] entities={len(entities_by_id)} relations={len(relations)} "
+                f"doc_entities={len(doc_entity_dicts)} doc_entity_edges={len(doc_entity_edges)}"
+            )
+
+        self.graph_store.reset_knowledge_graph()
+
+        entity_objs: List[Entity] = []
+        relation_objs: List[Relation] = []
+
+        for d in doc_entity_dicts:
+            if not isinstance(d, dict):
+                continue
+            try:
+                entity_objs.append(Entity(**d))
+            except Exception:
+                continue
+
+        for ent in entities_by_id.values():
+            if not isinstance(ent, dict):
+                continue
+            try:
+                entity_objs.append(Entity(**ent))
+            except Exception:
+                continue
+
+        for r in relations:
+            if not isinstance(r, dict):
+                continue
+            row = dict(r)
+            if "predicate" not in row and "relation_type" in row:
+                row["predicate"] = row.get("relation_type")
+            if "source_documents" not in row:
+                did = row.get("document_id")
+                row["source_documents"] = [did.strip()] if isinstance(did, str) and did.strip() else []
+            if "confidence" not in row or row.get("confidence") is None:
+                row["confidence"] = 1.0
+            if "properties" not in row or not isinstance(row.get("properties"), dict):
+                row["properties"] = {}
+            try:
+                relation_objs.append(Relation(**row))
+            except Exception:
+                continue
+
+        for r in doc_entity_edges:
+            if not isinstance(r, dict):
+                continue
+            try:
+                relation_objs.append(Relation(**r))
+            except Exception:
+                continue
+
+        self.graph_store.upsert_entities(entity_objs)
+        self.graph_store.upsert_relations(relation_objs)
+
+        self.graph_query_utils.load_embedding_model(self.config.embedding)
+        self.graph_query_utils.create_vector_index()
+        self.graph_query_utils.process_all_embeddings()
+        self.graph_query_utils.ensure_entity_superlabel()
+        try:
+            cstats = self.graph_query_utils.compute_centrality(
+                graph_name="centrality_graph",
+                force_refresh=True,
+                include_betweenness=True,
+            )
+            if verbose:
+                logger.info("[GraphCentrality] %s", cstats)
+        except Exception as e:
+            logger.warning("Graph centrality computation failed (skipped): %s", e)
+        logger.info("Local graph runtime prepared successfully.")

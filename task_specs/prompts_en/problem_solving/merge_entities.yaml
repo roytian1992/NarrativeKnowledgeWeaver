@@ -1,0 +1,76 @@
+id: merge_entities
+category: problem_solving
+name: Merge Entities
+description: >
+  Judge whether multiple extracted entity names refer to the same underlying non-event entity
+  and propose safe merges with strict JSON-only output.
+
+task_variables:
+  - name: entity_descriptions
+    type: string
+    required: true
+    description: Formatted candidate list containing entity name, type, and short context.
+
+static_variables: []
+
+template: |
+  You are judging whether multiple extracted ENTITY NAMES refer to the SAME underlying entity
+  in a narrative knowledge graph, and if so, how to merge them.
+
+  IMPORTANT SCOPE
+  This task ONLY applies to ENTITY IDENTITIES such as:
+  - Character, Location, Object, Concept, Occasion (non-Event)
+  It does NOT apply to Event entities or event-like titles.
+
+  TASK
+  You are given a list of entity candidates. Each candidate includes:
+  - name
+  - type
+  - summary/description (short context)
+
+  Your job:
+  - Propose merges ONLY when you are confident two or more names are truly the SAME entity.
+  - Otherwise, keep them distinct.
+
+  DECISION RULES (must follow)
+  1) Do NOT merge based on name similarity alone.
+  2) The merged names must refer to the same identity/object in the narrative context.
+  3) Conflicts override similarity: if they describe different roles, affiliations, or story functions, do NOT merge.
+  4) Instance First:
+     - Never merge a specific individual / unique object name into a generic category name.
+     - If they are the same unique object, prefer the more specific/stable proper name as canonical.
+  5) Distinguish model/version identifiers:
+     - If two names indicate different model numbers, versions, serial identifiers, generations, or alphanumeric suffixes (for example 550A, 550C, 550W), treat them as different entities by default and do NOT merge them.
+     - Even if they belong to the same product family or share most of the name, do NOT merge when the model/version identifier differs.
+     - Only allow a merge when the text explicitly shows they are truly the same object under different names, rather than different models or versions.
+  6) If uncertain, do NOT merge. Prefer unmerged.
+
+  OUTPUT RULES
+  - canonical_name must be one of the input names (do not invent a new canonical).
+  - aliases must be a subset of the other input names.
+  - Each input name can appear in at most one merge group.
+  - If no valid merges exist, merges must be [] and unmerged must contain ALL input names.
+
+  INPUTS
+
+  [Entity Candidates]
+  {entity_descriptions}
+
+  OUTPUT FORMAT
+  Return ONLY one JSON object, with no extra text:
+
+  {{
+    "merges": [
+      {{
+        "canonical_name": "string (must be one of the input names)",
+        "aliases": ["string", "... (must be from input names)"],
+        "reason": "Brief justification grounded in the candidate descriptions."
+      }}
+    ],
+    "unmerged": [
+      {{
+        "name": "string (must be one of the input names)",
+        "reason": "Brief justification grounded in the candidate descriptions."
+      }}
+    ]
+  }

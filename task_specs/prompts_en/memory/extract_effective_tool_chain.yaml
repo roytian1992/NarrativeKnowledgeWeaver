@@ -1,0 +1,71 @@
+id: extract_effective_tool_chain
+category: memory
+name: Extract Effective Tool Chain
+description: >
+  Extract the actually necessary tool chain from the full tool trace.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+  - name: raw_tool_uses_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are analyzing a retrieval QA tool trace.
+
+  Question:
+  {question}
+
+  Reference answer:
+  {reference_answer}
+
+  Candidate answer:
+  {candidate_answer}
+
+  Raw tool trace (JSON):
+  {raw_tool_uses_json}
+
+  Task:
+  - Analyze each tool step causally, not just heuristically.
+  - Keep a step if it directly provides final evidence, or if it provides constraints, entities, section ids, document ids, or keywords that a later kept step actually uses.
+  - Drop failed, irrelevant, or merely exploratory steps that do not contribute.
+  - Prefer the shortest sufficient chain.
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {{
+      "minimal_effective_chain": ["tool_a", "tool_b"],
+      "effective_tool_chain": ["tool_a", "tool_b"],
+      "effective_step_indices": [0, 2],
+      "discarded_step_indices": [1],
+      "step_attributions": [
+        {{
+          "step_index": 0,
+          "tool_name": "tool_a",
+          "is_question_relevant": true,
+          "provides_final_evidence": false,
+          "is_used_by_later_step": true,
+          "used_by_step_indices": [2],
+          "extracted_insights": "string",
+          "keep": true,
+          "reason": "string"
+        }}
+      ],
+      "reason": "string"
+    }}
+  - Preserve the original order of retained tools.
+  - If a later evidence step is sufficient by itself, earlier broad exploratory retrieval can be dropped.
+  - If `retrieve_entity_by_name` is not consumed later and is not itself evidence, mark it as discardable.
+  - If `bm25_search_docs` is only a coarse search and a later kept evidence step does not depend on it, mark it as discardable.
+  - No markdown. No extra explanation.
