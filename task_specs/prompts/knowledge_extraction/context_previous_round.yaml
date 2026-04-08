@@ -1,0 +1,25 @@
+id: context_previous_round
+category: knowledge_extraction
+name: Previous Round Context
+description: >
+  Optional context about previous extraction results and feedbacks.
+
+task_variables:
+  - name: previous_results
+    type: string
+    required: false
+    description: JSON/text of previous extracted outputs.
+
+  - name: feedbacks
+    type: string
+    required: false
+    description: Feedbacks or critiques from evaluator/reflector.
+
+static_variables: []
+
+template: |
+  在上一轮中，我们抽取了以下输出：
+  {previous_results}
+
+  我们还收到了以下反馈：
+  {feedbacks}

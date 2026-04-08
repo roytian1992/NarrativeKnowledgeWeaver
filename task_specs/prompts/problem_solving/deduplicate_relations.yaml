@@ -1,0 +1,57 @@
+id: dedup_relations
+category: problem_solving
+name: Deduplicate Relations
+description: >
+  Deduplicate relation types among relations connecting the same entity pair.
+  Decide to keep all, or drop some relation types. Strict JSON-only output.
+
+task_variables:
+  - name: relations
+    type: string
+    required: true
+    description: JSON array (string) of relations connecting the same entity pair.
+
+static_variables: []
+
+template: |
+  你正在为叙事知识图谱中同两个实体之间的关系进行去重。
+
+  任务
+  给定：一组抽取的关系，它们都连接同一对实体。
+
+  你的目标是决定是否应该丢弃其中某些关系类型。
+
+  关键约束
+  - 不要编造新的实体或新的关系。
+  - 不要重写任何关系字段。
+  - 你只能决定保留全部，或丢弃某些关系类型。
+  - 如果多个关系类型都得到明确支持且不冗余，保留全部。
+  - 如果某个关系类型不被文本支持，你应该丢弃它。
+  - 如果某个关系类型在含义上与另一个关系类型冗余（根据文本判断），你可以丢弃较弱的那个。
+
+  [同对实体的关系]
+  {relations}
+
+  决策规则
+  - decision = "keep" 如果你认为所有列出的关系类型都是有效且不冗余的。
+  - decision = "drop" 如果你认为至少应该移除一个关系类型。
+    - 在这种情况下，output.drop_relation_types 必须是非空列表。
+    - 只包含出现在提供的关系中的 relation_type 字符串。
+
+  输出格式
+  只返回一个 JSON 对象，不要有额外文本。
+
+  如果 decision 为 "keep"：
+  {{
+    "decision": "keep",
+    "output": {{}}
+  }}
+
+  如果 decision 为 "drop"：
+  {{
+    "decision": "drop",
+    "output": {{
+      "drop_relation_types": ["<relation_type>", "..."],
+      "rationale": "基于提供的关系的简要解释。"
+    }}
+  }}

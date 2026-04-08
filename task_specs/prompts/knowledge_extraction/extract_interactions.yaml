@@ -1,0 +1,99 @@
+id: interaction_extraction
+category: knowledge_extraction
+name: Interaction Extraction
+description: >
+  Extract dialogue and interaction records between Character/Object entities with strict JSON output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: 输入文本块。
+
+  - name: entities
+    type: string
+    required: true
+    description: 已抽取实体列表。subject/object 只能使用该列表中的实体名称。
+
+  - name: interaction_group
+    type: string
+    required: true
+    description: >
+      交互组 key，用于从 default_interaction_schema.json 中选择模式。
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+
+  - name: task_goal
+    type: string
+    required: true
+
+  - name: global_constraints
+    type: string
+    required: true
+
+  - name: output_fields_block
+    type: string
+    required: true
+
+  - name: group_name
+    type: string
+    required: true
+
+  - name: group_constraints_block
+    type: string
+    required: false
+
+  - name: interaction_schema
+    type: string
+    required: true
+
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  你正在执行交互信息抽取任务。
+  任务：
+  {task_name}
+
+  目标：
+  {task_goal}
+
+  全局约束：
+  {global_constraints}
+
+  交互组：
+  {interaction_group}
+  {group_name}
+
+  交互组特定约束：
+  {group_constraints_block}
+
+  允许的交互模式：
+  {interaction_schema}
+
+  输出格式：
+  返回一个 JSON 数组。
+  每个元素必须包含以下字段：
+  {output_fields_block}
+
+  不要包含任何额外字段。
+  不要在 JSON 之外包含解释、评论或其他文本。
+
+  示例：
+  {few_shot_samples}
+
+  对象使用规则（严格）：
+  - object 允许为 Object 仅用于“可主动交互或可回应”的对象（如机器人、AI助手、系统代理）。
+  - 若文本里的对象只是被动物体/道具/背景物（如幕布、门、桌椅、墙、舞台布景），不要把它作为 object。
+  - 独白/自言自语可令 object 为空字符串。
+
+  输入文本：
+  {text}
+
+  已抽取实体：
+  subject/object 只能使用此列表中的实体名称。
+  {entities}

@@ -1,0 +1,62 @@
+id: score_candidate_relevance
+category: text_processing
+name: Score Candidate Relevance
+description: >
+  Estimate how likely a text candidate is to contain information that helps answer a query.
+  Return a probability, a boolean decision, and a short reason in strict JSON.
+
+task_variables:
+  - name: goal
+    type: string
+    required: true
+    description: User query or retrieval goal.
+
+  - name: text
+    type: string
+    required: true
+    description: Candidate text to judge.
+
+template: |
+  你是一位严格的检索相关性判断专家。
+
+  你的任务是判断“候选文本”是否可能包含用于回答“目标问题”的有效信息。
+
+  --------------------------------
+  判断标准
+  --------------------------------
+  1) 如果候选文本明确提到与问题直接相关的人物、事件、行为、因果、目标、结果或关键对象，应提高概率。
+  2) 如果只有弱相关背景、泛泛提及、主题相近但无法支持回答，应给较低概率。
+  3) 不要因为词面重合就给高分；要判断语义上是否真的可能帮助回答问题。
+  4) 如果候选文本明显不相关，概率应接近 0。
+  5) 只基于给定文本判断，不要引入外部知识。
+
+  --------------------------------
+  输入
+  --------------------------------
+  [目标问题]
+  {goal}
+
+  [候选文本]
+  {text}
+
+  --------------------------------
+  输出格式（严格）
+  --------------------------------
+  只返回 JSON：
+
+  {{
+    "probability": 0.0,
+    "is_relevant": false,
+    "reason": "..."
+  }}
+
+  说明：
+  - probability 取值范围必须为 0 到 1。
+  - is_relevant 表示该文本是否值得保留为候选证据。
+  - reason 用一句简短中文说明判断依据。
+
+  --------------------------------
+  最终要求
+  --------------------------------
+  - 只输出 JSON。
+  - 不要 markdown，不要额外解释。

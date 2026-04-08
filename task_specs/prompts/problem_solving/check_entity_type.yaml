@@ -1,0 +1,104 @@
+id: check_entity_type
+category: problem_solving
+name: Check Entity Type Override
+description: >
+  Validate whether a locally assigned entity type should be kept or dropped in favor of the majority type,
+  using only the provided text evidence. Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The text where the entity appears.
+
+  - name: entity_name
+    type: string
+    required: true
+    description: The entity name appearing in the text.
+
+  - name: minority_type
+    type: string
+    required: true
+    description: The locally assigned (minority) entity type in this context.
+
+  - name: majority_type
+    type: string
+    required: true
+    description: The entity type used in the majority of occurrences across the document.
+
+  - name: majority_percentage
+    type: string
+    required: true
+    description: Majority type percentage (e.g., 98, 98.0, "98", "98%").
+
+static_variables: []
+
+template: |
+  你正在验证一个局部分配的实体类型应该被保留还是丢弃，
+  基于全局使用模式和局部文本证据。
+
+  任务
+  给定：
+  1) 一段文本。
+  2) 出现在文本中的实体名称。
+  3) 当前局部抽取中分配的实体类型（minority_type，少数类型）。
+  4) 在整个文档中大多数情况下出现的实体类型（majority_type，多数类型）。
+  5) 实体被分类为多数类型的出现百分比。
+
+  在整个文档中，该实体在大多数情况下（{majority_percentage}% 的所有出现）
+  被分类为多数类型。
+
+  你的任务是决定，在此特定文本中，局部分配的
+  实体类型应该被保留还是丢弃以支持多数类型。
+
+  如果你决定保留局部分配的类型，你还必须为此文本中的
+  少数用法提出一个新名称，以便它可以作为一个独立的
+  实体存在而不与多数实体冲突。
+
+  决策原则：
+  - 将多数实体类型视为默认解释。
+  - 只有当文本提供了清晰、明确、毫不含糊的证据表明
+    实体在这里被不同地使用时，才保留局部分配的类型。
+  - 在以下情况下丢弃局部分配的类型：
+    - 文本与多数类型兼容，或
+    - 局部类型的证据较弱、隐含、模糊，或纯粹是形式上的
+      （例如大小写、场景格式或命名约定）。
+
+  关键约束
+  - 仅基于提供的文本进行判断。
+  - 不要使用外部或世界知识。
+  - 不要将剧本格式或大小写单独作为充分证据。
+  - 在模糊情况下，优先选择多数实体类型。
+  - 当提出 "new_name" 时（仅当 decision="keep"）：
+    - new_name 必须指向本文本中的少数用法，而非多数实体。
+    - 不要改变文本的含义。
+    - 不要编造文本中不存在的事实。
+    - new_name 应该简短、具体且能消歧。
+    - 优先添加最小限定词而非完全重写。
+    - 不要简单地将类型附加在括号中作为 new_name。
+
+  输入
+
+  [文本]
+  {text}
+
+  [实体名称]
+  {entity_name}
+
+  [局部分配的实体类型]
+  {minority_type}
+
+  [多数实体类型]
+  {majority_type}
+
+  [多数类型百分比]
+  {majority_percentage}%
+
+  输出格式
+  只返回一个 JSON 对象，不要有额外文本：
+
+  {{
+    "decision": "keep" | "drop",
+    "reason": "明确基于文本的简要解释。",
+    "new_name": "仅当 decision 为 keep 时需要；否则省略或为 null。"
+  }}

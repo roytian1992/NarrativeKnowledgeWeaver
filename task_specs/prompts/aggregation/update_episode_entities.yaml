@@ -1,0 +1,108 @@
+id: update_episodes
+category: aggregation
+name: Update Episodes with New Scene Part
+description: >
+  Update an existing set of Episodes using new text and the full entity list.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The new scene part text only.
+
+  - name: entities
+    type: string
+    required: true
+    description: JSON string of the full entity list across all parts so far.
+
+  - name: existing_episodes
+    type: string
+    required: true
+    description: JSON string of previously extracted episodes.
+
+static_variables:
+  - name: entity_definitions_text
+    type: string
+    required: true
+    description: Event、Occasion、Episode、Storyline 的定义文本。
+
+  - name: episode_output_fields_text
+    type: string
+    required: true
+    description: Episode 输出字段定义。
+
+  - name: episode_construction_constraints_text
+    type: string
+    required: true
+    description: 基于 schema 的 Episode 结构约束。
+
+  - name: episode_writing_constraints_text
+    type: string
+    required: true
+    description: 基于 schema 的 Episode 写作约束。
+
+  - name: episode_sample_json_text
+    type: string
+    required: true
+    description: 来自 schema 的 Episode 示例对象。
+
+template: |
+  你是一个信息抽取和叙事结构化助手。
+
+  定义：
+  {entity_definitions_text}
+
+  任务：
+  使用新文本（新的场景部分）和完整实体列表更新现有的 Episodes 集合。
+  你必须保持约束：每个 Event 恰好属于一个 Episode。
+
+  输入：
+  1) existing_episodes：从先前场景部分抽取的 Episodes。
+  2) text：仅新场景部分的原始文本。
+  3) entities：迄今为止所有部分的完整实体列表。每个实体具有：
+     - id、name、description、type（"Event" 或 "Occasion"）、source_documents
+
+  规则：
+  {episode_construction_constraints_text}
+  - 在最终输出中，每个 Event id 必须恰好出现在一个 Episode 中。
+  - 你可以执行以下操作：
+     - 如果来自新场景部分的新事件与现有 Episode 共享相同的即时目标/叙事单元，则将其添加到该 Episode 中。
+     - 为开始新的目标驱动单元的事件创建新的 Episodes。
+     - （可选）如果更新后的成员改变了最佳的以行动为导向的摘要，可以重命名 Episodes。
+  - 保守行事：除非新文本提供了强有力的证据表明需要这样做，否则不要更改现有 Episode 结构。
+     特别是，不要拆分或合并现有的 Episodes。
+  - 不要编造文本不支持的事件或细节。
+
+  Episode 输出字段：
+  {episode_output_fields_text}
+
+  Episode 写作约束：
+  {episode_writing_constraints_text}
+
+  示例 Episode 对象：
+  {episode_sample_json_text}
+
+  只输出 JSON，模式：
+
+  {{
+    "episodes": [
+      {{
+        "name": "...",
+        "description": "...",
+        "related_events": ["..."],
+        "related_occasions": ["..."]
+      }}
+    ]
+  }}
+
+  现在处理。
+
+  现有 Episodes：
+  {existing_episodes}
+
+  新文本：
+  {text}
+
+  所有实体：
+  {entities}

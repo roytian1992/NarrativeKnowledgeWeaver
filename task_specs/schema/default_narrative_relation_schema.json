@@ -1,0 +1,160 @@
+{
+  "inter_episode_relations": [
+    {
+      "type": "precedes",
+      "description": "情节A在叙事顺序或话语顺序上早于情节B。",
+      "from": ["Episode"],
+      "to": ["Episode"],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "抢劫计划向团队成员揭示",
+          "object": "团队执行金库闯入行动",
+          "relation_type": "precedes",
+          "description": "计划披露发生在金库闯入之前。",
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "type": "causes",
+      "description": "情节A直接触发情节B，作为即时后果。仅在文本提供明确因果证据时使用。",
+      "from": ["Episode"],
+      "to": ["Episode"],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "隔离泄漏释放致命病原体",
+          "object": "城市进入紧急封锁状态",
+          "relation_type": "causes",
+          "description": "病原体泄漏直接导致全城封锁。",
+          "confidence": 0.55
+        }
+      ]
+    },
+    {
+      "type": "contrasts_with",
+      "description": "两个情节并置以强调在基调、状态或结果上的对比或逆转。",
+      "from": ["Episode"],
+      "to": ["Episode"],
+      "persistence": "stable",
+      "direction": "symmetric",
+      "samples": [
+        {
+          "subject": "英雄在公开仪式上受到庆祝",
+          "object": "同一位英雄私下承认恐惧和疑虑",
+          "relation_type": "contrasts_with",
+          "description": "公众赞誉与私下脆弱形成对比。",
+          "confidence": 0.75
+        }
+      ]
+    },
+    {
+      "type": "elaborates",
+      "description": "情节A提供额外细节、解释或背景，扩展情节B。",
+      "from": ["Episode"],
+      "to": ["Episode"],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "嫌疑人在审讯中拒绝开口",
+          "object": "闪回揭示嫌疑人之前与警方的交易",
+          "relation_type": "elaborates",
+          "description": "闪回通过提供先前背景扩展了审讯场景。",
+          "confidence": 0.40
+        }
+      ]
+    }
+  ],
+  "inter_storyline_relations": [
+    {
+      "type": "prerequisite_for",
+      "description": "故事线A建立了故事线B的必要前提。若A未达成其结果，B便无法有意义地展开。",
+      "from": ["Storyline"],
+      "to": ["Storyline"],
+      "persistence": "stable",
+      "direction": "directed",
+      "direction_format": "A->B",
+      "samples": [
+        {
+          "subject": "发现模拟世界的真实本质",
+          "object": "对控制系统的有组织反抗",
+          "relation_type": "prerequisite_for",
+          "direction": "A->B",
+          "description": "协同反叛依赖于发现现实是人工构建的这一认知。"
+        }
+      ]
+    },
+    {
+      "type": "blocks",
+      "description": "故事线A阻碍、延迟或破坏故事线B的进展或解决。",
+      "from": ["Storyline"],
+      "to": ["Storyline"],
+      "persistence": "stable",
+      "direction": "directed",
+      "direction_format": "A->B",
+      "samples": [
+        {
+          "subject": "反抗运动内部的背叛",
+          "object": "推翻独裁政权",
+          "relation_type": "blocks",
+          "direction": "A->B",
+          "description": "背叛破坏了协调，延迟了对政权的推翻。"
+        }
+      ]
+    },
+    {
+      "type": "resolves",
+      "description": "故事线A解决或消解驱动故事线B的核心张力或冲突。",
+      "from": ["Storyline"],
+      "to": ["Storyline"],
+      "persistence": "stable",
+      "direction": "directed",
+      "direction_format": "A->B",
+      "samples": [
+        {
+          "subject": "长期压制的真相被公开揭示",
+          "object": "靠集体否认维系的政权",
+          "relation_type": "resolves",
+          "direction": "A->B",
+          "description": "真相揭露瓦解了否认，消解了维系政权的稳定幻象。"
+        }
+      ]
+    },
+    {
+      "type": "conflicts_with",
+      "description": "两条故事线追求对立的目标或价值观，产生持续的叙事张力。",
+      "from": ["Storyline"],
+      "to": ["Storyline"],
+      "persistence": "stable",
+      "direction": "undirected",
+      "samples": [
+        {
+          "subject": "维护绝对权力和控制",
+          "object": "追求个人自由和自主",
+          "relation_type": "conflicts_with",
+          "description": "维护绝对控制从根本上与个人自由相对立。"
+        }
+      ]
+    },
+    {
+      "type": "parallels",
+      "description": "两条故事线以结构或主题相似的方式展开，彼此不直接干涉。",
+      "from": ["Storyline"],
+      "to": ["Storyline"],
+      "persistence": "stable",
+      "direction": "undirected",
+      "samples": [
+        {
+          "subject": "不情愿的领袖在外部压力下崛起",
+          "object": "局外人转变为象征性领袖",
+          "relation_type": "parallels",
+          "description": "两条故事线都描绘了在外部力量作用下被塑造成领袖的个体。"
+        }
+      ]
+    }
+  ]
+}

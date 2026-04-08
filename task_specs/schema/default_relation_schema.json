@@ -1,0 +1,467 @@
+{
+  "event_occasion_relations": [
+    {
+      "type": "performs",
+      "description": "实体主动执行、发起或主导某事件(施事者/说话者/发起者等)。",
+      "from": [
+        "Character",
+        "Object",
+        "Concept"
+      ],
+      "to": [
+        "Event"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "赵队长",
+          "object": "安全检查站突破行动",
+          "relation_type": "performs",
+          "relation_name": "主导",
+          "description": "赵队长主导了安全检查站突破行动。"
+        },
+        {
+          "subject": "地球联合舰队",
+          "object": "安全检查站突破行动",
+          "relation_type": "performs",
+          "relation_name": "执行",
+          "description": "突破行动被描述为舰队执行的协调军事行动。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "undergoes",
+      "description": "实体在事件中被作用于、被针对或受影响(受事者/目标/受益者等)。",
+      "from": [
+        "Character",
+        "Object",
+        "Concept"
+      ],
+      "to": [
+        "Event"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "太阳神轨道空间站",
+          "object": "紧急撤离",
+          "relation_type": "undergoes",
+          "relation_name": "受影响于",
+          "description": "空间站因撤离行动而状态或人员发生变化。"
+        },
+        {
+          "subject": "加密数据芯片",
+          "object": "数据窃取",
+          "relation_type": "undergoes",
+          "relation_name": "在...中被盗",
+          "description": "该芯片明确是盗窃事件中被窃取的物品。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "experiences",
+      "description": "角色经历内在的心理、感知或情感事件(经验者/思考者/感受者等)。",
+      "from": [
+        "Character"
+      ],
+      "to": [
+        "Event"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "老图书管理员",
+          "object": "无声的领悟",
+          "relation_type": "experiences",
+          "relation_name": "领悟到",
+          "description": "该事件是归属于图书管理员的内在认知，而非外在行为。"
+        },
+        {
+          "subject": "赵队长",
+          "object": "恐慌骤起",
+          "relation_type": "experiences",
+          "relation_name": "感受到",
+          "description": "文本将恐慌描绘为赵队长在那一刻的内在情绪状态。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "participates_in",
+      "description": "实体作为参与者/出席者/代表/成员参与、出席或涉及某场合。",
+      "from": [
+        "Character",
+        "Concept"
+      ],
+      "to": [
+        "Occasion"
+      ],
+      "persistence": "phase",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "本尼",
+          "object": "戒酒康复会议",
+          "relation_type": "participates_in",
+          "relation_name": "参与",
+          "description": "本尼出席会议并作为集会的一部分发言。"
+        },
+        {
+          "subject": "赵队长",
+          "object": "联合国2026年气候峰会",
+          "relation_type": "participates_in",
+          "relation_name": "参加",
+          "description": "赵队长作为代表参加联合国2026年气候峰会。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "initiates",
+      "description": "实体作为负责的组织者组织、召集、赞助或主持某场合(泛化的'主办方')。",
+      "from": [
+        "Concept",
+        "Character"
+      ],
+      "to": [
+        "Occasion"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "匿名戒酒会",
+          "object": "戒酒康复会议",
+          "relation_type": "initiates",
+          "relation_name": "组织",
+          "description": "匿名戒酒会是该会议的机构组织者。"
+        },
+        {
+          "subject": "联合国",
+          "object": "联合国2026年气候峰会",
+          "relation_type": "initiates",
+          "relation_name": "召集",
+          "description": "联合国作为组织机构召集此次峰会。"
+        }
+      ],
+      "allow_self_loop": false
+    }
+  ],
+  "social_relations": [
+    {
+      "type": "kinship_with",
+      "description": "两个角色之间法律上、血缘上或文化上认可的家庭或婚姻关系，如亲子、兄弟姐妹、配偶或其他正式家庭纽带。此关系仅适用于叙事明确建立实际家庭或婚姻纽带的情况。不得从比喻性语言、情感亲密、照顾行为、角色相似性(如'像母亲一样')、临时监护或互动层面的动态中推断。",
+      "from": [
+        "Character"
+      ],
+      "to": [
+        "Character"
+      ],
+      "persistence": "stable",
+      "direction": "symmetric",
+      "samples": [
+        {
+          "subject": "安娜",
+          "object": "马克",
+          "relation_type": "kinship_with",
+          "relation_name": "是...的姐妹",
+          "description": "文本确立了安娜和马克是兄妹关系，安娜扮演姐妹角色。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "affinity_with",
+      "description": "两方之间以信任、忠诚、合作或一致为特征的正向社会关系状态，在叙事中呈现为当前已建立的状态。此关系反映故事当前阶段的持续纽带，但可能随着事件展开而改变。仅在场景提供强有力、明确的现有正向关系证据时使用(如宣告信任、既定伙伴关系、场景内重复的相互依赖)。不得从礼貌、短暂合作、调情或单次正面互动中推断，以免误将瞬时互动当作稳定关系。",
+      "from": [
+        "Character",
+        "Concept"
+      ],
+      "to": [
+        "Character",
+        "Concept"
+      ],
+      "persistence": "phase",
+      "direction": "symmetric",
+      "opposite": "hostility_with",
+      "samples": [
+        {
+          "subject": "赵队长",
+          "object": "林工程师",
+          "relation_type": "affinity_with",
+          "relation_name": "信任的伙伴",
+          "description": "赵明确称林为信任的伙伴，并以表明故事当前阶段已建立合作关系的方式与林协调行动。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "hostility_with",
+      "description": "两方之间以对抗、对立或意图损害对方为特征的负面或敌对关系状态，呈现于叙事当前阶段。此关系代表故事此时的持续敌对立场，但可能随情况变化而转变或化解。仅在场景提供强有力、明确的既定敌对关系证据时使用(如宣告敌意、持续威胁、提及先前冲突)。不得从单次争论、孤立威胁或瞬间对抗中推断，以免误将瞬时互动当作稳定关系。",
+      "from": [
+        "Character",
+        "Concept"
+      ],
+      "to": [
+        "Character",
+        "Concept"
+      ],
+      "persistence": "phase",
+      "direction": "symmetric",
+      "opposite": "affinity_with",
+      "samples": [
+        {
+          "subject": "叛军领袖",
+          "object": "地球联合舰队",
+          "relation_type": "hostility_with",
+          "relation_name": "持续敌对",
+          "description": "叛军领袖将舰队定性为持续对立的敌人，表明叙事当前阶段的既定敌对关系。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "allied_with",
+      "description": "组织、机构或派系之间在目的、策略或行动上保持一致的合作或联盟关系。此关系仅适用于Concept实体代表集体社会实体(如组织、机构、派系或社会团体)的情况。不得用于单次互动中的临时合作、个人友谊或与意识形态/技术的抽象认同。",
+      "from": [
+        "Concept"
+      ],
+      "to": [
+        "Concept"
+      ],
+      "persistence": "stable",
+      "direction": "symmetric",
+      "samples": [
+        {
+          "subject": "叛军派系",
+          "object": "外殖民地联盟",
+          "relation_type": "allied_with",
+          "relation_name": "结盟",
+          "description": "文本明确描述这两个团体是为共同目标协调努力的盟友。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "member_of",
+      "description": "对组织/派系/集体的成员身份、归属或机构隶属。",
+      "from": [
+        "Character"
+      ],
+      "to": [
+        "Concept"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "老图书管理员",
+          "object": "秘密档案委员会",
+          "relation_type": "member_of",
+          "relation_name": "隶属于",
+          "description": "文本将图书管理员确定为委员会成员(成员、代理人或正式附属人员)。"
+        }
+      ],
+      "allow_self_loop": false
+    }
+  ],
+  "spatiotemporal_relations": [
+    {
+      "type": "occurs_at",
+      "description": "事件或场合发生在特定地点。",
+      "from": [
+        "Event",
+        "Occasion"
+      ],
+      "to": [
+        "Location"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "紧急撤离",
+          "object": "太阳神轨道空间站",
+          "relation_type": "occurs_at",
+          "relation_name": "发生于",
+          "description": "紧急撤离发生在太阳神轨道空间站。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "occurs_on",
+      "description": "事件或场合发生在特定时间点或时间段。",
+      "from": [
+        "Event",
+        "Occasion"
+      ],
+      "to": [
+        "TimePoint"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "紧急撤离",
+          "object": "2084-07-16 18:00",
+          "relation_type": "occurs_on",
+          "relation_name": "发生于",
+          "description": "给出了撤离发生时的精确时间戳。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "occurs_during",
+      "description": "原子事件发生在某场合的时间跨度或情境内。",
+      "from": [
+        "Event"
+      ],
+      "to": [
+        "Occasion"
+      ],
+      "persistence": "momentary",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "本尼描述埋酒瓶",
+          "object": "戒酒康复会议",
+          "relation_type": "occurs_during",
+          "relation_name": "发生于...期间",
+          "description": "本尼的发言发生在戒酒康复会议期间。"
+        },
+        {
+          "subject": "协议签署",
+          "object": "联合国2026年气候峰会",
+          "relation_type": "occurs_during",
+          "relation_name": "发生于...期间",
+          "description": "协议签署发生在联合国2026年气候峰会期间。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "located_at",
+      "description": "角色或物品在一段时间内位于某地(一般位置，不绑定于单一事件)。",
+      "from": [
+        "Character",
+        "Object"
+      ],
+      "to": [
+        "Location"
+      ],
+      "persistence": "phase",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "赵队长",
+          "object": "太阳神轨道空间站",
+          "relation_type": "located_at",
+          "relation_name": "驻扎于",
+          "description": "赵队长驻扎在太阳神轨道空间站。"
+        },
+        {
+          "subject": "加密数据芯片",
+          "object": "废弃剧院",
+          "relation_type": "located_at",
+          "relation_name": "藏于",
+          "description": "加密数据芯片藏在废弃剧院中。"
+        }
+      ],
+      "allow_self_loop": false
+    }
+  ],
+  "semantic_relations": [
+    {
+      "type": "is_a",
+      "description": "类型-实例或子类分类关系。",
+      "from": [
+        "Character",
+        "Object",
+        "Location",
+        "Concept",
+        "Event",
+        "Occasion"
+      ],
+      "to": [
+        "Concept"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "太阳神轨道空间站",
+          "object": "空间站",
+          "relation_type": "is_a",
+          "relation_name": "是...的实例",
+          "description": "太阳神轨道空间站是一个空间站。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "part_of",
+      "description": "部分-整体或层级包含关系。",
+      "from": [
+        "Location",
+        "Object",
+        "Concept",
+        "Occasion"
+      ],
+      "to": [
+        "Location",
+        "Object",
+        "Concept",
+        "Occasion"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "控制室",
+          "object": "太阳神轨道空间站",
+          "relation_type": "part_of",
+          "relation_name": "是...的一部分",
+          "description": "控制室是太阳神轨道空间站的一部分。"
+        },
+        {
+          "subject": "轨道科学委员会",
+          "object": "地球联合政府",
+          "relation_type": "part_of",
+          "relation_name": "是...的下属单位",
+          "description": "轨道科学委员会是地球联合政府的一部分。"
+        }
+      ],
+      "allow_self_loop": false
+    },
+    {
+      "type": "possesses",
+      "description": "角色或概念(必须是组织、机构或派系)在一段时间内拥有、持有或保管某物品(托管/所有权)。",
+      "from": [
+        "Character",
+        "Concept"
+      ],
+      "to": [
+        "Object"
+      ],
+      "persistence": "stable",
+      "direction": "directed",
+      "samples": [
+        {
+          "subject": "秘密档案委员会",
+          "object": "禁忌账簿",
+          "relation_type": "possesses",
+          "relation_name": "保管",
+          "description": "委员会持有并保管禁忌账簿。"
+        }
+      ],
+      "allow_self_loop": false
+    }
+  ]
+}

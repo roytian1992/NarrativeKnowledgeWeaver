@@ -1,0 +1,56 @@
+id: reflect_failed_answer
+category: memory
+name: Reflect Failed Answer
+description: >
+  根据标准答案与本次错误回答，简短分析失败原因并给出下一步动作。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+  - name: tool_summary_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你在做检索问答训练中的失败反思。
+
+  问题：
+  {question}
+
+  标准答案：
+  {reference_answer}
+
+  本次回答：
+  {candidate_answer}
+
+  工具摘要（JSON）：
+  {tool_summary_json}
+
+  任务：
+  - 只指出这次回答最核心的失败点。
+  - 如果值得再试一次，就给出一个最直接的下一步动作。
+  - 不要长篇分析，不要输出多条策略。
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "failure_reason": "字符串",
+      "missed_fact": "字符串",
+      "next_action": "字符串",
+      "need_retry": true
+    }}
+  - `failure_reason`：一句话说明为什么错。
+  - `missed_fact`：一句话指出最关键遗漏。
+  - `next_action`：一句话给出下一步最该做什么。
+  - `need_retry`：如果还有明显可执行的修正路径，就填 true；否则 false。
+  - 不要输出 Markdown，不要额外解释。

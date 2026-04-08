@@ -1,0 +1,72 @@
+id: extract_effective_tool_chain
+category: memory
+name: Extract Effective Tool Chain
+description: >
+  从完整工具调用轨迹中提取真正支持正确答案的有效工具链，输出严格 JSON。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+  - name: raw_tool_uses_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你在分析检索问答中的工具调用轨迹。
+
+  问题：
+  {question}
+
+  参考答案：
+  {reference_answer}
+
+  候选回答：
+  {candidate_answer}
+
+  原始工具调用（JSON）：
+  {raw_tool_uses_json}
+
+  任务：
+  - 用“因果归因”方式分析每一步，而不是只做表面筛选。
+  - 如果某一步直接提供最终证据，保留。
+  - 如果某一步为后续保留步骤提供了实体、section id、document id、关键词、约束条件，也保留。
+  - 如果某一步只是尝试、无关、未被后续消费，应丢弃。
+  - 优先输出最短但足够的有效链。
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "minimal_effective_chain": ["tool_a", "tool_b"],
+      "effective_tool_chain": ["tool_a", "tool_b"],
+      "effective_step_indices": [0, 2],
+      "discarded_step_indices": [1],
+      "step_attributions": [
+        {{
+          "step_index": 0,
+          "tool_name": "tool_a",
+          "is_question_relevant": true,
+          "provides_final_evidence": false,
+          "is_used_by_later_step": true,
+          "used_by_step_indices": [2],
+          "extracted_insights": "字符串",
+          "keep": true,
+          "reason": "字符串"
+        }}
+      ],
+      "reason": "字符串"
+    }}
+  - `minimal_effective_chain` 和 `effective_tool_chain` 顺序必须与原始步骤一致。
+  - 如果后面的证据步骤已经足够，前面的宽泛探索步骤可以删除。
+  - 如果 `retrieve_entity_by_name` 没有被后续步骤消费，也不是最终证据，应标记为可删除。
+  - 如果 `bm25_search_docs` 只是粗搜，而后续保留的证据步骤并不依赖它，应标记为可删除。
+  - 不要输出 Markdown，不要额外解释。

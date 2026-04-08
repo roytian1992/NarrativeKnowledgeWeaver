@@ -1,0 +1,117 @@
+id: extract_narrative_relations
+category: aggregation
+name: Classify Narrative Relation Between Two Units
+description: >
+  Classify the best relation type between exactly one subject and one object narrative unit
+  (Episode or Storyline). Allowed relations and samples are provided via static variables.
+  Strict JSON-only output.
+
+task_variables:
+  - name: entity_type
+    type: string
+    required: true
+    description: The narrative unit type. Must be Episode or Storyline.
+
+  - name: subject_json
+    type: string
+    required: true
+    description: JSON string for the subject unit (must include id).
+
+  - name: object_json
+    type: string
+    required: true
+    description: JSON string for the object unit (must include id).
+
+static_variables:
+  - name: entity_definitions_text
+    type: string
+    required: true
+    description: Episode 和 Storyline 的定义文本。
+
+  - name: relation_schema_text
+    type: string
+    required: true
+    description: Rendered allowed relation types and definitions for this entity_type.
+
+  - name: few_shot_samples_text
+    type: string
+    required: true
+    description: Rendered few-shot samples for this entity_type.
+
+template: |
+  你正在执行 {entity_type} 到 {entity_type} 的关系分类。
+
+  定义：
+  {entity_definitions_text}
+
+  目标：
+  给定恰好一个主体 {entity_type} 和一个客体 {entity_type}，严格根据提供的 {entity_type} 信息和允许的关系模式，决定它们之间最佳的单一关系。
+
+  重要约束：
+  - 你不能编造新的 {entity_type}。
+  - 你不能编造提供的模式之外的关系类型，但你可以输出 "NONE"。
+  - 你的决定必须由提供的 {entity_type} 信息支持。
+  - 精确优先于召回：如果不确定，输出 "NONE"。
+
+  --------------------------------
+  输入
+  --------------------------------
+
+  [实体 #1]
+  {subject_json}
+
+  [实体 #2]
+  {object_json}
+
+  [允许的关系模式]
+  {relation_schema_text}
+
+  [少样本示例]
+  {few_shot_samples_text}
+
+  --------------------------------
+  决策规则
+  --------------------------------
+
+  1) 恰好输出一个 relation_type：
+  - relation_type 必须是模式中允许的类型之一或 "NONE"。
+  - 如果没有关系得到充分支持，输出 "NONE"。
+
+  2) 方向性：
+  - 不要假设两个单元之间有默认方向。
+  - 如果选择的关系类型是有向的：
+    - 严格根据提供的信息确定关系是 subject -> object 还是 object -> subject 更有支持。
+  - 如果选择的关系类型是无向或对称的（根据模式），方向无关紧要。
+  - 如果无法证明清晰的方向性关系，输出 relation_type = "NONE"。
+
+  3) 证据依据：
+  - 根据 {entity_type} 字段（如 name、description、related_events、related_occasions 和 properties）做出决定。
+  - 除非提供的 {entity_type} 信息支持，否则不要假设时间顺序、因果关系或对比。
+
+  4) 置信度评分（0.0 到 1.0）：
+  - confidence 反映提供的 {entity_type} 信息对所选关系的支持程度。
+  - 使用以下锚点：
+    - 0.90-1.00：明确、毫无歧义的支持
+    - 0.70-0.89：强但略微间接的支持
+    - 0.40-0.69：弱/部分支持（除非模式明确适合，否则优先 "NONE"）
+    - 0.00-0.39：推测性的（必须输出 "NONE"）
+  - 如果 relation_type 是 "NONE"，confidence 应反映没有关系可以被证明的置信度。
+
+  --------------------------------
+  输出格式（严格）
+  --------------------------------
+
+  返回单个 JSON 对象（不是数组），严格使用此结构：
+  {{
+    "subject_id": "{entity_type} id（必须完全匹配）",
+    "object_id": "{entity_type} id（必须完全匹配）",
+    "relation_type": "一个允许的关系类型或 NONE",
+    "confidence": 0.0,
+    "description": "基于提供的 {entity_type} 信息的简洁、事实性理由"
+  }}
+
+  最终说明
+  - 只输出 JSON。
+  - 不要包含任何额外的键。
+  - 不要包含评论或标题。
+  - description 不能为空。

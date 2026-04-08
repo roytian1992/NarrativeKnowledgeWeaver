@@ -1,0 +1,41 @@
+id: summarize_strategy_failures
+category: memory
+name: Summarize Strategy Failures
+description: >
+  总结同一问题全部尝试失败时的主要原因，输出严格 JSON。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: attempt_summaries_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你在总结一个检索问题的失败原因。
+
+  问题：
+  {question}
+
+  参考答案：
+  {reference_answer}
+
+  尝试摘要（JSON）：
+  {attempt_summaries_json}
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "failure_summary": "字符串",
+      "likely_causes": ["字符串", "字符串"],
+      "recommended_improvements": ["字符串", "字符串"]
+    }}
+  - `likely_causes` 应该聚焦检索路径、工具选择、证据缺失、答案合成等原因。
+  - 不要输出 Markdown，不要额外解释。

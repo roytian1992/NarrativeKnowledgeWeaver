@@ -1,0 +1,123 @@
+id: extract_storyline_card
+category: aggregation
+name: 从情节链抽取故事线卡片
+description: >
+  将按因果顺序组织的 episode 链总结为单个 Storyline 卡片，
+  输出长叙述 description 与结构化锚点字段。
+  仅输出严格 JSON。
+
+task_variables:
+  - name: chain_information
+    type: string
+    required: true
+    description: >
+      由 EPISODE_CAUSAL_LINK 串联、且已按顺序排列的 episode 摘要/描述文本。
+
+static_variables:
+  - name: entity_definitions_text
+    type: string
+    required: true
+    description: Episode 和 Storyline 的定义文本。
+
+  - name: storyline_output_fields_text
+    type: string
+    required: true
+    description: Storyline 输出字段定义。
+
+  - name: storyline_construction_constraints_text
+    type: string
+    required: true
+    description: 基于 schema 的 Storyline 结构约束。
+
+  - name: storyline_writing_constraints_text
+    type: string
+    required: true
+    description: 基于 schema 的 Storyline 写作约束。
+
+  - name: storyline_sample_json_text
+    type: string
+    required: true
+    description: 来自 schema 的 Storyline 示例对象。
+
+template: |
+  你是一个叙事知识图谱信息抽取助手。
+  你的任务是把一条按因果顺序排列的 episode 链，压缩为一个 Storyline 卡片，并输出严格 JSON。
+
+  ====================
+  定义
+  ====================
+  {entity_definitions_text}
+
+  ====================
+  任务
+  ====================
+  给定 chain_information（由 EPISODE_CAUSAL_LINK 串联的 episode 描述序列），
+  抽取一个 Storyline 卡片。
+
+  Storyline 输出字段：
+  {storyline_output_fields_text}
+
+  ====================
+  关键约束
+  ====================
+  {storyline_construction_constraints_text}
+  - 避免纯主题抒情或心理揣测，聚焦叙事推进与因果结构。
+
+  ====================
+  写作规范
+  ====================
+  {storyline_writing_constraints_text}
+  1) name：
+     - 4 到 10 个词（英文场景）或等价长度（中文场景）
+     - 应概括完整推进，不是单一瞬间
+  2) description：
+     - 3 到 6 句
+     - 连贯、自然、可独立阅读
+     - 必须覆盖起因、过程与终局结果
+     - 禁止按“第一/第二/第三”枚举步骤
+  3) impact：
+     - 1 到 2 句
+     - 表达可复用的后续影响/约束状态
+  4) key_characters：
+     - 字符串数组，0 到 8 项
+     - 仅保留角色名称，不要附带解释
+  5) key_locations：
+     - 字符串数组，0 到 8 项
+     - 仅保留地点名称，不要附带解释
+
+  ====================
+  禁止输出模式
+  ====================
+  - 不要引用 episode/scene/part 的编号。
+  - 不要输出项目符号列表。
+  - 不要添加输入中不存在的事件、关系、人物或地点。
+
+  ====================
+  严格 JSON 输出规则（必须）
+  ====================
+  - 输出必须是可被标准 JSON 解析器解析的合法 JSON。
+  - 只能输出 JSON，不要附加解释、Markdown 或代码块。
+  - name/description/impact 必须是字符串。
+  - key_characters/key_locations 必须是字符串数组，不能为 null。
+  - 所有字段都必须出现。
+
+  ====================
+  输出模式
+  ====================
+  示例 Storyline 对象：
+  {storyline_sample_json_text}
+
+  {{
+    "name": "...",
+    "description": "...",
+    "impact": "...",
+    "key_characters": ["..."],
+    "key_locations": ["..."]
+  }}
+
+  ====================
+  现在处理以下输入
+  ====================
+
+  chain_information:
+  {chain_information}

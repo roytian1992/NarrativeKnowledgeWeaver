@@ -1,0 +1,28 @@
+id: context_already_extracted
+category: knowledge_extraction
+name: Already Extracted Items
+description: >
+  Optional list of already extracted entities/relations. The model should avoid re-extracting them.
+
+task_variables:
+  - name: extracted_items
+    type: string
+    required: false
+    description: JSON/text list of already extracted items (entities or relations).
+
+  - name: item_type
+    type: string
+    required: false
+    description: \"entities\" or \"relations\" or a generic label.
+
+static_variables:
+  - name: default_item_type
+    type: string
+    required: false
+    description: Default label if item_type is not provided.
+
+template: |
+  在之前的轮次中，以下 {item_type} 已被抽取。
+  请勿重复抽取。
+
+  {extracted_items}

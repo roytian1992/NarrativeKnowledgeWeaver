@@ -1,0 +1,75 @@
+id: judge_online_answer
+category: memory
+name: Judge Online Answer
+description: >
+  在没有标准答案时，根据检索证据判断回答是否被支持，输出严格 JSON。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+  - name: evidence_summary
+    type: string
+    required: true
+  - name: tool_summary_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你在做在线检索问答的回答评估，此时没有标准答案，只能依据证据判断回答是否站得住。
+
+  问题：
+  {question}
+
+  候选回答：
+  {candidate_answer}
+
+  证据摘要：
+  {evidence_summary}
+
+  工具调用摘要（JSON）：
+  {tool_summary_json}
+
+  任务：
+  - 从“答案是否站得住”和“轨迹是否值得学习”两个角度评估这条轨迹。
+  - 评估中间检索到的信息是否真的帮助了问题求解，而不只是堆积了很多弱相关内容。
+  - 如果证据不足以判定真伪，也不要硬判成功。
+
+  判定原则：
+  - `answer_support_score`：回答核心结论被证据直接支持的程度。
+  - `evidence_specificity_score`：证据是否足够具体、直接，而不是宽泛相关。
+  - `evidence_coverage_score`：证据是否覆盖了回答该问题所需的关键约束。
+  - `intermediate_value_score`：中间检索到的信息是否真正帮助缩小、验证或消歧答案。
+  - `trace_efficiency_score`：工具轨迹是否高效，是否存在明显重复或低收益步骤。
+  - 只有当回答的核心结论能被证据直接支持，且覆盖度足够时，`is_success` 才能为 true。
+  - 如果证据太弱、太零散，无法可靠支持答案，应倾向 `needs_human_review=true`。
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "is_success": false,
+      "score": 0.0,
+      "reason": "字符串",
+      "answer_support_score": 0.0,
+      "evidence_specificity_score": 0.0,
+      "evidence_coverage_score": 0.0,
+      "intermediate_value_score": 0.0,
+      "trace_efficiency_score": 0.0,
+      "supported_points": ["字符串"],
+      "unsupported_points": ["字符串"],
+      "missing_points": ["字符串"],
+      "needs_human_review": true
+    }}
+  - 所有 `*_score` 和 `score` 的范围都必须是 0 到 1。
+  - `score` 使用如下公式：
+    `0.35 * answer_support_score + 0.20 * evidence_specificity_score + 0.20 * evidence_coverage_score + 0.15 * intermediate_value_score + 0.10 * trace_efficiency_score`
+  - `supported_points`：明确被证据支持的点。
+  - `unsupported_points`：回答中缺乏证据支持的点，或中间检索过程里低价值、低收益的关键信息点。
+  - `missing_points`：若要更可靠判真，还缺什么关键信息。
+  - 不要输出 Markdown，不要额外解释。

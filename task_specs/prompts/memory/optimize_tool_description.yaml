@@ -1,0 +1,81 @@
+id: optimize_tool_description
+category: memory
+name: Optimize Tool Description
+description: >
+  在同题多轨迹有成有败的情况下，判断某个工具的 description 是否需要保留或改写。
+
+task_variables:
+  - name: tool_name
+    type: string
+    required: true
+  - name: current_description
+    type: string
+    required: true
+  - name: parameter_descriptions
+    type: string
+    required: true
+  - name: question
+    type: string
+    required: true
+  - name: query_pattern_json
+    type: string
+    required: true
+  - name: successful_attempt_json
+    type: string
+    required: true
+  - name: failed_attempts_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你在做工具描述优化反思。
+
+  工具名：
+  {tool_name}
+
+  当前 description：
+  {current_description}
+
+  参数描述：
+  {parameter_descriptions}
+
+  当前问题：
+  {question}
+
+  问题抽象（JSON）：
+  {query_pattern_json}
+
+  正确轨迹摘要（JSON）：
+  {successful_attempt_json}
+
+  错误轨迹摘要（JSON）：
+  {failed_attempts_json}
+
+  任务：
+  - 判断当前工具 description 是否需要修改，以帮助 agent 在类似问题上更容易选到这个工具。
+  - 只有当你认为 description 的表达方式确实影响了工具选择时，才建议修改。
+  - 如果当前 description 已经足够清楚，或者错误主要不是由 description 引起的，就保留原样。
+
+  要求：
+  - 在确保原有核心功能被完整、清楚表达的前提下完善 description。
+  - 如果觉得没必要修改，就保留原样。
+  - 如果需要修改，输出一个简短说明段落，通常为 2 到 4 句。
+  - 重点说明这个工具能做什么、适合解决什么类型的问题。
+  - 不要提具体作品、角色、章节或文本事实。
+  - 不要把问题样例直接写进 description。
+  - 不要写工具做不到的能力，不要夸大。
+  - 语言风格保持专业、直接、统一。
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "decision": "keep" 或 "revise",
+      "proposed_description": "字符串",
+      "reason": "字符串"
+    }}
+  - 如果 `decision` 是 `keep`，`proposed_description` 必须直接保持当前 description 的原文。
+  - 如果 `decision` 是 `revise`，`proposed_description` 必须是改写后的 description。
+  - 不要输出 Markdown，不要额外解释。

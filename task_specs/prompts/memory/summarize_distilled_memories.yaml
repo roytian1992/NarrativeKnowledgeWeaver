@@ -1,0 +1,49 @@
+id: summarize_distilled_memories
+category: problem_solving
+name: 汇总蒸馏记忆
+description: >
+  将蒸馏记忆按类型汇总为稳定的注入记忆，每个类型一条。
+
+task_variables:
+  - name: grouped_memories_json
+    type: string
+    required: true
+    description: 按类型分组后的记忆 JSON 字符串。
+
+  - name: existing_summaries_json
+    type: string
+    required: true
+    description: 现有汇总记忆 JSON 字符串。
+
+static_variables: []
+
+template: |
+  你正在更新知识图谱抽取流程的“稳定汇总记忆”。
+
+  分组记忆输入：
+  {grouped_memories_json}
+
+  现有汇总记忆：
+  {existing_summaries_json}
+
+  硬性要求
+  - 只返回 JSON 对象，不要 Markdown，不要解释文字。
+  - 输出结构：
+    {{
+      "summaries": [
+        {{
+          "summary_id": "稳定字符串ID",
+          "type": "guideline|anti_pattern|canonical_map",
+          "content": "简洁可执行总结",
+          "keywords": ["关键词1", "关键词2"],
+          "confidence": 0.0
+        }}
+      ]
+    }}
+  - 分组输入里出现的每个 type 只输出 1 条总结。
+  - 同一 type 更新时尽量复用已有 summary_id。
+  - confidence 必须在 [0,1]。
+  - content 要简洁、可复用。
+
+  最终只输出 JSON。
+

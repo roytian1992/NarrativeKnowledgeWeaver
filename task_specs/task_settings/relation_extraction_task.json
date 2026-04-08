@@ -1,0 +1,60 @@
+[
+  {
+    "task": "relation_extraction",
+    "task_name": "叙事关系抽取",
+    "task_goal": "从输入文本中严格抽取已提取实体之间的有效关系。关系必须仅使用实体列表中已有的实体，且仅使用所选关系组模式中定义的关系类型。",
+    "global_constraints": [
+      "不要臆造实体列表中不存在的实体。",
+      "不要臆造所选关系组模式中未定义的关系类型。",
+      "如果关系的任一端实体不在已提取实体列表中，则不要抽取该关系。",
+      "如果证据模糊或具有推测性，则不要抽取该关系。",
+      "仅输出JSON格式，不要包含注释或额外文本。"
+    ],
+    "output_fields": [
+      "subject",
+      "object",
+      "relation_type",
+      "relation_name",
+      "description"
+    ],
+    "few_shot": {
+      "per_type_k": 1,
+      "max_total": 10,
+      "strategy": "per_relation_type_first_k"
+    },
+    "relation_groups": [
+      {
+        "group": "event_occasion_relations",
+        "group_name": "事件与场合关系",
+        "group_goal": "将实体与事件和场合关联（施事者、受事者、参与、发起等）。",
+        "group_constraints": [
+          "当有充分文本支持时，优先抽取将角色/概念/物品与事件/场合关联的关系。"
+        ]
+      },
+      {
+        "group": "social_relations",
+        "group_name": "社会关系",
+        "group_goal": "抽取角色和/或概念之间稳定的或阶段性的社会关系。",
+        "group_constraints": [
+          "仅当文本明确建立关系状态时使用，而非一次性互动。"
+        ]
+      },
+      {
+        "group": "spatiotemporal_relations",
+        "group_name": "时空锚定关系",
+        "group_goal": "将事件/场合/实体锚定到时间点和地点节点。",
+        "group_constraints": [
+          "仅当锚定实体（地点/时间点）存在于已提取实体列表中时才进行抽取。"
+        ]
+      },
+      {
+        "group": "semantic_relations",
+        "group_name": "语义关系",
+        "group_goal": "抽取类型、整体-部分或持有关系（is_a, part_of, possesses）。",
+        "group_constraints": [
+          "仅当文本明确支持分类/包含/持有关系时，才抽取 is_a/part_of/possesses。"
+        ]
+      }
+    ]
+  }
+]

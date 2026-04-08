@@ -1,0 +1,71 @@
+id: update_background
+category: text_processing
+name: Update Background
+description: >
+  Produce or update a narrative-style background summary based on current text and optional previous background.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The current text to incorporate.
+
+  - name: previous_background_block
+    type: string
+    required: false
+    description: Optional pre-rendered block containing previous background.
+
+  - name: goal_block
+    type: string
+    required: false
+    description: Optional pre-rendered block describing task goal/focus.
+
+template: |
+  你正在为一份文档更新背景摘要。
+
+  --------------------------------
+  目标
+  --------------------------------
+  以书籍/剧本简介风格生成背景摘要：
+  - 单段落
+  - 连贯
+  - 突出核心计划/冲突和关键线索
+  - 120-220 词（英文）
+
+  如果提供了先前背景，请进行最小修改：
+  - 保留有效信息
+  - 合并冗余内容
+  - 统一术语
+  - 只在当前文本支持时才更新
+
+  --------------------------------
+  规则
+  --------------------------------
+  - 不要编造信息。
+  - 如果某事实只出现在先前背景中但当前文本不支持，只有在不冲突且合理仍然有效时才保留。
+  - 避免项目符号/列表格式和口号式写作。
+  - 减少时间线堆叠。
+  - 保持专有名词一致。
+
+  {previous_background_block}
+
+  {goal_block}
+
+  --------------------------------
+  当前文本
+  --------------------------------
+  {text}
+
+  --------------------------------
+  输出格式（严格，仅 JSON）
+  --------------------------------
+  {{
+    "background": "..."
+  }}
+
+  --------------------------------
+  最终说明
+  --------------------------------
+  - 只输出 JSON。
+  - 不要 markdown，不要评论。

@@ -1,0 +1,69 @@
+id: generate_self_bootstrap_qa
+category: memory
+name: Generate Self Bootstrap QA
+description: >
+  基于当前回答和证据，生成一小批可被同一批证据支持的新问答对。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: final_answer
+    type: string
+    required: true
+  - name: evidence_summary
+    type: string
+    required: true
+  - name: tool_summary_json
+    type: string
+    required: true
+  - name: max_questions
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你在做在线自举数据扩展。请基于现有证据，生成少量新的、可直接回答的问题。
+
+  原问题：
+  {question}
+
+  当前回答：
+  {final_answer}
+
+  证据摘要：
+  {evidence_summary}
+
+  工具调用摘要（JSON）：
+  {tool_summary_json}
+
+  最多生成问题数：
+  {max_questions}
+
+  任务：
+  - 生成不超过指定数量的新问答对。
+  - 新问题必须能被当前证据直接支持，不能依赖外部常识。
+  - 问题要尽量抽象和泛化，不要只是对原问题做表面改写。
+  - 优先生成事实型、场次定位型、属性型、时序型或多跳检索型问题。
+  - 不要生成明显 text-specific 的花哨措辞，不要编造答案。
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "qa_pairs": [
+        {{
+          "question": "字符串",
+          "answer": "字符串",
+          "evidence": "字符串",
+          "question_type": "字符串",
+          "difficulty": "easy|medium|hard"
+        }}
+      ]
+    }}
+  - `evidence` 应简短说明该问答依赖的关键证据。
+  - 每个问题都必须和原问题不同。
+  - 如果没有足够好的新问题，就返回空列表。
+  - 不要输出 Markdown，不要额外解释。
+

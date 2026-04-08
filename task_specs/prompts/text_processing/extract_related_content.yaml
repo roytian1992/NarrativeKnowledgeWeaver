@@ -1,0 +1,70 @@
+id: extract_related_content
+category: text_processing
+name: Extract Related Content
+description: >
+  Extract content directly relevant to the given goal from the provided text.
+  If no relevant content exists, return an empty string.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Original text to analyze.
+
+  - name: goal
+    type: string
+    required: true
+    description: Query goal to focus extraction.
+
+  - name: max_length
+    type: number
+    required: true
+    description: Maximum length of output (characters).
+
+template: |
+  你是一位擅长中文阅读理解与关键信息提取的语言专家。
+
+  --------------------------------
+  任务
+  --------------------------------
+  根据目标（goal），从原文（text）中提取与目标直接相关的关键信息，
+  并在不超过 {max_length} 字内输出。
+
+  --------------------------------
+  要求
+  --------------------------------
+  1) 仅保留与 goal 明确相关、可支持 goal 的内容，忽略无关信息。
+  2) 不得杜撰原文中不存在的内容。
+  3) 输出为凝练要点，可转述但避免大段照抄。
+  4) 如果原文中没有与 goal 相关的重要信息，必须返回空字符串。
+
+  --------------------------------
+  输入
+  --------------------------------
+  [目标]
+  {goal}
+
+  [原文]
+  {text}
+
+  --------------------------------
+  输出格式（严格）
+  --------------------------------
+  只返回 JSON：
+
+  {{
+    "related_content": "..."
+  }}
+
+  若无相关内容，返回：
+  {{
+    "related_content": ""
+  }}
+
+  --------------------------------
+  最终说明
+  --------------------------------
+  - 只输出 JSON。
+  - 不要 markdown，不要评论。
+  - 不要超过 {max_length} 字。

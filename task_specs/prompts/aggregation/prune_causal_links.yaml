@@ -1,0 +1,107 @@
+id: prune_causal_edges
+category: regular_function
+name: Causal Edge Pruning for Triadic Structures
+description: >
+  Evaluate whether a direct causal edge should be removed in a triadic causal structure
+  by comparing it against an indirect causal path, with the objective of simplifying
+  the graph while preserving semantic integrity.
+
+task_variables:
+  - name: entity_a
+    type: string
+    required: true
+    description: >
+      Information describing entity A, including its identity, role, properties,
+      and relevant contextual details.
+
+  - name: entity_b
+    type: string
+    required: true
+    description: >
+      Information describing entity B, including its identity, role, properties,
+      and relevant contextual details.
+
+  - name: entity_c
+    type: string
+    required: true
+    description: >
+      Information describing entity C, including its identity, role, properties,
+      and relevant contextual details.
+
+  - name: relation_ab
+    type: string
+    required: true
+    description: >
+      Description of the directed causal relationship from A to B, including
+      its semantic meaning and any available strength or confidence signals.
+
+  - name: relation_bc
+    type: string
+    required: true
+    description: >
+      Description of the directed causal relationship from B to C, including
+      its semantic meaning and any available strength or confidence signals.
+
+  - name: relation_ac
+    type: string
+    required: true
+    description: >
+      Description of the direct causal relationship from A to C, including
+      its semantic meaning and any available strength or confidence signals.
+
+template: |
+  你是因果图建模和结构优化的专家。
+
+  你的任务是决定直接因果边 A -> C 是否应该被移除，
+  考虑到存在间接因果路径 A -> B -> C。
+
+  只有当直接边的因果含义被间接路径充分且忠实地捕获时，
+  才认为它可以被移除，即移除它可以简化图而不会丢失
+  重要的语义信息。
+
+  ------------------
+  实体 A
+  ------------------
+  {entity_a}
+
+  ------------------
+  实体 B
+  ------------------
+  {entity_b}
+
+  ------------------
+  实体 C
+  ------------------
+  {entity_c}
+
+  ------------------
+  关系 A -> B
+  ------------------
+  {relation_ab}
+
+  ------------------
+  关系 B -> C
+  ------------------
+  {relation_bc}
+
+  ------------------
+  关系 A -> C
+  ------------------
+  {relation_ac}
+
+  ------------------
+  评估指南
+  ------------------
+  1. 如果 A -> C 的含义实际上等同于 A -> B 后接 B -> C 的组合含义，
+     则可以移除直接边。
+  2. 如果 A -> C 表达了间接路径未捕获的独特因果含义，则保留它。
+  3. 如果 A -> C 传达了比间接路径明显更强、更直接或更显式的
+     因果力量，则保留它。
+  4. 语义完整性优先于结构简洁性。
+
+  输出格式：
+  只返回 JSON，不要有额外文本：
+  {{
+    "remove_edge": true,
+    "reason": "基于提供的实体和关系的简洁理由。"
+  }}

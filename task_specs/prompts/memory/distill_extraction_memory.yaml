@@ -1,0 +1,39 @@
+id: distill_extraction_memory
+category: memory
+name: Distill Extraction Memory
+description: >
+  将原子抽取记忆归纳为可复用的指导记忆，只输出严格 JSON。
+
+task_variables:
+  - name: source_payload
+    type: string
+    required: true
+    description: 包含记忆条目与可选运行统计的 JSON 字符串。
+
+  - name: requested_max
+    type: string
+    required: true
+    description: 允许生成的记忆总条数上限。
+
+static_variables: []
+
+template: |
+  你正在将知识图谱抽取记忆归纳为可复用的指导信息。
+
+  输入载荷（JSON 字符串）
+  {source_payload}
+
+  硬性要求
+  - 只返回 JSON 对象，不要 Markdown，不要解释文字。
+  - 输出必须严格符合以下结构：
+    {{
+      "guidelines": [{{"content": "字符串", "keywords": ["字符串"], "confidence": 0.0}}],
+      "anti_patterns": [{{"content": "字符串", "keywords": ["字符串"], "confidence": 0.0}}],
+      "canonical_maps": [{{"content": "字符串", "keywords": ["字符串"], "confidence": 0.0}}]
+    }}
+  - confidence 必须在 [0,1] 区间。
+  - 三个列表总条数必须 <= {requested_max}。
+  - content 要简洁、可执行、避免重复。
+  - keywords 作为短锚词，0 到 8 个。
+
+  最终只输出 JSON。

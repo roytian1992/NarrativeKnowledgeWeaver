@@ -1,0 +1,104 @@
+id: relation_extraction
+category: knowledge_extraction
+name: Relation Extraction
+description: >
+  Extract relations between already-extracted entities with strict JSON output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input chunk text.
+
+  - name: entities
+    type: string
+    required: true
+    description: Already-extracted entity list. Relations must only use these entity names.
+
+  - name: relation_group
+    type: string
+    required: true
+    description: >
+      Relation group key used to select schema content from default_relation_schema.json,
+      e.g., event_occasion_relations, social_relations,
+      spatiotemporal_relations, semantic_relations.
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+    description: Short name of the extraction task, shown in the prompt header.
+
+  - name: task_goal
+    type: string
+    required: true
+    description: Precise description of what the relation extraction task should accomplish.
+
+  - name: global_constraints
+    type: string
+    required: true
+    description: Global rules and constraints that must always be followed during extraction.
+
+  - name: output_fields_block
+    type: string
+    required: true
+    description: Specification of required output fields for each extracted relation.
+
+  - name: group_name
+    type: string
+    required: true
+    description: Human-readable title of the selected relation group.
+
+  - name: group_constraints_block
+    type: string
+    required: false
+    description: Optional extra constraints specific to the selected relation group.
+
+  - name: relation_schema
+    type: string
+    required: true
+    description: Rendered schema text for the selected relation group. Must be deterministic and compact.
+
+  - name: few_shot_samples
+    type: string
+    required: false
+    description: Optional few-shot examples for the selected group, as a JSON string.
+
+template: |
+  你正在执行知识图谱关系抽取任务。
+  任务：
+  {task_name}
+
+  目标：
+  {task_goal}
+
+  全局约束：
+  {global_constraints}
+
+  关系组：
+  {relation_group}
+  {group_name}
+
+  关系组特定约束：
+  {group_constraints_block}
+
+  允许的关系模式：
+  {relation_schema}
+
+  输出格式：
+  返回一个 JSON 数组。
+  每个元素必须包含以下字段：
+  {output_fields_block}
+
+  不要包含任何额外字段。
+  不要在 JSON 之外包含解释、评论或其他文本。
+
+  示例：
+  {few_shot_samples}
+
+  输入文本：
+  {text}
+
+  已抽取的实体：
+  关系只能使用此列表中的实体名称。
+  {entities}

@@ -1,0 +1,115 @@
+id: fix_relation_error
+category: problem_solving
+name: Fix Relation Error
+description: >
+  Fix a constraint violation in relation extraction by either rewriting the relation_type to an allowed one
+  or dropping the relation if no valid rewrite is supported. Strict JSON-only output.
+
+task_variables:
+  - name: content
+    type: string
+    required: true
+    description: The original scene text.
+
+  - name: extracted_relation
+    type: string
+    required: false
+    description: The extracted relation string/object representation (may be empty).
+
+  - name: allowed_relation_types
+    type: string
+    required: true
+    description: Allowed relation types between the entity types, computed from the schema.
+
+  - name: feedback
+    type: string
+    required: false
+    description: Feedback describing the constraint violation (may be empty).
+
+static_variables: []
+
+template: |
+  你正在修复叙事知识图谱关系抽取中的约束违规错误。
+
+  任务
+  给定：
+  1) 原始场景文本。
+  2) 描述约束违规的反馈项。
+  3) 从模式计算出的两个实体类型之间允许的关系类型。
+
+  你的目标是通过选择以下两项之一来修复关系：
+  - "rewrite"：仅将 relation_type 重写为有效的类型（不要更改 subject/object）。
+  - "drop"：如果文本不支持有效的重写，则丢弃该关系。
+
+  关键约束
+  - 不要编造文本中没有的信息。
+  - 不要添加新实体。只修复这个关系。
+  - 不要更改 subject 或 object 字符串（除了修剪空格等简单清理）。
+  - 如果你选择 "rewrite"，新的 relation_type 必须是允许的关系之一（见输入）。
+  - 如果场景文本没有明确支持任何允许的关系，你必须选择 "drop"。
+  - 如果有多个合理的允许关系且你无法自信地选择一个，选择 "drop"。
+
+  输入
+  [场景文本]
+  {content}
+
+  [抽取的关系]
+  {extracted_relation}
+
+  [允许的关系]
+  {allowed_relation_types}
+
+  [反馈]
+  {feedback}
+
+  决策规则
+  1) "rewrite"
+  - 仅在以下情况下选择 "rewrite"：
+    (a) 原始 relation_type 不被允许，且
+    (b) 你可以从允许的关系中选择恰好一个新的 relation_type。
+  - 使用场景文本作为唯一的事实依据。
+  - 优先选择与文本中最清晰、最直接陈述匹配的关系。
+
+  2) "drop"
+  - 在以下情况下选择 "drop"：
+    - 原始 relation_type 不被允许且文本不支持有效的重写，或
+    - 文本在多个允许的关系之间模糊不清，或
+    - 关系似乎是隐含的但没有明确依据。
+
+  输出说明
+  1) 关系语义：
+  - relation_type 必须恰好是允许的关系类型之一。
+  - relation_name 必须：
+    - 是自然语言谓词。
+    - 具体（不是通用的如 "related_to"）。
+    - 允许短语："subject relation_name object" 读起来像流畅的英语句子。
+  2) 关系持久性（时间稳定性）：
+  你必须为每个抽取的关系分配一个持久性标签。
+  - "stable"：关系是持久的，预期在整个叙事中保持不变，除非明确改变。
+    示例：kinship_with、affiliated_with、subordinate_to、possesses（长期持有）、长期敌意。
+  - "phase"：关系在有意义的时期内成立，但以后可能改变（例如，朋友变成敌人，联盟破裂）。
+    当文本暗示关系状态而非单一行动时使用。
+  - "momentary"：关系是短暂的，与单次互动、行动或即时情况相关。
+    示例：在一个场景中追逐、在某一刻威胁、在特定事件中短暂合作。
+
+  输出格式
+  只返回一个 JSON 对象，不要有额外文本。
+
+  如果 decision 为 "rewrite"：
+  {{
+    "decision": "rewrite",
+    "output": {{
+      "subject": "<字符串，已清理>",
+      "relation_type": "<allowed_forward 或 allowed_backward 之一>",
+      "object": "<字符串，已清理>",
+      "relation_name": "<自然语言谓词>",
+      "persistence": "stable | phase | momentary",
+      "description": "基于文本的简要抽取理由"
+    }}
+  }}
+
+  如果 decision 为 "drop"：
+  {{
+    "decision": "drop",
+    "output": {{}}
+  }}

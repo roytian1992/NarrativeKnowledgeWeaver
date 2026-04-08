@@ -1,0 +1,47 @@
+id: decide_strategy_template_merge
+category: memory
+name: Decide Strategy Template Merge
+description: >
+  判断一个新策略模板是否应并入已有策略模板簇，输出严格 JSON。
+
+task_variables:
+  - name: incoming_template_json
+    type: string
+    required: true
+  - name: candidate_clusters_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你在做“检索策略模板”的去重与合并判断。
+
+  新模板（JSON）：
+  {incoming_template_json}
+
+  候选模板簇（JSON）：
+  {candidate_clusters_json}
+
+  判断原则：
+  - 关注“问题形式 + 检索目标 + 推荐工具链模式”，不要因为剧情主题相似就合并。
+  - 推荐工具链模式非常重要。要看工具链的结构、顺序、起始工具、结束工具，以及每一步在解题中的作用，而不是只看是否用了相同工具名。
+  - 如果只是作品实体不同，但问题模式和有效工具路径相同或高度接近，可以合并。
+  - 如果检索目标不同、回答形态不同、或工具路径本质不同，就不要合并。
+  - 即使推荐工具链完全相同，只要最终检索意图不同，也不要合并。
+  - 如果一个模板是“定位场景/章节/场次”，另一个模板是“抽取原句/遗言/信件内容/坐标/具体文本内容”，必须判为 `distinct`。
+  - 如果 `problem_type` 明显不同，尤其是 `content_span_lookup` 和 `section_localization`、`entity_attribute_lookup`、`causal_explanation` 之间，不应合并。
+  - `candidate_score` 只是召回参考，不是最终结论。
+  - 模板必须保持通用，不能引入作品特定的人名、地名、章节名、文档 id。
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "decision": "duplicate | mergeable_variant | distinct",
+      "matched_cluster_id": "字符串，若 distinct 则为空字符串",
+      "reason": "字符串"
+    }}
+  - 若选择 `duplicate` 或 `mergeable_variant`，`matched_cluster_id` 必须来自候选簇里的 cluster_id。
+  - 若没有合适候选，输出 `distinct`。
+  - 不要输出 Markdown，不要额外解释。

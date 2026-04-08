@@ -1,0 +1,69 @@
+id: distill_strategy_template
+category: memory
+name: Distill Strategy Template
+description: >
+  从某个问题的最佳成功轨迹中提炼可复用的通用策略模板，输出严格 JSON。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: query_pattern_json
+    type: string
+    required: true
+  - name: best_attempt_json
+    type: string
+    required: true
+  - name: failed_attempts_json
+    type: string
+    required: false
+  - name: retry_instruction
+    type: string
+    required: false
+
+static_variables: []
+
+template: |
+  你在把一个成功的检索问答轨迹提炼成通用策略模板。
+
+  问题：
+  {question}
+
+  问题模式（JSON）：
+  {query_pattern_json}
+
+  最佳成功轨迹（JSON）：
+  {best_attempt_json}
+
+  失败轨迹摘要（JSON，如果有）：
+  {failed_attempts_json}
+
+  修正提示（如果有）：
+  {retry_instruction}
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "pattern_name": "字符串",
+      "pattern_description": "字符串",
+      "recommended_chain": ["tool_name_1", "tool_name_2"],
+      "anti_patterns": ["字符串", "字符串"],
+      "chain_rationale": "字符串",
+      "chain_constraints": ["字符串", "字符串"]
+    }}
+  - 模板必须是通用的，不能包含作品特定的人名、地名、场次名、文档 id。
+  - `pattern_description` 必须描述“问题类型 + 推荐检索路径”。
+  - 如果成功轨迹来自失败后的重试，可以把修正后的关键路径吸收到 `pattern_description` 或 `anti_patterns` 中，但仍要保持通用。
+  - `anti_patterns` 不要空泛，优先总结失败轨迹中真正出现过的错误做法，例如：
+    1. 漏掉关键约束条件；
+    2. 先查到实体就直接下结论；
+    3. 只看章节列表，不回原文验证；
+    4. 混入时间线推断或年龄推断而非找显式证据。
+  - 如果失败轨迹显示某类做法经常导致幻觉，应该把它写进 `anti_patterns`。
+  - 如果没有明显错误做法，再输出简洁但具体的 `anti_patterns`，不要编造作品特定细节。
+  - `recommended_chain` 必须是最小必要链，不能把成功轨迹中的常规探索步骤或弯路一起保留下来。
+  - 如果两条链都能完成任务，优先更短的那条。
+  - `chain_rationale` 说明为什么这条链足够。
+  - `chain_constraints` 说明这条链适用的前提或证据要求。
+  - 不要输出 Markdown，不要额外解释。

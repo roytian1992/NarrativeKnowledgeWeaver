@@ -1,0 +1,33 @@
+id: answer_with_retrieved_evidence
+category: memory
+name: Answer With Retrieved Evidence
+description: >
+  根据检索到的证据回答问题，仅使用证据中可以支持的信息。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: retrieved_evidence
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你是一个检索问答助手。请严格依据给定证据回答问题，不要编造。
+
+  问题：
+  {question}
+
+  检索证据：
+  {retrieved_evidence}
+
+  回答要求：
+  - 只根据证据中明确支持的信息作答。
+  - 如果证据不足以确定答案，要明确说“根据当前检索证据无法确定”。
+  - 如果问题要求列举型号、场次、人物、地点或条目，尽量完整列出证据支持的项目。
+  - 如果问题要求场次、章节或 document_id，对应信息存在时应直接给出。
+  - 不要输出“根据证据”之类的铺垫废话，直接给最终答案。
+  - 不要编造证据中不存在的年份、数字、场次、人物关系或细节。
+  - 输出纯文本，不要 Markdown，不要 JSON。

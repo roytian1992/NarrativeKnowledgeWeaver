@@ -1,0 +1,90 @@
+id: plan_trajectory_direction
+category: memory
+name: Plan Online Sampling Branches
+description: >
+  仅基于当前问题和可用工具，为在线问答规划若干条不同的检索分支。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: available_tools_json
+    type: string
+    required: true
+  - name: planned_branch_count
+    type: string
+    required: true
+  - name: strategy_prior_knowledge
+    type: string
+    required: false
+
+static_variables: []
+
+template: |
+  你要为一个问题规划若干条不同的检索分支。
+
+  系统会默认额外添加一条名为 `free_exploration` 的分支。
+  你不要生成这条分支。
+  你只需要生成剩余需要规划的分支。
+
+  问题：
+  {question}
+
+  可用工具（JSON）：
+  {available_tools_json}
+
+  需要生成的分支数量：
+  {planned_branch_count}
+
+  离线策略先验（来自高支持度模板，可作为软参考）：
+  {strategy_prior_knowledge}
+
+  任务：
+  - 精确生成 {planned_branch_count} 条检索分支。
+  - 每条分支都必须和其他分支有明确差异。
+  - 每条分支都应体现不同的检索偏置、证据偏好或验证策略。
+  - 结合问题、可用工具描述和上述先验进行规划。
+  - 上述先验是默认偏置，不是必须照抄的固定脚本；当问题本身没有更强信号时，应优先遵守这些高支持度经验。
+  - 不要假设标准答案。
+  - 不要虚构不存在的工具。
+  - 不要写死具体工具参数，也不要写成僵硬的逐步脚本。
+  - 每条分支保持轻量、高层。
+  - 如果先验显示词面检索或局部证据检索占主导，至少要有一条分支体现这种偏置。
+  - 除非问题明确涉及顺序、storyline、episode、跨段一致性，否则不要把多个分支浪费在 narrative structure / graph-heavy 推理上。
+  - `retrieve_entity_by_name` 一类工具更适合作为定位和消歧，不应让分支停留在实体摘要层面。
+
+  字段定义：
+  - `name`：简短的分支名称。
+  - `focus`：该分支优先关注什么证据。
+  - `tool_hint`：该分支早期优先使用哪些工具或哪类工具。
+  - `constraint`：该分支需要避免什么问题，或要特别注意什么。
+
+  合理的分支差异包括：
+  - 先做宽泛词面检索 vs 先找定点证据
+  - 先做实体定位 vs 先做局部段落证据确认
+  - 先尝试直接求解 vs 先做消歧与验证
+
+  避免：
+  - 生成彼此几乎重复的分支
+  - 写很空泛的话，比如“检索相关信息”
+  - 直接回答问题
+  - 提及输出中不存在的分支
+  - 生成 `free_exploration`
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {
+      "branches": [
+        {
+          "name": "字符串",
+          "focus": "字符串",
+          "tool_hint": "字符串",
+          "constraint": "字符串"
+        }
+      ]
+    }
+  - 分支数量必须严格等于 {planned_branch_count}。
+  - 每个字段都要简洁、具体。
+  - 不要输出 Markdown。
+  - 不要输出 JSON 之外的任何内容。

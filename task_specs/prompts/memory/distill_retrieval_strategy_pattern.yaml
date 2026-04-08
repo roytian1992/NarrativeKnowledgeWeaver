@@ -1,0 +1,33 @@
+id: distill_retrieval_strategy_pattern
+category: memory
+name: Distill Retrieval Strategy Pattern
+description: >
+  从抽象 QA 轨迹中提炼通用检索策略模式，输出严格 JSON。
+
+task_variables:
+  - name: pattern_payload
+    type: string
+    required: true
+    description: 某个 pattern 聚类的输入载荷 JSON 字符串（含示例与候选工具链）。
+
+static_variables: []
+
+template: |
+  你在总结检索路由策略模式。输入数据已经是抽象后的 QA 轨迹聚类。
+
+  输入载荷（JSON 字符串）：
+  {pattern_payload}
+
+  输出要求：
+  - 只返回一个 JSON 对象，不要 Markdown，不要解释。
+  - JSON 结构必须是：
+    {{
+      "pattern_name": "字符串",
+      "pattern_description": "字符串",
+      "recommended_chain": ["tool_name_1", "tool_name_2"],
+      "anti_patterns": ["字符串", "字符串"]
+    }}
+  - pattern_name 必须通用，不能依赖具体作品。
+  - pattern_description 必须描述“问题类型 + 建议检索路径”。
+  - recommended_chain 长度 1 到 4，只能包含工具名（字母/数字/下划线）。
+  - 不得出现人物名、地名、scene/chapter/document id、chunk id、ent/rel/int/pat id。

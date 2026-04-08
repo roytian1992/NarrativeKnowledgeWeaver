@@ -1,0 +1,76 @@
+id: merge_entities
+category: problem_solving
+name: Merge Entities
+description: >
+  Judge whether multiple extracted entity names refer to the same underlying non-event entity
+  and propose safe merges with strict JSON-only output.
+
+task_variables:
+  - name: entity_descriptions
+    type: string
+    required: true
+    description: Formatted candidate list containing entity name, type, and short context.
+
+static_variables: []
+
+template: |
+  你正在判断多个抽取的实体名称是否指向叙事知识图谱中的同一个底层实体，
+  如果是，如何合并它们。
+
+  重要范围
+  此任务仅适用于实体身份，例如：
+  - Character（角色）、Location（地点）、Object（对象）、Concept（概念）、Occasion（场合）（非事件）
+  不适用于 Event 实体或类似事件的标题。
+
+  任务
+  给定一个实体候选列表。每个候选包括：
+  - name（名称）
+  - type（类型）
+  - summary/description（摘要/描述，简短上下文）
+
+  你的工作：
+  - 只有当你确信两个或更多名称确实是同一个实体时，才提议合并。
+  - 否则，保持它们分开。
+
+  决策规则（必须遵循）
+  1) 不要仅基于名称相似性进行合并。
+  2) 合并的名称必须在叙事上下文中指向相同的身份/对象。
+  3) 冲突优先于相似性：如果它们描述了不同的角色、隶属关系或故事功能，不要合并。
+  4) 实例优先：
+     - 永远不要将特定个体/独特对象名称合并到通用类别名称中。
+     - 如果它们是同一个独特对象，优先选择更具体/稳定的专有名称作为规范名称。
+  5) 型号/版本/编号优先区分：
+     - 如果两个名称体现的是不同的型号、版本、编号、代次或字母数字后缀（例如 550A、550C、550W），默认视为不同实体，不要合并。
+     - 即使它们属于同一系列、同一产品家族或共享大部分名称，只要型号/编号不同，就不要合并。
+     - 只有当文本上下文明确说明它们本质上是同一个对象的不同叫法，而不是不同型号/版本时，才允许合并。
+  6) 如果不确定，不要合并。优先不合并。
+
+  输出规则
+  - canonical_name 必须是输入名称之一（不要发明新的规范名称）。
+  - aliases 必须是其他输入名称的子集。
+  - 每个输入名称最多只能出现在一个合并组中。
+  - 如果没有有效的合并，merges 必须为 []，unmerged 必须包含所有输入名称。
+
+  输入
+
+  [实体候选]
+  {entity_descriptions}
+
+  输出格式
+  只返回一个 JSON 对象，不要有额外文本：
+
+  {{
+    "merges": [
+      {{
+        "canonical_name": "字符串（必须是输入名称之一）",
+        "aliases": ["字符串", "...（必须来自输入名称）"],
+        "reason": "基于候选描述的简要理由。"
+      }}
+    ],
+    "unmerged": [
+      {{
+        "name": "字符串（必须是输入名称之一）",
+        "reason": "基于候选描述的简要理由。"
+      }}
+    ]
+  }

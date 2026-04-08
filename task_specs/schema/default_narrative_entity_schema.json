@@ -1,0 +1,117 @@
+[
+  {
+    "type": "Episode",
+    "description": "由多个紧密相关的 Event 组成的局部叙事单元。Episode 的划分依据是短程时间连续性、共享参与者、紧密耦合的动作链，或明确的近距离因果推进；它用于组织局部叙事推进，而不是抽象主题分析。",
+    "input_types": [
+      "Event",
+      "Occasion"
+    ],
+    "output_fields": [
+      {
+        "name": "name",
+        "type": "string",
+        "description": "简洁、以行动为导向的 Episode 名称。"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "基于文本的中性叙述，只描述具体动作和可观察结果，不做主题或目的分析。"
+      },
+      {
+        "name": "related_events",
+        "type": "string[]",
+        "description": "属于该 Episode 的 Event id 列表。"
+      },
+      {
+        "name": "related_occasions",
+        "type": "string[]",
+        "description": "为该 Episode 提供上下文或锚定的 Occasion id 列表。"
+      }
+    ],
+    "construction_constraints": [
+      "只有 Event 类型的实体可以出现在 related_events 中。",
+      "每个 Event 在一次抽取结果中必须恰好属于一个 Episode。",
+      "Occasion 可以为多个 Episode 提供上下文，但不能出现在 related_events 中。",
+      "每个 Episode 应尽可能包含 2 到 6 个 Events；只有无法有意义地分组时才创建单事件 Episode。",
+      "不要臆造新的 Event、Occasion、动机、因果链或心理状态。"
+    ],
+    "writing_constraints": [
+      "description 必须是中性的叙事 prose，不要解释分组理由。",
+      "不要写“这个 Episode 展示了”“这一段围绕着”等元叙事表述。",
+      "不要写主题分析、目的分析或结构分析。",
+      "Episode 名称应概括主要动作推进，而不是抽象主题。"
+    ],
+    "samples": [
+      {
+        "name": "警卫发现入侵并发出警报",
+        "description": "警卫在巡逻时发现异常闯入痕迹，随即通知同伴并触发基地警报，现场迅速进入戒备状态。",
+        "related_events": [
+          "evt_01",
+          "evt_02",
+          "evt_03"
+        ],
+        "related_occasions": []
+      }
+    ]
+  },
+  {
+    "type": "Storyline",
+    "description": "跨越多个 Episode 的持续叙事线索。Storyline 以更高层级概括一条连续推进的因果或冲突脉络，用于长程叙事理解和后续推理。",
+    "input_types": [
+      "Episode"
+    ],
+    "output_fields": [
+      {
+        "name": "name",
+        "type": "string",
+        "description": "概括整条 Storyline 推进的简洁名称。"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "覆盖起因、推进过程和结果的连贯故事线概述。"
+      },
+      {
+        "name": "impact",
+        "type": "string",
+        "description": "该 Storyline 产出的可复用后续影响、约束或新状态。"
+      },
+      {
+        "name": "key_characters",
+        "type": "string[]",
+        "description": "Storyline 中反复关键出现的角色规范名称列表。"
+      },
+      {
+        "name": "key_locations",
+        "type": "string[]",
+        "description": "Storyline 中关键地点的规范名称列表。"
+      }
+    ],
+    "construction_constraints": [
+      "只能根据输入的 Episode 链信息构建 Storyline，不得引入外部知识。",
+      "Storyline 必须概括整条链路，而不是复述单个 Episode。",
+      "不要新增输入中不存在的人物、地点、事件或因果关系。"
+    ],
+    "writing_constraints": [
+      "description 应覆盖起因、过程和结果，形成单一连贯的叙述。",
+      "impact 应表达可供后续推理复用的结果状态或新约束。",
+      "不要引用 Episode 编号、场次编号或分段编号。",
+      "不要输出项目列表或步骤枚举。"
+    ],
+    "samples": [
+      {
+        "name": "基地失控后启动全面疏散",
+        "description": "基地系统故障引发连锁异常，值守人员尝试局部处置但未能稳定局面。随着风险升级，指挥层下达全面疏散命令，人员被迫在混乱中撤离核心区域。",
+        "impact": "基地运行秩序被打破，后续行动必须在资源受限和安全风险上升的条件下展开。",
+        "key_characters": [
+          "值守工程师",
+          "基地指挥官"
+        ],
+        "key_locations": [
+          "轨道基地控制室",
+          "紧急撤离通道"
+        ]
+      }
+    ]
+  }
+]

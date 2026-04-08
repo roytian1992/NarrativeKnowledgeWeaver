@@ -1,0 +1,91 @@
+{
+  "novel": {
+    "description": "从小说章节中抽取高层元数据。",
+    "fields": [
+      {
+        "key": "space",
+        "description": "故事世界的空间类型（如现实世界、虚拟空间、奇幻世界）。可能存在多个值。"
+      },
+      {
+        "key": "region",
+        "description": "明确提及的地理或区域背景。可能存在多个值。"
+      },
+      {
+        "key": "main_location",
+        "description": "章节主要发生的主要地点。可能存在多个值。"
+      },
+      {
+        "key": "time_period",
+        "description": "时间信息，如夜晚、季节、历史时代或未来。可能存在多个值。"
+      },
+      {
+        "key": "summary",
+        "description": "章节内容的简明摘要，聚焦于主要事件和背景。"
+      }
+    ]
+  },
+
+  "screenplay": {
+    "description": "从剧本场景标题（及可选文本）中抽取标准化元数据。",
+    "fields": [
+      {
+        "key": "scene_id",
+        "description": "场景编号，可能是复合形式如 17-13。"
+      },
+      {
+        "key": "scene_category",
+        "description": "室内或室外类别，标准化为 INT 或 EXT。"
+      },
+      {
+        "key": "lighting",
+        "description": "光照条件，如日间、夜间或无日夜区分。"
+      },
+      {
+        "key": "space",
+        "description": "场景空间类型，如现实世界、数字空间或梦境。可能存在多个值。"
+      },
+      {
+        "key": "region",
+        "description": "更大的地理或设施级别区域。可能存在多个值。"
+      },
+      {
+        "key": "main_location",
+        "description": "主要场景地点，如房间或设施。可能存在多个值。"
+      },
+      {
+        "key": "sub_location",
+        "description": "更细粒度的子地点，如有明确指定。"
+      },
+      {
+        "key": "summary",
+        "description": "场景目的、氛围或关键动作的简明摘要。"
+      }
+    ]
+  },
+
+  "general": {
+    "description": "从一般文档或文本段落中抽取高层元数据。",
+    "fields": [
+      {
+        "key": "topic",
+        "description": "文档的主要主题或学科领域。可能存在多个值。"
+      },
+      {
+        "key": "domain",
+        "description": "文档的领域或语境，如技术、商业、教育或政策。"
+      },
+      {
+        "key": "time_reference",
+        "description": "提及的任何明确或隐含的时间参照，如日期、时期或阶段。"
+      },
+      {
+        "key": "location",
+        "description": "文档中讨论或提及的相关地点（如有）。"
+      },
+      {
+        "key": "summary",
+        "description": "文档内容的简明摘要，聚焦于关键要点和意图。"
+      }
+    ]
+  }
+}

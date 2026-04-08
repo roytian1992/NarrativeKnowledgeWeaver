@@ -1,0 +1,62 @@
+id: extract_insights
+category: text_processing
+name: Extract Document Facts
+description: >
+  Extract explicit factual points from text.
+  Strict JSON-only output.
+
+task_variables:
+  - name: doc_type
+    type: string
+    required: true
+    description: "narrative or general"
+
+  - name: text
+    type: string
+    required: true
+    description: Input text.
+
+static_variables:
+  - name: task_spec
+    type: string
+    required: true
+    description: Rendered task description and guidelines.
+
+template: |
+  你正在从文档中抽取明确的事实要点。
+
+  --------------------------------
+  任务描述
+  --------------------------------
+  {task_spec}
+
+  --------------------------------
+  抽取规则（关键）
+  --------------------------------
+  - 只抽取文本中明确陈述的内容。
+  - 每个条目必须是具体、独立的事实要点。
+  - 避免模糊或笼统的陈述。
+  - 不要对文本进行整体概括。
+  - 不要在文本之外进行解释、分析或推断。
+  - 精确优先于完整。
+
+  --------------------------------
+  文本
+  --------------------------------
+  {text}
+
+  --------------------------------
+  输出格式（严格，仅 JSON）
+  --------------------------------
+  {{
+    "facts": [
+      "事实 1",
+      "事实 2"
+    ]
+  }}
+
+  --------------------------------
+  最终说明
+  --------------------------------
+  - 只输出 JSON。
+  - 不要包含任何额外的键。

@@ -1,0 +1,96 @@
+id: generate_community_report
+category: aggregation
+name: Generate Community Report
+description: >
+  Generate a GraphRAG-style narrative community report from structured community context.
+  Return a strict JSON object with title, summary, rating, rating explanation, and findings.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Structured community context containing entities, relationships, source documents, or child community reports.
+
+  - name: max_length
+    type: number
+    required: true
+    description: Soft maximum length for the full report content in characters.
+
+  - name: max_findings
+    type: number
+    required: true
+    description: Target maximum number of findings to include.
+
+  - name: goal
+    type: string
+    required: false
+    description: Optional retrieval-oriented goal to emphasize in the report.
+
+template: |
+  你是一位叙事分析专家，负责根据一个社区的结构化上下文生成可用于检索和问答的社区报告。
+
+  --------------------------------
+  任务目标
+  --------------------------------
+  请基于输入的社区上下文，写出一个 GraphRAG 风格的社区报告。
+
+  这个报告不是简单摘要，而是要概括：
+  1) 社区中最核心的人物、事件、地点、物体或概念
+  2) 它们之间最重要的关系、冲突、协作、因果或叙事连接
+  3) 这个社区在整体叙事中的作用、焦点或重要性
+  4) 最值得后续检索和问答继续下钻的事实线索
+
+  --------------------------------
+  报告要求
+  --------------------------------
+  1) 只基于输入内容作答，不要编造。
+  2) 标题必须具体，尽量体现代表性实体、事件或冲突。
+  3) summary 是一段执行摘要，概括该社区的主题、结构和叙事作用。
+  4) rating 取值范围必须在 0 到 10 之间，表示该社区在叙事理解中的重要性。
+  5) rating_explanation 用一句简短中文说明评分原因。
+  6) findings 最多输出 {max_findings} 条，每条都要包含：
+     - summary: 一句短标题式结论
+     - explanation: 1 到 2 段解释，说明该发现为什么重要
+  7) findings 要覆盖不同层面的关键信息，例如：
+     - 核心人物与其行为
+     - 关键事件或状态变化
+     - 重要关系、互动、因果或冲突
+     - 对后续剧情/世界观/任务目标的意义
+  8) 如果提供了 goal，应优先强调与该目标最相关的社区内容。
+  9) 不要输出 markdown，不要输出额外解释。
+  10) 整体报告内容应控制在约 {max_length} 字符以内。
+
+  --------------------------------
+  输入
+  --------------------------------
+  [可选检索目标]
+  {goal}
+
+  [社区上下文]
+  {text}
+
+  --------------------------------
+  输出格式（严格）
+  --------------------------------
+  只返回 JSON：
+
+  {{
+    "title": "...",
+    "summary": "...",
+    "rating": 0.0,
+    "rating_explanation": "...",
+    "findings": [
+      {{
+        "summary": "...",
+        "explanation": "..."
+      }}
+    ]
+  }}
+
+  --------------------------------
+  最终要求
+  --------------------------------
+  - 只输出 JSON。
+  - 不要 markdown，不要注释。
+  - rating 必须在 0 到 10 之间。
+  - findings 必须是数组，且不能为空。

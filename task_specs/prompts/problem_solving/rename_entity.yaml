@@ -1,0 +1,91 @@
+id: rename_entity
+category: problem_solving
+name: Rename Entity
+description: >
+  Rename an extracted entity (any supported entity type) to be more specific, grounded, and disambiguating,
+  using only the provided text and the type-specific naming rules and exclusions from the schema.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The source text where the entity mention appears.
+
+  - name: entity_name
+    type: string
+    required: true
+    description: The current extracted entity name to be renamed or kept.
+
+  - name: entity_type
+    type: string
+    required: true
+    description: The entity type of the current entity name (e.g., Character, Event, Location, Object, Concept, Occasion, TimePoint).
+
+static_variables:
+  - name: type_description
+    type: string
+    required: true
+    description: Short description/definition of the entity type, loaded from default_task_descriptions.json.
+
+  - name: naming_rules
+    type: string
+    required: true
+    description: Type-specific naming rules, rendered as bullet lines, loaded from default_task_descriptions.json.
+
+  - name: exclusions
+    type: string
+    required: true
+    description: Type-specific exclusions, rendered as bullet lines, loaded from default_task_descriptions.json.
+
+template: |
+  你正在重命名一个抽取的实体，使其更具体、更有依据、更能消歧。
+
+  实体类型
+  你正在处理的实体类型是：{entity_type}
+
+  类型定义：
+  {type_description}
+
+  类型命名规则：
+  {naming_rules}
+
+  类型排除项：
+  {exclusions}
+
+  任务
+  给定：
+  1) 一段文本。
+  2) 从该文本中抽取的现有实体名称。
+  3) 实体类型。
+
+  你的工作是提出一个更好的实体名称，该名称指向本文本中此类型的一个特定实体。
+  如果当前名称已经足够具体和准确，则保持不变。
+
+  严格规则
+  - 仅基于提供的文本做出决定。不要使用外部知识。
+  - 重命名的实体必须有文本依据。
+  - 不要编造文本中未陈述或暗示的新参与者、地点、时间或后果。
+  - 优先选择简短、具体、能消歧的名称。
+  - 避免模糊的名称如 "Thing"、"Someone"、"Place"、"Organization"、"Event"、"Incident"。
+  - 避免添加括号如 "(Entity)" 或附加类型。
+  - 如果存在多个合理的实体，选择与当前实体名称和实体类型最匹配的那一个。
+  - 遵循上述类型命名规则并尊重类型排除项。
+
+  质量检查
+  - 如果保持名称不变，请明确说明为什么它已经满足命名规则。
+
+  输入
+
+  [文本]
+  {text}
+
+  [当前实体名称]
+  {entity_name}
+
+  输出格式
+  只返回一个 JSON 对象，不要有额外文本：
+
+  {{
+    "new_name": "字符串",
+    "reason": "基于文本的简要理由。提及你使用的具体线索。"
+  }}

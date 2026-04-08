@@ -1,0 +1,63 @@
+id: extract_strategy_query_pattern
+category: memory
+name: Extract Strategy Query Pattern
+description: >
+  从原始问题中提炼非文本特定的策略匹配模式，输出严格 JSON。
+
+task_variables:
+  - name: original_query
+    type: string
+    required: true
+    description: 原始用户问题。
+  - name: rule_abstract
+    type: string
+    required: true
+    description: 规则匿名化后的问题草稿。
+
+static_variables: []
+
+template: |
+  你在为“检索策略模板匹配”提炼问题模式。
+
+  原始问题：
+  {original_query}
+
+  规则匿名化版本：
+  {rule_abstract}
+
+  输出要求：
+  - 只返回一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "query_abstract": "字符串",
+      "problem_type": "字符串",
+      "target_category": "字符串",
+      "answer_shape": "字符串",
+      "retrieval_goals": ["字符串", "字符串"],
+      "notes": "字符串"
+    }}
+  - 必须去除作品特定的人名、地名、文档名、id。
+  - `query_abstract` 必须是通用任务描述，不能只是把故事实体换个说法重复一遍。
+  - `problem_type` 必须严格从以下集合中选择一个：
+    1. `section_localization`
+    2. `content_span_lookup`
+    3. `entity_attribute_lookup`
+    4. `relation_or_interaction_lookup`
+    5. `causal_or_explanatory_lookup`
+    6. `fact_retrieval`
+  - `target_category` 必须严格从以下集合中选择一个：
+    1. `character`
+    2. `object_or_device`
+    3. `section`
+    4. `place`
+    5. `event`
+    6. `narrative_fact`
+  - `answer_shape` 必须严格从以下集合中选择一个：
+    1. `mcq_option`
+    2. `short_fact`
+    3. `explanation`
+    4. `list`
+  - 如果问题中显式出现 `Choices:` / `Options:` / A/B/C/D 选项，`answer_shape` 必须输出 `mcq_option`。
+  - `retrieval_goals` 只描述检索目标，不描述输出格式，不超过 4 条。
+  - 不允许输出 `section_names`、`json`、`with_evidence`、`quote/span`、`single_choice_with_text` 之类的值。
+  - 不要输出解释，不要 Markdown。

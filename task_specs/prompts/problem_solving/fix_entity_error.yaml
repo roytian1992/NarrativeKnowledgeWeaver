@@ -1,0 +1,98 @@
+id: fix_entity_error
+category: knowledge_extraction
+name: Entity Error Fix
+description: >
+  Fix relation extraction errors by deciding to add a missing entity (only if text-grounded)
+  or drop the relation, with strict JSON-only output.
+
+task_variables:
+  - name: content
+    type: string
+    required: true
+    description: Original scene/chunk text.
+
+  - name: candidate_entity_types
+    type: string
+    required: true
+    description: >
+      Candidate entity types allowed for the missing entity. Prefer passing a JSON array string
+      (e.g., ["Character","Object"]) or a newline/comma-separated string.
+
+  - name: feedback
+    type: string
+    required: true
+    description: Feedback describing what went wrong (e.g., subject missing / object missing).
+
+static_variables:
+  - name: candidate_entity_descriptions
+    type: string
+    required: true
+    description: >
+      A rendered text block describing each candidate type. This must be built in code from your
+      schema JSON, based on candidate_entity_types.
+
+template: |
+  你正在修复叙事知识图谱中的关系抽取错误。
+
+  任务
+  给定：
+  1) 原始场景文本。
+  2) 基于关系类型约束，缺失实体允许的候选实体类型集合。
+  3) 每个候选类型的简短描述。
+  4) 一个反馈项，指出出了什么问题（例如，主体缺失/客体缺失）。
+
+  你的目标是决定是否添加缺失的实体（仅当它在文本中有明确依据时）
+  或丢弃该关系（如果缺失的实体无法得到支持）。
+
+  关键约束
+  - 不要编造文本中没有的信息。
+  - 如果缺失的实体在文本中没有明确提及（或无法唯一识别），你必须选择 "drop"。
+  - 如果你选择 "add"，该实体必须：
+    - 使用候选实体类型中的一个实体类型。
+    - 有一个干净的规范名称（修剪空格，单词之间单个空格，无换行）。
+    - 有文本依据（描述应引用所陈述的内容，而非猜测）。
+    - 包含一个 scope：如果是可能跨场景出现的反复命名实体（例如 "Benny"、"AA"、"Los Angeles"），则为 "global"，
+      否则如果只是此场景中的一次性提及，则为 "local"。
+
+  输入
+  [场景文本]
+  {content}
+
+  [候选实体类型]
+  {candidate_entity_types}
+
+  [候选类型描述]
+  {candidate_entity_descriptions}
+
+  [反馈]
+  {feedback}
+
+  决策规则
+  选择以下两项之一：
+  1) "add"：
+     - 仅当你可以指出场景文本中对应缺失实体的明确提及时。
+     - 实体名称应与文本中的表面形式匹配（经过简单清理后）。
+  2) "drop"：
+     - 如果缺失的实体在场景文本中没有明确出现，
+       或者有多个合理的实体且你无法消歧，
+       或者添加它需要假设。
+
+  输出格式
+  只返回一个 JSON 对象，不要有额外文本。
+
+  如果 decision 为 "add"：
+  {{
+    "decision": "add",
+    "output": {{
+      "name": "<字符串>",
+      "description": "<基于文本的字符串>",
+      "type": "<候选实体类型之一>",
+      "scope": "global" | "local"
+    }}
+  }}
+
+  如果 decision 为 "drop"：
+  {{
+    "decision": "drop",
+    "output": {{}}
+  }}

@@ -1,0 +1,72 @@
+id: summarize_text
+category: text_processing
+name: Summarize Text
+description: >
+  Generate a concise, objective summary for a text paragraph.
+  If previous_summary is provided, update it in a sliding-window manner.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: The original text paragraph to be summarized.
+
+  - name: max_length
+    type: number
+    required: true
+    description: Maximum length of the summary (in characters).
+
+  - name: previous_summary
+    type: string
+    required: false
+    description: Optional previous summary to update.
+
+  - name: goal
+    type: string
+    required: false
+    description: Optional summarization goal or focus.
+
+template: |
+  你是一位擅长文本理解和摘要的语言专家。
+
+  --------------------------------
+  任务
+  --------------------------------
+  阅读输入文本并生成不超过 {max_length} 个字符的简洁摘要。
+
+  --------------------------------
+  要求
+  --------------------------------
+  1) 只涵盖文本的核心信息。避免无关细节。
+  2) 客观准确。不要编造任何信息。
+  3) 不要使用列表、标题、引用或冗余/重复内容。
+  4) 如果提供了先前摘要，请以滑动窗口方式根据当前文本更新它，
+     保持结果连贯且最新。
+  5) 如果提供了目标，优先考虑与该目标相关的信息。
+
+  --------------------------------
+  输入
+  --------------------------------
+  {previous_summary}
+  [目标]
+  {goal}
+
+  [文本]
+  {text}
+
+  --------------------------------
+  输出格式（严格）
+  --------------------------------
+  只返回 JSON：
+
+  {{
+    "summary": "..."
+  }}
+
+  --------------------------------
+  最终说明
+  --------------------------------
+  - 只输出 JSON。
+  - 不要 markdown，不要评论。
+  - 不要超过 {max_length} 个字符。

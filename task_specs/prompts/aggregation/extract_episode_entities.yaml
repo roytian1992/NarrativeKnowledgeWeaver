@@ -1,0 +1,98 @@
+id: extract_episodes
+category: aggregation
+name: Extract Episodes from Events
+description: >
+  Group Event entities into goal-driven Episodes based on the given text.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Original narrative text.
+
+  - name: entities
+    type: string
+    required: true
+    description: JSON string of entities (Event/Occasion).
+
+static_variables:
+  - name: entity_definitions_text
+    type: string
+    required: true
+    description: Event、Occasion、Episode、Storyline 的定义文本。
+
+  - name: episode_output_fields_text
+    type: string
+    required: true
+    description: Episode 输出字段定义。
+
+  - name: episode_construction_constraints_text
+    type: string
+    required: true
+    description: 基于 schema 的 Episode 结构约束。
+
+  - name: episode_writing_constraints_text
+    type: string
+    required: true
+    description: 基于 schema 的 Episode 写作约束。
+
+  - name: episode_sample_json_text
+    type: string
+    required: true
+    description: 来自 schema 的 Episode 示例对象。
+
+template: |
+  你是一个信息抽取和叙事结构化助手。
+
+  定义：
+  {entity_definitions_text}
+
+  任务：
+  给定一个实体列表（Events 和 Occasions）和原始文本，将 Events 分组为 Episodes。
+
+  输入：
+  1) text：抽取实体的原始叙事文本。
+  2) entities：实体列表。每个实体具有：
+     - id：字符串
+     - name：字符串
+     - description：字符串
+     - type："Event" 或 "Occasion"
+
+  规则：
+  {episode_construction_constraints_text}
+  - 优先将以下 Events 分组在一起：
+    - 基于相同文本片段，
+    - 位于相同 Occasion 内，
+    - 或在文本中通过短程时间或因果关系紧密耦合。
+  - Episode 名称应该是简洁的、以行动为导向的短语。
+
+  Episode 输出字段：
+  {episode_output_fields_text}
+
+  Episode 写作约束：
+  {episode_writing_constraints_text}
+
+  示例 Episode 对象：
+  {episode_sample_json_text}
+
+  只输出 JSON，使用以下模式：
+
+  {{
+    "episodes": [
+      {{
+        "name": "...",
+        "description": "...",
+        "related_events": ["..."],
+        "related_occasions": ["..."]
+      }}
+    ]
+  }}
+
+  现在处理以下输入。
+
+  文本：
+  {text}
+
+  要处理的实体：
+  {entities}

@@ -1,0 +1,69 @@
+id: check_entity_scope
+category: problem_solving
+name: Check Entity Scope
+description: >
+  Decide whether an entity mention should be treated as global or local scope using only the provided context.
+  Output must be strict JSON only.
+
+task_variables:
+  - name: entity_name
+    type: string
+    required: true
+    description: The entity name to judge.
+
+  - name: context
+    type: string
+    required: true
+    description: The context where the entity appears.
+
+static_variables: []
+
+template: |
+  你正在决定一个实体提及应该被视为全局范围还是局部范围，
+  仅基于提供的上下文。
+
+  任务
+  给定：
+  1) 一个实体名称。
+  2) 它出现的上下文（可能包括邻近句子、场景/章节片段或抽取笔记）。
+
+  你必须选择一个范围：
+  - "global"：此提及指的是整个文档中相同、可复用的实体。
+  - "local"：此提及仅特定于此上下文（一次性的、临时标签，或不应全局合并的同名歧义实体）。
+
+  默认原则
+  - 默认优先选择 "global"。
+  - 只有当上下文提供明确且显式的证据表明此提及不应全局合并时，才选择 "local"。
+
+  "local" 的强信号（必须在上下文中明确）
+  - 该名称在此刻被用作通用角色/标签（例如 "一个保安"、"一个司机"、"一个服务员"）而非一致的身份。
+  - 上下文明确指出这是同名的不同人/物（例如 "另一个 John"、"不是同一个 X"、"不同的 X"）。
+  - 该提及显然是一次性的对象/地点/事件标签，不打算持久存在（例如 "随机顾客"、"未知来电者"、"男人 #2"）。
+  - 上下文明确将该提及与此场景绑定（例如 "在这个场景中，'医生'只是一个路人"）或将其标记为偶然的。
+
+  弱信号（本身不足够，应仍选择 "global"）
+  - 大小写、剧本格式、标题或换行。
+  - 缺乏细节。
+  - 上下文较短。
+
+  关键约束
+  - 仅基于提供的上下文进行判断。
+  - 不要使用外部知识。
+  - 不要编造上下文中不存在的事实。
+  - 如果模糊不清，选择 "global"。
+
+  输入
+
+  [实体名称]
+  {entity_name}
+
+  [上下文]
+  {context}
+
+  输出格式
+  只返回一个 JSON 对象，不要有额外文本：
+
+  {{
+    "scope": "global" | "local",
+    "reason": "基于上下文的简要解释。"
+  }}

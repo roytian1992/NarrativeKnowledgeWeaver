@@ -1,0 +1,12 @@
+{
+  "community_relations": [
+    {
+      "name": "COMMUNITY_CONTAINS",
+      "description": "Community 指向其直接包含的基础实体成员。"
+    },
+    {
+      "name": "COMMUNITY_PARENT_OF",
+      "description": "较高层级的 Community 指向较细粒度的子 Community。"
+    }
+  ]
+}

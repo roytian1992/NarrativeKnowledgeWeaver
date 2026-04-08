@@ -1,0 +1,39 @@
+[
+  {
+    "task": "interaction_extraction",
+    "task_name": "交互信息抽取",
+    "task_goal": "从输入文本中抽取角色与角色/物体之间的对话与互动信息。抽取结果必须仅使用给定实体列表中的 Character/Object 实体。",
+    "global_constraints": [
+      "不要臆造实体列表中不存在的实体。",
+      "只允许使用交互模式中定义的 interaction_type。",
+      "对话和互动内容都必须写入 content 字段。",
+      "当 interaction_type=dialogue 且为独白/自言自语时，object 可以为空字符串。",
+      "当 object 类型为 Object 时，只允许可主动交互或可回应的对象（如机器人/AI/系统代理）；不要使用幕布、门、桌椅、道具、背景物体作为 object。",
+      "当 interaction_type=interaction 时，必须给出 polarity，且只能是 positive/negative/neutral。",
+      "仅输出 JSON 数组，不要包含注释或额外文本。"
+    ],
+    "output_fields": [
+      "subject",
+      "object",
+      "interaction_type",
+      "polarity",
+      "content"
+    ],
+    "few_shot": {
+      "per_type_k": 1,
+      "max_total": 8,
+      "strategy": "per_interaction_type_first_k"
+    },
+    "interaction_groups": [
+      {
+        "group": "interaction_relations",
+        "group_name": "交互关系",
+        "group_goal": "抽取 dialogue 与 interaction 两类信息。",
+        "group_constraints": [
+          "仅在文本明确表达行为或话语时抽取，避免推测。",
+          "若交互目标是 Object，需确认其具备交互能力（机器人/AI/系统实体），否则不抽取该条。"
+        ]
+      }
+    ]
+  }
+]

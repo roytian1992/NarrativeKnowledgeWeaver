@@ -1,0 +1,74 @@
+id: resolve_relation_conflicts
+category: problem_solving
+name: Resolve Relation Conflicts
+description: >
+  Review multiple relation types extracted between the same two entities and decide which relation types to keep,
+  using only the provided context report. Strict JSON-only output.
+
+task_variables:
+  - name: context
+    type: string
+    required: true
+    description: Multi-edge context/report for one entity pair, including relation type summary and evidence lines.
+
+  - name: subject_entity
+    type: string
+    required: true
+    description: Subject entity (name/id) for clarity.
+
+  - name: object_entity
+    type: string
+    required: true
+    description: Object entity (name/id) for clarity.
+
+static_variables: []
+
+template: |
+  你正在审查叙事知识图谱中同两个实体之间抽取的多个关系。
+
+  任务
+  给定：
+  1) 一对实体（subject_entity -> object_entity）的多边报告。
+     它包括：
+     - relation_type 摘要（类型、描述、计数）
+     - 每条边的证据行（base_chapter / chapter_key / rid）
+  2) subject_entity 和 object_entity 的名称/id，以便清晰。
+
+  你的工作：
+  - 决定应该为这对实体保留哪些关系类型。
+  - 关注可能同时出现的潜在矛盾，如 affinity_with 和 hostility_with。
+    重要：同时出现并不一定意味着其中一个是错误的；它可能反映了临时冲突
+    （例如朋友吵架）或故事动态。
+  - 保守行事：
+    - 如果你不确定，保留两者而不是丢弃。
+    - 只有当证据强烈表明对于这对实体来说是错误分类时才丢弃关系类型
+      （例如：证据看起来像是一次性的瞬时态度而非已建立的关系状态）。
+
+  关键规则
+  - 只使用提供的多边信息。不要使用外部知识。
+  - 不要编造新的关系类型。
+  - 你只能输出报告中出现的关系类型。
+  - 你在这里不是执行规范化或合并。下游将按 relation_type 合并边。
+
+  输入
+  [主体实体]
+  {subject_entity}
+
+  [客体实体]
+  {object_entity}
+
+  [上下文]
+  {context}
+
+  输出格式
+  只返回一个 JSON 对象，不要有额外文本：
+
+  {{
+    "keep_relation_types": ["字符串", "..."],
+    "reason": "基于上下文的简要理由。"
+  }}
+
+  解释
+  - keep_relation_types 列出应该为这对实体保留的关系类型。
+  - 如果 affinity_with 和 hostility_with 都应该保留，则包含两者。
+  - 如果不应该丢弃任何类型，则包含报告中出现的所有类型。

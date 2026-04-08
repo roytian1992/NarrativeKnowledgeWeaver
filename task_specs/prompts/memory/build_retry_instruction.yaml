@@ -1,0 +1,42 @@
+id: build_retry_instruction
+category: memory
+name: Build Retry Instruction
+description: >
+  把失败反思压缩成一段短的 retry 指令。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: missed_fact
+    type: string
+    required: true
+  - name: next_action
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你要把失败反思压缩成给检索 agent 的短指令。
+
+  问题：
+  {question}
+
+  关键遗漏：
+  {missed_fact}
+
+  下一步动作：
+  {next_action}
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "retry_instruction": "字符串"
+    }}
+  - `retry_instruction` 必须简短、可执行，长度尽量控制在两句话以内。
+  - 指令应优先说明：
+    1. 这次必须补上的信息；
+    2. 下一步优先调用的检索路径。
+  - 不要输出 Markdown，不要额外解释。

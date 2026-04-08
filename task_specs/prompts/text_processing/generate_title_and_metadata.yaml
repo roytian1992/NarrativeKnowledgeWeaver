@@ -1,0 +1,105 @@
+id: generate_title_and_metadata
+category: text_processing
+name: Generate Segment Title And Metadata
+description: >
+  为单个预切分文本段生成更具体的标题，并按 doc_type 抽取结构化 metadata。
+  只允许输出 JSON。
+
+task_variables:
+  - name: doc_type
+    type: string
+    required: true
+    description: 用于选择 metadata 抽取任务的文档类型键。
+
+  - name: title
+    type: string
+    required: false
+    description: 来源文档的原始标题提示，可选。
+
+  - name: subtitle
+    type: string
+    required: false
+    description: 来源文档的原始副标题提示，可选。
+
+  - name: text
+    type: string
+    required: true
+    description: 当前文本段内容。
+
+static_variables:
+  - name: task_spec
+    type: string
+    required: true
+    description: 针对给定 doc_type 渲染出的 metadata 抽取任务说明。
+
+template: |
+  你正在处理一个预切分后的文档片段。
+
+  --------------------------------
+  输入
+  --------------------------------
+
+  [文档类型]
+  {doc_type}
+
+  [原始标题提示]
+  {title}
+  {subtitle}
+
+  [文本片段]
+  {text}
+
+  --------------------------------
+  任务描述
+  --------------------------------
+  以下描述了要抽取哪些 metadata 字段以及每个字段的含义：
+
+  {task_spec}
+
+  --------------------------------
+  标题生成规则
+  --------------------------------
+  - 生成一个简洁、可独立理解的片段标题。
+  - 标题必须能够体现当前片段的具体内容，不能只是机械复用原始标题。
+  - 如果文本中明确出现了关键实体、事件或主题，应尽量保留。
+  - 不要编造片段中没有明确支持的信息。
+  - 避免使用“第一部分”“片段”“内容摘要”“续篇”之类空泛标题。
+  - 如果原始标题本身已经足够具体且仍然适用于该片段，可以直接复用或轻微细化。
+
+  --------------------------------
+  全局规则
+  --------------------------------
+  - 只输出 JSON。
+  - 不要编造信息。
+  - 如果某个 metadata 值没有明确支持，使用 null。
+  - 不要输出空字符串。
+  - 不要添加任务描述中未定义的 metadata 键。
+
+  --------------------------------
+  多值规则（重要）
+  --------------------------------
+  - 某些 metadata 字段可能有多个不同的值。
+  - 如果某字段有多个值适用，将它们合并为单个字符串，
+    使用 "; "（分号 + 空格）作为分隔符。
+  - 不要输出列表或数组。
+  - 尽可能保持出现的自然顺序。
+
+  --------------------------------
+  输出格式（严格）
+  --------------------------------
+  只返回 JSON：
+
+  {{
+    "title": "具体的片段标题",
+    "metadata": {{
+      "field_name_1": "值或 null",
+      "field_name_2": "值或 null"
+    }}
+  }}
+
+  --------------------------------
+  最终说明
+  --------------------------------
+  - 生成的标题要短、准、可读。
+  - metadata 保持简洁、规范。
+  - 不要解释，不要 markdown，只要 JSON。

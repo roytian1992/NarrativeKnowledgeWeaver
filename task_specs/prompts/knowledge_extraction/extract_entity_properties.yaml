@@ -1,0 +1,144 @@
+id: extract_entity_properties
+category: problem_solving
+name: Extract Entity Properties
+description: >
+  Extract GLOBAL, reusable properties for a single entity from a chunk of text.
+  The reference property schema is loaded from default_entity_schema.json by entity_type.
+  Strict JSON-only output.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input chunk text.
+
+  - name: entity_name
+    type: string
+    required: true
+    description: The entity name to extract properties for.
+
+  - name: entity_type
+    type: string
+    required: true
+    description: Entity type (Character, Event, Location, Occasion, TimePoint, Object, Concept).
+
+static_variables:
+  - name: property_schema
+    type: string
+    required: true
+    description: Rendered reference property schema (preferred keys and meanings) for this entity_type.
+
+template: |
+  你正在从一段文本中为单个实体抽取全局可复用的属性。
+
+  --------------------------------
+  输入
+  --------------------------------
+
+  [实体名称]
+  {entity_name}
+
+  [实体类型]
+  {entity_type}
+
+  [参考属性模式]
+  此模式提供了首选的属性键及其含义。
+  这是一个软性指导：在适用时优先使用这些键。
+
+  {property_schema}
+
+  [文本片段]
+  {text}
+
+  --------------------------------
+  目标
+  --------------------------------
+
+  只抽取在整个叙事中可能保持不变的属性（全局/稳定属性），
+  而不是特定于单个场景、单次交互或临时情况的属性。
+
+  你必须输出：
+  1) new_description：一段介绍实体的简短段落（2-5句话）。
+  2) properties：一个全局属性字典。
+
+  --------------------------------
+  全局 vs 局部（关键）
+  --------------------------------
+
+  以下情况属于全局属性：
+  - 身份：实体是什么/谁（职业、社会角色、物种/类型、规范身份）
+  - 稳定隶属关系：成员资格/雇佣关系/与组织/派系的长期关联
+  - 稳定特征：性格、长期倾向、持久的身体状况
+  - 持久能力或限制：技能、残疾、慢性疾病
+  - 持久背景：来源、家庭关系类型（例如，如果"某人的侄女"是稳定事实）
+  - 长期拥有物或资源（仅当反复提及或明显持久时）
+
+  以下情况属于局部属性，必须排除：
+  - 场景中的瞬时情绪状态（某一刻的恐惧、恐慌）
+  - 单次事件角色（某次调查的目击者/目标、某事件的参与者）
+  - 与另一个具名人物的一次性互动（被X安慰、在此场景中被Y带领）
+  - 临时位置或即时情况（"正在躲藏"、"现在在这个房间里"）
+  - 可能变化的细粒度关系快照（信任中；受威胁；不受欢迎的接近）
+  - 场景特定的行为细节（"阅读盲文"只有在表明稳定能力/习惯时才可接受）
+
+  如果你不确定某个事实是全局还是局部的，请不要包含它。
+
+  --------------------------------
+  属性键规则
+  --------------------------------
+
+  1) 优先使用参考模式中的键。
+  2) 只有当需要捕获模式未涵盖的重要全局维度时，才可引入新键。
+  3) 键应在不同实体和叙事上下文中可复用：
+     - 使用 snake_case
+     - 使用中性名词或名词短语
+     - 不要在键中编码特定对象名称
+
+  4) 稀疏性：
+  - 只包含你能用非空值填充的键。
+  - 绝不输出空字符串。
+  - 如果在此片段中未作为全局事实陈述，请省略该键。
+
+  --------------------------------
+  属性值规则
+  --------------------------------
+
+  - 值可以是短语（不一定是单个关键词）。
+  - 保持简洁和规范。
+  - 避免长句子。
+  - 值的语言必须与当前任务语言一致；当任务为中文时，值必须使用中文表达（如“男”而非“male”）。
+  - 如果有多个值适用，用"; "（分号 + 空格）连接。
+  - 不要使用 "yes/no/true/false" 风格的值。改用分类/状态值。
+
+  --------------------------------
+  new_description 规则
+  --------------------------------
+
+  - 不能为空。
+  - 2-5句话，使用流畅的中文。
+  - 只包含此片段支持的全局/稳定事实。
+  - 不要提及"文本"或"此片段"。
+
+  --------------------------------
+  输出格式（严格）
+  --------------------------------
+
+  只返回 JSON：
+
+  {{
+    "new_description": "最终实体描述（不能为空）",
+    "properties": {{
+      "property_key": "属性值",
+      "another_key": "另一个值"
+    }}
+  }}
+
+  --------------------------------
+  最终说明
+  --------------------------------
+
+  - 只输出 JSON。
+  - 不要 markdown，不要评论。
+  - 不要编造事实。
+  - 排除局部/场景特定属性。
+  - 排除关系快照；只保留定义身份的稳定关系事实（例如配偶/亲子关系）且必须明确陈述。

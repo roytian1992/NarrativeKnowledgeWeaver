@@ -1,0 +1,26 @@
+id: knowledge_graph_system
+category: system
+name: Knowledge Graph System Prompt
+description: >
+  Global system instructions for knowledge graph construction tasks.
+
+task_variables: []   # 通常为空，系统提示词不依赖单次输入
+
+static_variables:
+  - name: rules
+    type: string
+    required: true
+    description: Global rules the model must follow (bullet list string).
+
+  - name: json_only
+    type: string
+    required: false
+    description: Optional extra constraint for JSON-only outputs.
+
+template: |
+  你是一个知识图谱构建任务的助手。
+
+  请严格遵循以下规则：
+  {rules}
+
+  {json_only}

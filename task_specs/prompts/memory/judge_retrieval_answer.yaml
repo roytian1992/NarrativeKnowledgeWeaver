@@ -1,0 +1,59 @@
+id: judge_retrieval_answer
+category: memory
+name: Judge Retrieval Answer
+description: >
+  使用参考答案判断检索问答结果是否正确，输出严格 JSON。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你是检索问答训练中的评审器。
+
+  问题：
+  {question}
+
+  参考答案：
+  {reference_answer}
+
+  候选回答：
+  {candidate_answer}
+
+  任务：判断候选回答是否可以视为正确。
+
+  判定原则：
+  - 把参考答案视为“最低应覆盖的核心事实”，而不是唯一允许的表述。
+  - 只要候选回答覆盖了参考答案中的核心信息，即使补充了更多正确且不冲突的细节，也可以判为 true。
+  - 如果候选回答是参考答案的语义超集，且没有明显冲突或明显不合理的具体幻觉，应优先判为 true。
+  - 不要因为候选回答比参考答案更完整、列得更多、解释更展开，就机械判错。
+  - 只有在以下情况才应明显扣分或判 false：
+    1. 漏掉参考答案中的核心信息；
+    2. 与参考答案直接矛盾；
+    3. 出现大量会改变结论的具体幻觉或无关扩展。
+  - 对“哪些场次/哪些型号/有哪些对象”这类枚举问题，如果候选回答完整覆盖参考答案列出的项目，允许其包含额外但不冲突的项目。
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "is_correct": true,
+      "score": 0.0,
+      "reason": "字符串",
+      "matched_points": ["字符串"],
+      "missing_points": ["字符串"],
+      "hallucination_points": ["字符串"]
+    }}
+  - `is_correct` 必须综合考虑核心信息覆盖度、语义一致性、是否存在直接冲突或会改变结论的明显幻觉。
+  - `score` 范围 0 到 1。
+  - 如果答案覆盖参考答案且只有少量措辞差异或合理补充，应判为 true。
+  - 不要输出解释性文本，不要 Markdown。

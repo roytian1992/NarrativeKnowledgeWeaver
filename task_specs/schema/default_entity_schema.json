@@ -1,0 +1,180 @@
+[
+  {
+    "type": "Character",
+    "category": "referential",
+    "description": "参与叙事的具体个体角色(人类或拟人化代理，例如机器人)。",
+    "properties": {
+      "name": "角色节点的规范名称或称呼方式。",
+      "gender": "性别(可选,仅在明确说明时填写)。",
+      "age": "年龄或年龄段(可选,仅在明确说明时填写)。",
+      "identity": "身份/职业(可选,仅在明确说明时填写)。",
+      "affiliation": "所属组织/派系(可选;如已提取应引用Concept概念)。"
+    },
+    "samples": [
+      {
+        "type": "Character",
+        "name": "本尼",
+        "description": "在戒酒互助会上发言的男子，讲述自己与酒精的斗争和戒酒尝试。",
+        "scope": "global"
+      },
+      {
+        "type": "Character",
+        "name": "老图书管理员",
+        "description": "谨慎保管禁书档案的管理员，引导他人查阅受限文献。",
+        "scope": "local"
+      }
+    ]
+  },
+  {
+    "type": "Event",
+    "category": "induced",
+    "description": "具体的叙事事件，可描述为谁对谁或对什么做了什么、何时何地发生、以及产生了什么后果。包括动作、对话行为、心理/情感变化、交易、移动和状态改变。",
+    "properties": {
+      "name": "事件的简短、以内容为中心的标题。",
+      "description": "基于文本的1-2句完整事件描述。",
+      "event_subtype": "子类型(可选):身体动作/言语/心理/交易/移动/状态改变。",
+      "cause": "原因或触发因素(可选,基于文本)。",
+      "result": "结果或影响(可选,基于文本)。",
+      "polarity": "事件极性(可选):正面/负面/中性。",
+      "emotion_type": "情绪类别(如适用,可选)。",
+      "emotion_intensity": "情绪强度(如适用,可选):低/中/高。"
+    },
+    "samples": [
+      {
+        "type": "Event",
+        "name": "停电使公寓楼陷入黑暗",
+        "description": "一栋高层建筑突然断电，灯光和电梯全部关闭，居民陷入黑暗之中。",
+        "scope": "local"
+      },
+      {
+        "type": "Event",
+        "name": "列车门关闭，主角被留在站台上",
+        "description": "主角抵达时车门正好关闭，将其留在站台上，列车驶离。",
+        "scope": "local"
+      }
+    ]
+  },
+  {
+    "type": "Location",
+    "category": "anchor",
+    "description": "事件发生的具体物理场景，以清晰的名词短语表达(不含前置介词)。",
+    "properties": {
+      "name": "用作节点标签的规范地点名称。",
+      "loc_type": "地点类型(可选):城市/房间/建筑/星球/虚拟空间等。",
+      "description": "简要定义或标识说明(可选)。"
+    },
+    "samples": [
+      {
+        "type": "Location",
+        "name": "洛杉矶圣彼得教堂",
+        "scope": "global",
+        "description": "洛杉矶一座具名教堂，作为会议场景的背景。"
+      },
+      {
+        "type": "Location",
+        "name": "公寓走廊",
+        "scope": "local",
+        "description": "公寓外的走廊，角色在场景中移动和交谈的地方。"
+      }
+    ]
+  },
+  {
+    "type": "Occasion",
+    "category": "induced",
+    "description": "结构化的、被社会或机构认可的事件容器，人物或组织可参与其中。场合可跨越一段时间，有多个参与者，包含多个原子事件。它代表有组织的活动或聚会的发生，而非单一行为。",
+    "properties": {
+      "name": "场合实例的规范名称(如特定峰会、会议、仪式或会面)。",
+      "description": "基于文本的场合简要说明。",
+      "occasion_type": "场合类型(可选):峰会/会议/会面/仪式/审判/选举/锦标赛/课程/听证会/仪式/其他。",
+      "host": "主办组织或权威机构(可选;如已提取应引用Concept或Character)。",
+      "time_range": "场合的时间跨度(可选;可引用一个或多个TimePoint节点)。",
+      "location": "场合的主要地点(可选;如已提取应引用Location)。",
+      "series": "此场合所属的抽象系列或机构框架(可选;应引用Concept)。"
+    },
+    "samples": [
+      {
+        "type": "Occasion",
+        "name": "联合国2026年气候峰会",
+        "description": "正式的国际峰会，多国代表齐聚讨论气候政策和协议。",
+        "scope": "global"
+      },
+      {
+        "type": "Occasion",
+        "name": "匿名戒酒会晚间会议",
+        "description": "当地戒酒互助会晚间会议，参与者聚集分享个人经历并相互支持戒酒。",
+        "scope": "global"
+      }
+    ]
+  },
+  {
+    "type": "TimePoint",
+    "category": "anchor",
+    "description": "用于锚定事件发生时间的具体时间点或短时间段(可以是精确、模糊或相对表达)，必须能够直接回答“事件什么时候发生”。不得为长期时代或宏观历史阶段。不得将表示条件、触发或假设的时间从句视为TimePoint，例如包含“当…时”“一旦…”“在…之后”“在…之前”“直到…”“只要…”等结构的条件性表达，除非其中包含可独立存在的规范时间表达(如明确日期、具体时段或可解析的相对时间)。如果该时间表达本质上是在说明事件发生的条件，而非提供可定位于时间线的时间锚点，则不得抽取为TimePoint。",
+    "properties": {
+      "description": "存储在节点上的规范时间表达(通常与提取的名称相同)。",
+      "time_type": "时间类型(可选):精确/模糊/相对。"
+    },
+    "samples": [
+      {
+        "type": "TimePoint",
+        "name": "2084-07-16 18:00",
+        "scope": "global",
+        "description": "明确的日期和时钟时间，锚定场景事件发生的时刻。"
+      },
+      {
+        "type": "TimePoint",
+        "name": "次日上午",
+        "scope": "local",
+        "description": "相对时间参照，表示相对于之前语境的次日上午。"
+      }
+    ]
+  },
+  {
+    "type": "Object",
+    "category": "referential",
+    "description": "具体的物理物品，可被持有、使用、隐藏、损坏或交换，且在叙事中具有相关性。",
+    "properties": {
+      "name": "规范物品名称。",
+      "obj_type": "物品类别(可选):武器/文件/装置/交通工具/其他。",
+      "description": "简要定义或标识说明(可选)。"
+    },
+    "samples": [
+      {
+        "type": "Object",
+        "name": "埋藏的酒瓶",
+        "description": "本尼为避免带入屋内而埋在草坪下的酒瓶。",
+        "scope": "local"
+      },
+      {
+        "type": "Object",
+        "name": "加密数据芯片",
+        "description": "包含机密任务记录的小型存储设备，他人试图获取。",
+        "scope": "global"
+      }
+    ]
+  },
+  {
+    "type": "Concept",
+    "category": "general_semantic",
+    "description": "抽象的、集体的或机构性实体，如组织、派系、意识形态、系统或社会群体。",
+    "properties": {
+      "name": "规范概念或组织名称。",
+      "category": "类别(可选):组织/派系/意识形态/技术/社会群体/其他。",
+      "definition": "简要定义或描述(可选)。"
+    },
+    "samples": [
+      {
+        "type": "Concept",
+        "name": "匿名戒酒会",
+        "description": "戒酒康复组织，其会议为忏悔和支持提供社会框架。",
+        "scope": "global"
+      },
+      {
+        "type": "Concept",
+        "name": "记忆压制协议",
+        "description": "故事世界中用于抑制或改变记忆的程序性或技术系统。",
+        "scope": "global"
+      }
+    ]
+  }
+]

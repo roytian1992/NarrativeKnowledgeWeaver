@@ -1,0 +1,56 @@
+id: distill_strategy_cluster
+category: memory
+name: Distill Strategy Cluster
+description: >
+  将多个相似策略模板簇成员重蒸馏为一个簇级别的通用 canonical 模板，输出严格 JSON。
+
+task_variables:
+  - name: cluster_id
+    type: string
+    required: true
+  - name: member_templates_json
+    type: string
+    required: true
+  - name: cluster_statistics_json
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你在把一个“策略模板簇”整理成可供 agent 复用的 canonical 模板。
+
+  cluster_id:
+  {cluster_id}
+
+  成员模板（JSON）：
+  {member_templates_json}
+
+  簇统计（JSON）：
+  {cluster_statistics_json}
+
+  要求：
+  - 必须抽象成非文本特定的通用模式，不能出现作品中的人名、地名、章节名、文档 id。
+  - 要区分“问题模式”和“执行链 variants”。
+  - `recommended_chain` 应是这个簇里最稳健、最具代表性的最小有效主链，不能把多条相近链揉成一条大链。
+  - `anti_patterns` 归纳常见的错误路径或低效路径。
+  - `query_pattern_prototype` 应概括这个簇的问题模式，而不是照搬某个具体问题。
+
+  输出要求：
+  - 只输出一个 JSON 对象。
+  - JSON 结构必须是：
+    {{
+      "pattern_name": "字符串",
+      "pattern_description": "字符串",
+      "recommended_chain": ["tool_name_1", "tool_name_2"],
+      "anti_patterns": ["字符串", "字符串"],
+      "query_pattern_prototype": {{
+        "query_abstract": "字符串",
+        "problem_type": "字符串",
+        "target_category": "字符串",
+        "answer_shape": "字符串",
+        "retrieval_goals": ["字符串", "字符串"],
+        "notes": "字符串"
+      }}
+    }}
+  - 不要输出 Markdown，不要额外解释。

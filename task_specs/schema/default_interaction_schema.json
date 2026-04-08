@@ -1,0 +1,73 @@
+{
+  "interaction_relations": [
+    {
+      "type": "dialogue",
+      "description": "角色发出明确台词或独白内容。若是独白/自言自语，可不提供目标对象。若目标是 Object，仅限可主动交互或可回应的对象（如机器人/AI/系统代理），不要把幕布、门、道具等被动物体当作对话对象。",
+      "from": [
+        "Character"
+      ],
+      "to": [
+        "Character",
+        "Object"
+      ],
+      "allow_null_object": true,
+      "polarity_required": false,
+      "polarity_values": [
+        "positive",
+        "negative",
+        "neutral"
+      ],
+      "samples": [
+        {
+          "subject": "印度科学家",
+          "object": "医疗机器人",
+          "interaction_type": "dialogue",
+          "polarity": "neutral",
+          "content": "印度科学家对医疗机器人解释人类神经信号机制。"
+        },
+        {
+          "subject": "本尼",
+          "object": "",
+          "interaction_type": "dialogue",
+          "polarity": "",
+          "content": "继续走，别回头。"
+        }
+      ]
+    },
+    {
+      "type": "interaction",
+      "description": "角色与角色/物体之间发生的动作或行为互动，需标注互动倾向。若对象是 Object，仅限具备主动交互能力的对象（如机器人/AI代理/系统实体）；普通环境物件或道具不应作为该关系的 object。",
+      "from": [
+        "Character",
+        "Object"
+      ],
+      "to": [
+        "Character",
+        "Object"
+      ],
+      "allow_null_object": false,
+      "polarity_required": true,
+      "polarity_values": [
+        "positive",
+        "negative",
+        "neutral"
+      ],
+      "samples": [
+        {
+          "subject": "科研人员",
+          "object": "受试者",
+          "interaction_type": "interaction",
+          "polarity": "neutral",
+          "content": "几位科研人员围绕受试者数据进行检查讨论。"
+        },
+        {
+          "subject": "赵队长",
+          "object": "林工程师",
+          "interaction_type": "interaction",
+          "polarity": "positive",
+          "content": "赵队长拍了拍林工程师肩膀表示支持。"
+        }
+      ]
+    }
+  ]
+}

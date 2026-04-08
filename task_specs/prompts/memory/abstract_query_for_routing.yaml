@@ -1,0 +1,34 @@
+id: abstract_query_for_routing
+category: memory
+name: Abstract Query For Routing
+description: >
+  将用户问题改写为检索路由用的通用任务模板，避免任何剧情特定信息泄露。
+
+task_variables:
+  - name: original_query
+    type: string
+    required: true
+    description: 原始用户问题文本。
+
+  - name: rule_abstract
+    type: string
+    required: true
+    description: 规则匿名化后的初稿，用于辅助改写。
+
+static_variables: []
+
+template: |
+  你是“检索策略记忆”的抽象改写器。
+  目标：把原问题改写成通用任务模板，便于跨文档复用。
+
+  原始问题：
+  {original_query}
+
+  规则匿名化版本（供参考）：
+  {rule_abstract}
+
+  约束：
+  - 不得包含任何故事特定人名、地名、文档名、chunk id、实体 id。
+  - 必须用占位符表达具体项，例如 [CHARACTER] [OBJECT] [LOCATION] [TIME] [NUM] [DOCUMENT]。
+  - 保留问题意图与信息需求。
+  - 只输出一句纯文本，不要 JSON，不要解释。

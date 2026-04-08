@@ -1,0 +1,68 @@
+id: split_text
+category: text_processing
+name: Split Text into Semantic Paragraphs
+description: >
+  Split a longer narrative text into <= max_segments semantic paragraphs.
+  Output strict JSON-only with a "segments" array.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Narrative text to split.
+
+  - name: min_length
+    type: number
+    required: true
+    description: Minimum length (in words) for each complete segment (except the last one).
+
+  - name: max_segments
+    type: number
+    required: true
+    description: Maximum number of segments to split into.
+
+template: |
+  你是一位擅长文本结构分析的语言专家。
+  你的任务是对较长的叙事文本进行语义和逻辑分割。
+
+  --------------------------------
+  任务
+  --------------------------------
+  - 你将收到一段较长的文本。
+  - 识别语义或情节断点，将其分割成不超过 {max_segments} 个自然段落。
+  - 段落数越少越好。
+  - 每个段落应尽可能在语义上完整，例如：
+    - 时间推进
+    - 事件转换
+    - 人物关系变化
+    - 叙事焦点转移
+  - 最后一个段落可以是不完整的片段，用于与后续文本拼接。
+
+  --------------------------------
+  分段规则
+  --------------------------------
+  - 除最后一个段落外：
+    - 如果可能，每个段落至少应有 {min_length} 个词。
+  - 如果文本无法自然分割：
+    - 将整个完整段落作为第一个段落返回，
+    - 最后一个段落为空字符串。
+  - 所有段落必须是字符串。
+  - 不要添加任何评论或额外的键。
+
+  --------------------------------
+  输出格式（严格）
+  --------------------------------
+  只返回 JSON：
+
+  {{
+    "segments": [
+      "第一个语义完整的段落",
+      "可选的第二个段落",
+      "最后一个段落（可以是片段或空字符串）"
+    ]
+  }}
+
+  --------------------------------
+  文本
+  --------------------------------
+  {text}
