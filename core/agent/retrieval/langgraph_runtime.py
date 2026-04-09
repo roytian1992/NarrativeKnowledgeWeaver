@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class _AgentState(TypedDict):
     messages: List[BaseMessage]
     remaining_llm_calls: int
+    remaining_tool_calls: int
 
 
 _JSON_TYPE_MAP: Dict[str, str] = {
@@ -144,6 +145,7 @@ class LangGraphAssistantRuntime:
         self.llm = llm
         self.system_message = str(system_message or "").strip()
         self.rag_cfg = dict(rag_cfg or {})
+        self.max_tool_calls_per_run = max(1, int(self.rag_cfg.get("max_tool_calls_per_run", 3) or 3))
         self.tool_map = {
             str(getattr(tool, "name", "") or "").strip(): tool
             for tool in self.function_list
@@ -178,11 +180,13 @@ class LangGraphAssistantRuntime:
                 '{"final_answer":"<answer>"}',
                 "Rules:",
                 "- Call at most one tool per turn.",
+                f"- Across the whole question, use at most {self.max_tool_calls_per_run} tool calls in total.",
                 "- Use only the listed tool names.",
                 "- `tool_arguments` must be a JSON object.",
                 "- Do not wrap JSON in markdown fences.",
                 "- For multiple-choice QA, compare the competing options against retrieved evidence before producing `final_answer`.",
                 "- If the answer depends on motive, attitude, warning, implication, or a specific scene, prefer content retrieval tools over entity-profile shortcuts.",
+                "- Build a short evidence chain across turns when needed, for example A -> B -> C, instead of calling many tools at once.",
                 "",
                 "Available tools:",
             ]
@@ -212,7 +216,12 @@ class LangGraphAssistantRuntime:
             lines.append(tool_line)
         return "\n".join(part for part in lines if part).strip()
 
-    def _build_manual_tool_messages(self, messages: Sequence[BaseMessage]) -> List[BaseMessage]:
+    def _build_manual_tool_messages(
+        self,
+        messages: Sequence[BaseMessage],
+        *,
+        remaining_tool_calls: int,
+    ) -> List[BaseMessage]:
         transcript_lines: List[str] = []
         for message in list(messages or []):
             if isinstance(message, SystemMessage):
@@ -255,6 +264,8 @@ class LangGraphAssistantRuntime:
             [
                 "Conversation so far:",
                 transcript,
+                f"Remaining tool-call budget for this question: {max(0, int(remaining_tool_calls))}.",
+                "If the remaining budget is 0, do not call any tool and answer directly.",
                 "Respond with JSON only.",
             ]
         ).strip()
@@ -304,20 +315,36 @@ class LangGraphAssistantRuntime:
     def _model_node(self, state: _AgentState) -> Dict[str, Any]:
         messages = list(state.get("messages") or [])
         remaining = int(state.get("remaining_llm_calls", 0) or 0)
+        remaining_tool_calls = int(state.get("remaining_tool_calls", 0) or 0)
         if remaining <= 0:
             return {
                 "messages": messages,
                 "remaining_llm_calls": 0,
+                "remaining_tool_calls": max(0, remaining_tool_calls),
             }
         if self._manual_tool_calling_enabled:
-            manual_messages = self._build_manual_tool_messages(messages)
+            manual_messages = self._build_manual_tool_messages(
+                messages,
+                remaining_tool_calls=remaining_tool_calls,
+            )
             raw_response = self.llm.invoke(manual_messages)
             response = self._coerce_manual_tool_response(raw_response, call_index=remaining)
+            if remaining_tool_calls <= 0 and isinstance(response, AIMessage) and list(getattr(response, "tool_calls", []) or []):
+                response = AIMessage(
+                    content=json.dumps(
+                        {
+                            "final_answer": "I have exhausted the tool-call budget for this question and must answer from the evidence already retrieved."
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                response = self._coerce_manual_tool_response(response, call_index=remaining)
         else:
             response = self.llm.invoke(messages)
         return {
             "messages": messages + [response],
             "remaining_llm_calls": remaining - 1,
+            "remaining_tool_calls": max(0, remaining_tool_calls),
         }
 
     def _route_after_model(self, state: _AgentState) -> str:
@@ -325,17 +352,26 @@ class LangGraphAssistantRuntime:
         if not messages:
             return "end"
         last = messages[-1]
-        if isinstance(last, AIMessage) and list(getattr(last, "tool_calls", []) or []):
+        remaining_tool_calls = int(state.get("remaining_tool_calls", 0) or 0)
+        if isinstance(last, AIMessage) and list(getattr(last, "tool_calls", []) or []) and remaining_tool_calls > 0:
             return "tools"
         return "end"
 
     def _tools_node(self, state: _AgentState) -> Dict[str, Any]:
         messages = list(state.get("messages") or [])
         if not messages:
-            return {"messages": messages, "remaining_llm_calls": int(state.get("remaining_llm_calls", 0) or 0)}
+            return {
+                "messages": messages,
+                "remaining_llm_calls": int(state.get("remaining_llm_calls", 0) or 0),
+                "remaining_tool_calls": int(state.get("remaining_tool_calls", 0) or 0),
+            }
         last = messages[-1]
         if not isinstance(last, AIMessage):
-            return {"messages": messages, "remaining_llm_calls": int(state.get("remaining_llm_calls", 0) or 0)}
+            return {
+                "messages": messages,
+                "remaining_llm_calls": int(state.get("remaining_llm_calls", 0) or 0),
+                "remaining_tool_calls": int(state.get("remaining_tool_calls", 0) or 0),
+            }
 
         tool_messages: List[ToolMessage] = []
         for tool_call in list(getattr(last, "tool_calls", []) or []):
@@ -384,6 +420,7 @@ class LangGraphAssistantRuntime:
         return {
             "messages": messages + tool_messages,
             "remaining_llm_calls": int(state.get("remaining_llm_calls", 0) or 0),
+            "remaining_tool_calls": max(0, int(state.get("remaining_tool_calls", 0) or 0) - len(tool_messages)),
         }
 
     @staticmethod
@@ -507,6 +544,7 @@ class LangGraphAssistantRuntime:
             {
                 "messages": input_messages,
                 "remaining_llm_calls": max(1, max_calls),
+                "remaining_tool_calls": self.max_tool_calls_per_run,
             }
         )
         return self._to_legacy_responses(list(result.get("messages") or []))
