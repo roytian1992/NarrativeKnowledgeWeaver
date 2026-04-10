@@ -171,8 +171,7 @@ strategy_memory:
   enabled: false
   read_enabled: true
   require_tool_use: true
-  runtime_routing_note_enabled: true
-  runtime_router_mode: legacy_full
+  runtime_routing_note_enabled: false
   hidden_tool_names:
     - search_related_content
   library_path: data/memory/strategy/strategy_library.json

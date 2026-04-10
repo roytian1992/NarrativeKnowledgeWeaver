@@ -50,7 +50,7 @@ from core.model_providers.openai_llm import OpenAILLM
 from core.builder.manager.document_manager import DocumentParser
 from core.agent.retrieval import RetrievalToolRouter
 from core.agent.retrieval.tool_routing_heuristics import build_query_routing_hint
-from core.agent.retrieval.langgraph_runtime import LangGraphAssistantRuntime
+from core.agent.retrieval.langgraph_runtime import LangGraphAssistantRuntime, create_langgraph_assistant_runtime
 from core.agent.retrieval.strategy_subagent import StrategySubagentCandidate
 from core.memory.online_strategy_buffer import OnlineStrategyBuffer
 from core.memory.retrieval_strategy_memory import RetrievalStrategyMemory
@@ -452,6 +452,10 @@ class QuestionAnsweringAgent:
         self._online_learning_executor: Optional[ThreadPoolExecutor] = None
         self._pending_online_learning_futures: List[Future[Any]] = []
         self._online_learning_lock = threading.Lock()
+        self.disable_heuristic_router = (
+            str(os.environ.get("NKW_DISABLE_HEURISTIC_ROUTER", "") or "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
         self.runtime_routing_note_enabled = bool(
             getattr(sm_cfg, "runtime_routing_note_enabled", False)
         )
@@ -655,7 +659,7 @@ class QuestionAnsweringAgent:
         self._base_tools = self._build_base_tools(doc_path=doc_path, reranker=self.reranker)
         self._aggregation_tools = self._build_aggregation_tools()
         self._extra_tools = extra_tools or []
-        self._assistant_cache: Dict[Tuple[str, Tuple[str, ...]], LangGraphAssistantRuntime] = {}
+        self._assistant_cache: Dict[Tuple[str, Tuple[str, ...]], Any] = {}
         sm_cfg = getattr(self.config, "strategy_memory", None)
         self.hidden_tool_names: set[str] = {
             str(name or "").strip()
@@ -868,7 +872,11 @@ class QuestionAnsweringAgent:
                 )
             except Exception as e:
                 logger.warning("Strategy memory read failed: %s", e)
-        if self.runtime_routing_note_enabled and not str(memory_ctx.get("routing_hint", "") or "").strip():
+        if (
+            self.runtime_routing_note_enabled
+            and (not self.disable_heuristic_router)
+            and not str(memory_ctx.get("routing_hint", "") or "").strip()
+        ):
             memory_ctx["routing_hint"] = build_query_routing_hint(user_text)
         if router_branch_index is not None:
             try:
@@ -2741,13 +2749,13 @@ class QuestionAnsweringAgent:
         tools: List[Any],
         system_message: str,
         use_cache: bool = True,
-    ) -> LangGraphAssistantRuntime:
+    ) -> Any:
         key = (system_message, tuple(str(getattr(t, "name", "") or "").strip() for t in tools))
         if use_cache:
             cached = self._assistant_cache.get(key)
             if cached is not None:
                 return cached
-        assistant = LangGraphAssistantRuntime(
+        assistant = create_langgraph_assistant_runtime(
             function_list=self._apply_tool_metadata(list(tools)),
             llm=self.retriever_llm,
             system_message=system_message,
@@ -2760,7 +2768,7 @@ class QuestionAnsweringAgent:
     def _rebuild_assistant(self) -> None:
         tools = [*self._base_tools, *self._aggregation_tools, *self._extra_tools]
         tools = self._apply_tool_metadata(tools)
-        self.assistant = LangGraphAssistantRuntime(
+        self.assistant = create_langgraph_assistant_runtime(
             function_list=tools,
             llm=self.retriever_llm,
             system_message=self._current_system_message,

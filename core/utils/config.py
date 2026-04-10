@@ -341,7 +341,7 @@ class StrategyMemoryConfig:
     read_enabled: bool = True
     require_tool_use: bool = False
     runtime_routing_note_enabled: bool = False
-    runtime_router_mode: str = "branching"  # branching | stable | qwen_like | legacy_full
+    runtime_router_mode: str = "branching"  # branching | stable | legacy_full
     runtime_router_initial_tool_limit: int = 6
     runtime_router_escalation_tool_limit: int = 10
     hidden_tool_names: List[str] = field(default_factory=list)

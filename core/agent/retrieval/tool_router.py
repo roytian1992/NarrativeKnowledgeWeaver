@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -58,8 +59,15 @@ class RetrievalToolRouter:
         self.router_llm = router_llm
         sm_cfg = getattr(config, "strategy_memory", None)
         self.router_mode = str(getattr(sm_cfg, "runtime_router_mode", "branching") or "branching").strip().lower()
+        if self.router_mode == "qwen_like":
+            logger.warning("runtime_router_mode=qwen_like is deprecated; falling back to branching")
+            self.router_mode = "branching"
         self.initial_tool_limit = max(2, int(getattr(sm_cfg, "runtime_router_initial_tool_limit", 6) or 6))
         self.escalation_tool_limit = max(self.initial_tool_limit, int(getattr(sm_cfg, "runtime_router_escalation_tool_limit", 10) or 10))
+        self.disable_heuristic_router = (
+            str(os.environ.get("NKW_DISABLE_HEURISTIC_ROUTER", "") or "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
         self._last_route_plan: Dict[str, Any] = {}
         self._llm_route_cache: Dict[str, Dict[str, Any]] = {}
         self._stable_router = StableLLMRetrievalRouter(router_llm=router_llm)
@@ -132,6 +140,70 @@ class RetrievalToolRouter:
 
     def get_last_route_plan(self) -> Dict[str, Any]:
         return dict(self._last_route_plan or {})
+
+    @staticmethod
+    def _active_tool_names(tools: List[Any]) -> List[str]:
+        names: List[str] = []
+        for tool in tools or []:
+            name = str(getattr(tool, "name", "") or "").strip()
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    def _sanitize_last_route_plan(self, *, tools: List[Any]) -> None:
+        plan = self._last_route_plan if isinstance(self._last_route_plan, dict) else {}
+        if not plan:
+            return
+        active_names = set(self._active_tool_names(tools))
+        if not active_names:
+            self._last_route_plan = {}
+            return
+
+        def filter_names(values: Any) -> List[str]:
+            out: List[str] = []
+            for raw in values or []:
+                name = str(raw or "").strip()
+                if name and name in active_names and name not in out:
+                    out.append(name)
+            return out
+
+        sanitized = dict(plan)
+        for key in ("initial_tools", "escalation_tools", "shared_core_tools"):
+            if key in sanitized:
+                sanitized[key] = filter_names(sanitized.get(key))
+
+        candidate_branches = []
+        for branch in plan.get("candidate_branches") or []:
+            if not isinstance(branch, dict):
+                continue
+            branch_tools = filter_names(branch.get("tools"))
+            if not branch_tools:
+                continue
+            row = dict(branch)
+            row["tools"] = branch_tools
+            candidate_branches.append(row)
+        if "candidate_branches" in sanitized:
+            sanitized["candidate_branches"] = candidate_branches
+
+        selected_branch = sanitized.get("selected_branch")
+        if isinstance(selected_branch, dict):
+            branch_tools = filter_names(selected_branch.get("tools"))
+            if branch_tools:
+                row = dict(selected_branch)
+                row["tools"] = branch_tools
+                sanitized["selected_branch"] = row
+            else:
+                sanitized.pop("selected_branch", None)
+
+        stages = []
+        for stage in plan.get("stages") or []:
+            stage_names = filter_names(stage)
+            if stage_names:
+                stages.append(stage_names)
+        if "stages" in sanitized:
+            sanitized["stages"] = stages
+
+        self._last_route_plan = sanitized
 
     @staticmethod
     def _normalized_query(query: str) -> str:
@@ -1407,7 +1479,7 @@ class RetrievalToolRouter:
     ) -> List[Tuple[float, str]]:
         preferred_tools = set(self.preferred_tools_from_memory(memory_ctx))
         normalized_query = self._normalized_query(query)
-        heuristic_boost_map = heuristic_tool_boosts(normalized_query)
+        heuristic_boost_map = {} if self.disable_heuristic_router else heuristic_tool_boosts(normalized_query)
         preferred_tool_boost = float(
             getattr(getattr(self.config, "strategy_memory", None), "preferred_tool_boost", 1.1) or 1.1
         )
@@ -1448,20 +1520,19 @@ class RetrievalToolRouter:
     ) -> List[List[Any]]:
         if self.router_mode == "legacy_full":
             self._last_route_plan = {}
-            return [
+            plan = [
                 [
                     tool
                     for tool in tools
                     if tool_stage(str(getattr(tool, "name", "") or "").strip()) != "internal_only"
                 ]
             ]
-        if self.router_mode == "qwen_like":
-            plan = self._build_qwen_like_execution_plan(query=query, memory_ctx=memory_ctx, tools=tools)
-            if plan:
-                return plan
+            self._sanitize_last_route_plan(tools=tools)
+            return plan
         if self.router_mode == "stable":
             plan = self._build_stable_execution_plan(query=query, memory_ctx=memory_ctx, tools=tools)
             if plan:
+                self._sanitize_last_route_plan(tools=tools)
                 return plan
         llm_plan = self._llm_route_plan(query=query, memory_ctx=memory_ctx, tools=tools)
         if llm_plan is not None:
@@ -1472,9 +1543,12 @@ class RetrievalToolRouter:
                 route_plan=llm_plan,
             )
             if plan:
+                self._sanitize_last_route_plan(tools=tools)
                 return plan
 
-        return self._build_heuristic_execution_plan(query=query, memory_ctx=memory_ctx, tools=tools)
+        plan = self._build_heuristic_execution_plan(query=query, memory_ctx=memory_ctx, tools=tools)
+        self._sanitize_last_route_plan(tools=tools)
+        return plan
 
     def _build_llm_execution_plan(
         self,
@@ -1563,7 +1637,11 @@ class RetrievalToolRouter:
                 stage_names[stage].append(name)
 
         query_pattern = self._memory_query_pattern(memory_ctx)
-        preferred_core = preferred_core_tools(query=normalized_query, query_pattern=query_pattern)
+        preferred_core = (
+            []
+            if self.disable_heuristic_router
+            else preferred_core_tools(query=normalized_query, query_pattern=query_pattern)
+        )
 
         def merge_names(base: List[str], extra: List[str], *, limit: Optional[int]) -> List[Any]:
             names: List[str] = []
@@ -1601,7 +1679,7 @@ class RetrievalToolRouter:
             if subset and all(tuple(getattr(x, "name", "") for x in s) != names for s in plan):
                 plan.append(subset)
         self._last_route_plan = {
-            "router_mode": "heuristic",
+            "router_mode": "heuristic_disabled" if self.disable_heuristic_router else "heuristic",
             "question_type": self._question_type_hint(query),
             "candidate_branches": [],
             "selected_branch_index": 0,

@@ -171,7 +171,7 @@ strategy_memory:
   enabled: false
   read_enabled: true
   require_tool_use: true
-  runtime_routing_note_enabled: true
+  runtime_routing_note_enabled: false
   hidden_tool_names: []
   library_path: data/memory/strategy/strategy_library.json
   tool_metadata_runtime_dir: data/memory/strategy/tool_metadata

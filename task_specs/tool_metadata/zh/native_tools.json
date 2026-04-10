@@ -1,36 +1,36 @@
 {
   "bm25_search_docs": {
     "name": "bm25_search_docs",
-    "description": "基于 BM25 的词法检索，适合查找专有名词、别名、缩写、物品名称、重复动作、引语和外观细节等需要精确词面命中的证据。",
+    "description": "基于关键词和词面重合的 BM25 文本检索工具。适合查找专有名词、缩写全称、型号代号、固定表述、外伤成因、重复动作、着装外观等需要精确词法命中的证据段落。",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "关键词、名称、别名或想精确匹配的短语。",
+        "description": "检索文本，适合直接输入问题中的关键词、缩写、专有名词或想确认的原句片段",
         "required": true
       },
       {
         "name": "k",
         "type": "integer",
-        "description": "返回条数，默认 10。",
+        "description": "返回条数（默认 10）",
         "required": false
       }
     ]
   },
   "lookup_document_ids_by_title": {
     "name": "lookup_document_ids_by_title",
-    "description": "把场次或章节标题映射回对应的 document_id。",
+    "description": "根据标题和副标题查询对应的 document_id。title 和 subtitle 均可选，且都支持模糊匹配，适合由场次/章节名称反查 source_documents。",
     "parameters": [
       {
         "name": "title",
         "type": "string",
-        "description": "场次或章节标题。",
+        "description": "标题，可为空。",
         "required": false
       },
       {
         "name": "subtitle",
         "type": "string",
-        "description": "可选副标题或子场景标题。",
+        "description": "副标题，可为空。",
         "required": false
       },
       {
@@ -42,43 +42,43 @@
       {
         "name": "limit",
         "type": "integer",
-        "description": "最多返回多少个 document_id，默认 10。",
+        "description": "最多返回多少个匹配到的文本块 document_id，默认 10。",
         "required": false
       }
     ]
   },
   "lookup_titles_by_document_ids": {
     "name": "lookup_titles_by_document_ids",
-    "description": "把 document_id 映射成可读的场次或章节标题。",
+    "description": "把一个或多个 document_id 批量映射成可读的场次/章节标题。适合在拿到实体的 source_documents 或检索命中的 document_id 后，整理出场次列表。",
     "parameters": [
       {
         "name": "document_ids",
         "type": "array",
-        "description": "document_id 列表。",
+        "description": "待查询的 document_id 列表。",
         "required": true
       }
     ]
   },
   "search_related_content": {
     "name": "search_related_content",
-    "description": "给定 document_id 和 query，读取对应原文并抽取与问题直接相关的内容。",
+    "description": "输入一个或多个 document_id 和 query，从 document-level 向量库读取原文后并发抽取与 query 直接相关的内容。仅返回提取结果非空的 document_id。",
     "parameters": [
       {
         "name": "document_ids",
         "type": "array",
-        "description": "待查看的 document_id 列表。",
+        "description": "document_id 列表；兼容单个字符串。",
         "required": true
       },
       {
         "name": "query",
         "type": "string",
-        "description": "问题或抽取目标。",
+        "description": "要抽取的目标问题/查询。",
         "required": true
       },
       {
         "name": "max_length",
         "type": "integer",
-        "description": "每个文档返回的最大文本长度，默认 300。",
+        "description": "每个 document 的提取内容最大长度，默认 300。",
         "required": false
       }
     ]

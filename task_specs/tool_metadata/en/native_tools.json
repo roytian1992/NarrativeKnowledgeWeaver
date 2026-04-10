@@ -1,36 +1,36 @@
 {
   "bm25_search_docs": {
     "name": "bm25_search_docs",
-    "description": "BM25 lexical retrieval over raw text chunks. Useful for exact names, aliases, abbreviations, object names, repeated actions, quotations, and appearance details.",
+    "description": "Lexical BM25 retrieval over raw text chunks. Use it for exact wording, named entities, aliases, abbreviations, object names, repeated actions, appearance details, and other evidence that depends on literal surface-form matching.",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "Keywords, names, aliases, or exact phrases to match.",
+        "description": "Keyword-style query. Prefer exact names, aliases, distinctive phrases, or answer-option wording you want to verify literally.",
         "required": true
       },
       {
         "name": "k",
         "type": "integer",
-        "description": "Maximum number of hits. Default 10.",
+        "description": "Maximum number of hits to return. Default 10.",
         "required": false
       }
     ]
   },
   "lookup_document_ids_by_title": {
     "name": "lookup_document_ids_by_title",
-    "description": "Map section or chapter titles to backing document_ids.",
+    "description": "Map a readable section or chapter title back to backing document_ids. Use when you already know a scene/chapter title and need its source documents for follow-up retrieval. This is a utility lookup, not a direct evidence search tool.",
     "parameters": [
       {
         "name": "title",
         "type": "string",
-        "description": "Section or chapter title.",
+        "description": "Main title to match. Optional if subtitle is provided.",
         "required": false
       },
       {
         "name": "subtitle",
         "type": "string",
-        "description": "Optional subtitle or sub-scene title.",
+        "description": "Subtitle or sub-scene title to match. Optional if title is provided.",
         "required": false
       },
       {
@@ -42,43 +42,43 @@
       {
         "name": "limit",
         "type": "integer",
-        "description": "Maximum number of matched document_ids. Default 10.",
+        "description": "Maximum number of matched document_ids to return. Default 10.",
         "required": false
       }
     ]
   },
   "lookup_titles_by_document_ids": {
     "name": "lookup_titles_by_document_ids",
-    "description": "Map document_ids to readable section or chapter titles.",
+    "description": "Map one or more document_ids to readable section or chapter titles. Use after graph or vector tools return source document_ids and you want to understand which scenes/chapters they correspond to. This helps interpret evidence provenance, not answer the question by itself.",
     "parameters": [
       {
         "name": "document_ids",
         "type": "array",
-        "description": "List of document_ids.",
+        "description": "List of document_ids to resolve into titles.",
         "required": true
       }
     ]
   },
   "search_related_content": {
     "name": "search_related_content",
-    "description": "Given document_ids and a query, read those documents and extract directly relevant text.",
+    "description": "Given document_ids plus a question, read the original text of those documents and extract only the content directly relevant to the query. Use as a follow-up after another tool already identified promising document_ids. This is a direct evidence extraction tool for grounding or disambiguation, not a broad search tool.",
     "parameters": [
       {
         "name": "document_ids",
         "type": "array",
-        "description": "List of document_ids to inspect.",
+        "description": "List of source document_ids to inspect. A single string is also accepted internally, but pass a list when possible.",
         "required": true
       },
       {
         "name": "query",
         "type": "string",
-        "description": "Question or extraction goal.",
+        "description": "Natural-language question or extraction goal that specifies what evidence to pull from the documents.",
         "required": true
       },
       {
         "name": "max_length",
         "type": "integer",
-        "description": "Maximum extracted text length per document. Default 300.",
+        "description": "Maximum extracted evidence length per document. Default 300.",
         "required": false
       }
     ]

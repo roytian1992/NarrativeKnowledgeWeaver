@@ -1,121 +1,121 @@
 {
   "get_interactions_by_document_ids": {
     "name": "get_interactions_by_document_ids",
-    "description": "Return dialogue or interaction rows for given document_ids from the SQLite interaction store.",
+    "description": "Fetch interaction records for specific document_ids from the SQLite interaction store. Use after another tool already identified promising source documents and you want dialogue or interaction evidence from those scenes. This is a targeted follow-up tool, not a broad search tool.",
     "parameters": [
       {
         "name": "document_ids",
         "type": "array",
         "required": true,
-        "description": "List of document_ids."
+        "description": "List of document_ids whose interaction records should be returned."
       },
       {
         "name": "interaction_type",
         "type": "string",
         "required": false,
-        "description": "Optional filter: dialogue or interaction."
+        "description": "Optional filter: 'dialogue' for spoken lines, 'interaction' for non-dialogue interactions, or omit for all."
       },
       {
         "name": "limit",
         "type": "integer",
         "required": false,
-        "description": "Maximum number of rows. Default 100."
+        "description": "Maximum number of rows to return. Default 100."
       }
     ]
   },
   "search_dialogues": {
     "name": "search_dialogues",
-    "description": "Search dialogue rows by speaker, target, section, content, or document_id.",
+    "description": "Search dialogue records in SQLite. Use for who-said-what questions, speech content, addressed targets, scene-specific quotes, or speaker-list evidence. Prefer this when the answer depends on spoken lines rather than general narration.",
     "parameters": [
       {
         "name": "subject",
         "type": "string",
         "required": false,
-        "description": "Speaker name."
+        "description": "Speaker name to match fuzzily."
       },
       {
         "name": "object",
         "type": "string",
         "required": false,
-        "description": "Target or addressee name."
+        "description": "Target or addressee name to match fuzzily."
       },
       {
         "name": "section",
         "type": "string",
         "required": false,
-        "description": "Section or scene title."
+        "description": "Section or scene title to match fuzzily."
       },
       {
         "name": "subsection",
         "type": "string",
         "required": false,
-        "description": "Subsection or sub-scene title."
+        "description": "Subsection or sub-scene title to match fuzzily."
       },
       {
         "name": "content",
         "type": "string",
         "required": false,
-        "description": "Dialogue content substring."
+        "description": "Dialogue content substring to match fuzzily."
       },
       {
         "name": "document_id",
         "type": "string",
         "required": false,
-        "description": "Document_id filter."
+        "description": "Exact document_id filter."
       },
       {
         "name": "limit",
         "type": "integer",
         "required": false,
-        "description": "Maximum number of rows. Default 20."
+        "description": "Maximum number of rows to return. Default 20."
       }
     ]
   },
   "search_interactions": {
     "name": "search_interactions",
-    "description": "Search non-dialogue interaction rows by subject, object, section, content, polarity, or document_id.",
+    "description": "Search non-dialogue interaction records in SQLite. Use for social actions, physical interactions, attitudes, and polarity-sensitive relations between characters or entities. Prefer this over dialogue search when the question is about what happened between entities, not what was said.",
     "parameters": [
       {
         "name": "subject",
         "type": "string",
         "required": false,
-        "description": "Subject entity name."
+        "description": "Subject entity name to match fuzzily."
       },
       {
         "name": "object",
         "type": "string",
         "required": false,
-        "description": "Object entity name."
+        "description": "Object entity name to match fuzzily."
       },
       {
         "name": "section",
         "type": "string",
         "required": false,
-        "description": "Section or scene title."
+        "description": "Section or scene title to match fuzzily."
       },
       {
         "name": "subsection",
         "type": "string",
         "required": false,
-        "description": "Subsection or sub-scene title."
+        "description": "Subsection or sub-scene title to match fuzzily."
       },
       {
         "name": "content",
         "type": "string",
         "required": false,
-        "description": "Interaction content substring."
+        "description": "Interaction content substring to match fuzzily."
       },
       {
         "name": "polarity",
         "type": "string",
         "required": false,
-        "description": "Optional polarity filter: positive, negative, or neutral."
+        "description": "Optional sentiment filter: positive, negative, or neutral."
       },
       {
         "name": "document_id",
         "type": "string",
         "required": false,
-        "description": "Document_id filter."
+        "description": "Exact document_id filter."
       },
       {
         "name": "limit",

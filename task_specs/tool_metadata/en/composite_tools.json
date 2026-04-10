@@ -67,72 +67,72 @@
   },
   "narrative_hierarchical_search": {
     "name": "narrative_hierarchical_search",
-    "description": "Retrieve evidence through the narrative hierarchy Storyline -> Episode -> Event -> source documents. Useful for plot progression, event connections, and cross-section narrative questions.",
+    "description": "Search evidence through the narrative hierarchy Storyline -> Episode -> Event -> source documents. Use for plot progression, storyline stage, cross-section causality, and key event connections. If no Storyline nodes exist, it falls back to Episode -> Event -> source documents.",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "Narrative question or query.",
+        "description": "Narrative question or natural-language search query.",
         "required": true
       },
       {
         "name": "storyline_top_k",
         "type": "integer",
-        "description": "Maximum number of storyline candidates. Default 4.",
+        "description": "Maximum number of storyline candidates to keep. Default 4.",
         "required": false
       },
       {
         "name": "episode_top_k",
         "type": "integer",
-        "description": "Maximum number of episode candidates. Default 5.",
+        "description": "Maximum number of episode candidates to keep. Default 5.",
         "required": false
       },
       {
         "name": "event_top_k",
         "type": "integer",
-        "description": "Maximum number of event candidates. Default 8.",
+        "description": "Maximum number of event candidates to keep. Default 8.",
         "required": false
       },
       {
         "name": "document_top_k",
         "type": "integer",
-        "description": "Maximum number of source documents. Default 6.",
+        "description": "Maximum number of source documents to extract evidence from. Default 6.",
         "required": false
       },
       {
         "name": "llm_filter_threshold",
         "type": "number",
-        "description": "Relevance threshold for hierarchical filtering. Default 0.35.",
+        "description": "Relevance threshold used in hierarchical filtering. Default 0.35.",
         "required": false
       },
       {
         "name": "max_evidence_length",
         "type": "integer",
-        "description": "Maximum evidence length per document. Default 240.",
+        "description": "Maximum extracted evidence length per document. Default 240.",
         "required": false
       }
     ]
   },
   "section_evidence_search": {
     "name": "section_evidence_search",
-    "description": "Section-level evidence retrieval that finds relevant scenes or sections and extracts answer-bearing text. Useful for local facts, scene localization, dialogue, actions, objects, and grounding.",
+    "description": "Fallback section-level evidence search. It first locates the most relevant scenes or sections, then extracts answerable evidence from the original text. Use it for scene localization, dialogue, objects, actions, appearance details, short factual checks, and direct grounding when other retrieval paths do not yield a clear answer.",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "Question or query to ground in sections.",
+        "description": "Natural-language question whose answer should be grounded in one or more sections.",
         "required": true
       },
       {
         "name": "section_top_k",
         "type": "integer",
-        "description": "Maximum number of relevant sections. Default 8.",
+        "description": "Maximum number of relevant sections to keep. Default 8.",
         "required": false
       },
       {
         "name": "use_llm_filter",
         "type": "bool",
-        "description": "Whether to apply LLM filtering to section candidates.",
+        "description": "Whether to apply LLM relevance filtering to section candidates.",
         "required": false
       },
       {
@@ -150,13 +150,13 @@
       {
         "name": "max_length",
         "type": "integer",
-        "description": "Maximum evidence length per matched section. Default 320.",
+        "description": "Maximum extracted evidence length per matched section. Default 320.",
         "required": false
       },
       {
         "name": "related_entity_limit",
         "type": "integer",
-        "description": "Maximum related entities to show per type. Default 3.",
+        "description": "Maximum number of related entities to show per entity type for each matched section. Default 3.",
         "required": false
       }
     ]

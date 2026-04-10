@@ -67,60 +67,60 @@
   },
   "narrative_hierarchical_search": {
     "name": "narrative_hierarchical_search",
-    "description": "沿 Storyline -> Episode -> Event -> source_documents 的叙事层级检索证据，适合剧情推进、事件关联和跨章节叙事问题。",
+    "description": "按 Storyline -> Episode -> Event / source_documents 的叙事层级检索证据，适合回答剧情主线、阶段推进、跨章节因果和关键事件关联问题。",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "剧情问题或自然语言查询。",
+        "description": "需要检索的剧情问题或自然语言查询。",
         "required": true
       },
       {
         "name": "storyline_top_k",
         "type": "integer",
-        "description": "保留多少个 Storyline 候选，默认 4。",
+        "description": "保留多少个相关 Storyline，默认 4。",
         "required": false
       },
       {
         "name": "episode_top_k",
         "type": "integer",
-        "description": "保留多少个 Episode 候选，默认 5。",
+        "description": "保留多少个相关 Episode，默认 5。",
         "required": false
       },
       {
         "name": "event_top_k",
         "type": "integer",
-        "description": "保留多少个 Event 候选，默认 8。",
+        "description": "返回多少个相关 Event，默认 8。",
         "required": false
       },
       {
         "name": "document_top_k",
         "type": "integer",
-        "description": "最多保留多少个 source document，默认 6。",
+        "description": "最多抽取多少个 document_id 的证据，默认 6。",
         "required": false
       },
       {
         "name": "llm_filter_threshold",
         "type": "number",
-        "description": "层级过滤的相关性阈值，默认 0.35。",
+        "description": "层级过滤使用的相关性阈值，默认 0.35。",
         "required": false
       },
       {
         "name": "max_evidence_length",
         "type": "integer",
-        "description": "每个文档返回的最大证据长度，默认 240。",
+        "description": "每个文档证据片段的最大长度，默认 240。",
         "required": false
       }
     ]
   },
   "section_evidence_search": {
     "name": "section_evidence_search",
-    "description": "章节级证据检索。先定位相关场次或章节，再抽取可回答问题的关键原文，适合局部事实、场次定位、台词、动作、物品和直接证据核对。",
+    "description": "章节级保底证据检索：先找与问题最相关的场次或章节，再从原文抽取可直接回答问题的关键片段，适合场次定位、出现位置枚举、台词、道具、动作、外观、因果细节核对，以及其他检索路线没有直接给出答案时的兜底查证。",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "需要在章节中定位证据的问题。",
+        "description": "需要定位章节与证据的自然语言问题。",
         "required": true
       },
       {
@@ -132,13 +132,13 @@
       {
         "name": "use_llm_filter",
         "type": "bool",
-        "description": "是否对章节候选做 LLM 过滤。",
+        "description": "是否对章节候选做 LLM 相关性过滤。",
         "required": false
       },
       {
         "name": "llm_filter_top_k",
         "type": "integer",
-        "description": "送入 LLM 过滤的章节候选数量，默认 12。",
+        "description": "进入 LLM 判断的章节候选数量，默认 12。",
         "required": false
       },
       {
@@ -150,13 +150,13 @@
       {
         "name": "max_length",
         "type": "integer",
-        "description": "每个章节返回的最大证据长度，默认 320。",
+        "description": "每个章节抽取片段的最大长度，默认 320。",
         "required": false
       },
       {
         "name": "related_entity_limit",
         "type": "integer",
-        "description": "每种实体类型最多展示多少个关联实体，默认 3。",
+        "description": "每种实体类型最多展示多少个章节关联实体，默认 3。",
         "required": false
       }
     ]

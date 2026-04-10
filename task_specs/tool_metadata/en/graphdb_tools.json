@@ -31,60 +31,60 @@
   },
   "retrieve_entity_by_name": {
     "name": "retrieve_entity_by_name",
-    "description": "Hybrid entity retrieval by name, alias, or short description, with an optional entity-type constraint.",
+    "description": "Retrieve and rank entities of a specified type by combining fuzzy matching on names or aliases with semantic similarity, then deduplicate the results. Use it to identify or disambiguate entities from partial, ambiguous, or descriptive queries, and optionally inspect source documents.",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "Entity name, alias, or short description.",
+        "description": "Entity name, alias, or short natural-language description.",
         "required": true
       },
       {
         "name": "entity_type",
         "type": "string",
-        "description": "Optional entity type.",
+        "description": "Target entity type. Falls back safely if invalid.",
         "required": false
       },
       {
         "name": "top_k",
         "type": "number",
-        "description": "Maximum number of candidate entities. Default 8.",
+        "description": "Maximum number of candidate entities to return. Default 8.",
         "required": false
       },
       {
         "name": "resolve_source_documents",
         "type": "bool",
-        "description": "Whether to resolve source_documents into readable titles. Default false.",
+        "description": "Whether to show readable section or chapter titles derived from source_documents. Default false.",
         "required": false
       }
     ]
   },
   "get_entity_sections": {
     "name": "get_entity_sections",
-    "description": "Return the sections or scenes where an entity appears.",
+    "description": "List the sections or scenes where a known entity appears. Use after you already know the entity ID and want occurrence locations or supporting document_ids. This is a follow-up narrowing tool before targeted evidence extraction, not a general first-step QA tool.",
     "parameters": [
       {
         "name": "entity_id",
         "type": "string",
-        "description": "Entity ID.",
+        "description": "Unique entity ID.",
         "required": true
       },
       {
         "name": "include_document_ids",
         "type": "bool",
-        "description": "Whether to include backing document_ids. Default true.",
+        "description": "Whether to also show the backing document_ids for each section. Default true in the implementation.",
         "required": false
       }
     ]
   },
   "search_related_entities": {
     "name": "search_related_entities",
-    "description": "Return entities connected to a given entity, optionally filtered by relation or target entity type.",
+    "description": "Graph-neighbor exploration from a known entity. Use when you already have a source entity ID and need connected entities, optionally filtered by relation type or target entity type. Useful for structure exploration and candidate generation, but it usually does not provide final text evidence by itself.",
     "parameters": [
       {
         "name": "source_id",
         "type": "string",
-        "description": "Source entity ID.",
+        "description": "Starting entity ID.",
         "required": true
       },
       {
@@ -96,32 +96,32 @@
       {
         "name": "relation_types",
         "type": "array",
-        "description": "Optional relation-type whitelist.",
+        "description": "Optional whitelist of relation types.",
         "required": false
       },
       {
         "name": "entity_types",
         "type": "array",
-        "description": "Optional target entity-type whitelist.",
+        "description": "Optional whitelist of target entity types.",
         "required": false
       },
       {
         "name": "limit",
         "type": "number",
-        "description": "Maximum number of results.",
+        "description": "Maximum number of results to return.",
         "required": false
       },
       {
         "name": "return_relations",
         "type": "bool",
-        "description": "Whether to return entity-relation pairs. Default false.",
+        "description": "Whether to return entity-relation pairs instead of entities only. Default false.",
         "required": false
       }
     ]
   },
   "get_relations_between_entities": {
     "name": "get_relations_between_entities",
-    "description": "Return graph relations of a given type between two known entities.",
+    "description": "Check whether a specific typed relation exists between two known entities and return a readable summary. Use only when both entity IDs are already known and the question is specifically about a graph relation, not about textual evidence.",
     "parameters": [
       {
         "name": "src_id",
@@ -138,7 +138,7 @@
       {
         "name": "relation_type",
         "type": "string",
-        "description": "Relation type to check.",
+        "description": "Relation type to check, for example EVENT_CAUSES.",
         "required": true
       }
     ]
@@ -385,42 +385,42 @@
   },
   "search_sections": {
     "name": "search_sections",
-    "description": "Hybrid retrieval over section-level nodes such as scenes or chapters. Useful for locating candidate sections related to the query.",
+    "description": "Search section-level nodes such as scenes or chapters by hybrid keyword plus vector retrieval. Use it to locate candidate scenes or sections related to the question before direct evidence extraction.",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "Question or query.",
+        "description": "Question or query used to retrieve relevant sections.",
         "required": true
       },
       {
         "name": "top_k",
         "type": "number",
-        "description": "Maximum number of section hits. Default 5.",
+        "description": "Maximum number of section hits to return. Default 5.",
         "required": false
       },
       {
         "name": "vector_top_k",
         "type": "number",
-        "description": "Number of vector candidates before merging. Default 3.",
+        "description": "How many vector candidates to keep before merging. Default 3.",
         "required": false
       },
       {
         "name": "keyword_top_k",
         "type": "number",
-        "description": "Number of keyword candidates before merging. Default 2.",
+        "description": "How many keyword candidates to keep before merging. Default 2.",
         "required": false
       },
       {
         "name": "use_llm_filter",
         "type": "bool",
-        "description": "Whether to apply LLM filtering to section candidates.",
+        "description": "Whether to apply LLM relevance filtering to section candidates.",
         "required": false
       },
       {
         "name": "llm_filter_top_k",
         "type": "number",
-        "description": "How many candidates to send to the LLM filter. Default 8 or top_k.",
+        "description": "How many candidates to send to the LLM filter. Default 8 or top_k, whichever is larger.",
         "required": false
       },
       {
@@ -432,19 +432,19 @@
       {
         "name": "include_related_entities",
         "type": "bool",
-        "description": "Whether to include related entities for each section. Default true.",
+        "description": "Whether to also show related entities for each matched section. Default true.",
         "required": false
       },
       {
         "name": "related_entity_limit",
         "type": "number",
-        "description": "Maximum related entities per type. Default 3.",
+        "description": "Maximum number of related entities to show per type. Default 3.",
         "required": false
       },
       {
         "name": "include_meta",
         "type": "bool",
-        "description": "Whether to include additional metadata. Default false.",
+        "description": "Whether to include richer metadata such as properties. Default false.",
         "required": false
       }
     ]
@@ -547,24 +547,24 @@
   },
   "retrieve_triple_facts": {
     "name": "retrieve_triple_facts",
-    "description": "Retrieve graph triples related to a relation query.",
+    "description": "Retrieve semantically related relation triples from the graph. Use when the question is about abstract relations or relation summaries rather than raw textual spans. This is a graph-fact lookup tool, not a direct source-text evidence extractor.",
     "parameters": [
       {
         "name": "text",
         "type": "string",
-        "description": "Query describing the relation facts you want.",
+        "description": "Semantic query text describing the relation facts you want.",
         "required": true
       },
       {
         "name": "top_k",
         "type": "number",
-        "description": "Maximum number of fact triples.",
+        "description": "Maximum number of fact triples to return.",
         "required": false
       },
       {
         "name": "min_score",
         "type": "number",
-        "description": "Optional minimum similarity score.",
+        "description": "Optional minimum similarity score threshold.",
         "required": false
       }
     ]

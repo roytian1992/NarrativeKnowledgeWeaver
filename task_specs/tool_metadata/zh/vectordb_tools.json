@@ -1,66 +1,66 @@
 {
   "vdb_search_docs": {
     "name": "vdb_search_docs",
-    "description": "文档级语义检索，适合做粗粒度主题召回。",
+    "description": "使用文档级检索器从向量数据库中获取粗粒度的相关文档内容。",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "语义检索查询。",
+        "description": "检索的查询文本",
         "required": true
       },
       {
         "name": "limit",
         "type": "integer",
-        "description": "返回条数，默认 5。",
+        "description": "返回条数，默认 5",
         "required": false
       }
     ]
   },
   "vdb_get_docs_by_document_ids": {
     "name": "vdb_get_docs_by_document_ids",
-    "description": "根据 document_id 从向量库取回对应原文 chunk。",
+    "description": "根据提供的 document_id 列表（即图中实体的 source_documents），从向量库按 metadata.document_id 获取对应原文内容。一个 document_id 可能对应多个 chunk，工具会返回全部命中的 chunk 文本。",
     "parameters": [
       {
         "name": "document_ids",
         "type": "array",
-        "description": "document_id 列表。",
+        "description": "待获取的 document_id/source_documents 列表",
         "required": true
       }
     ]
   },
   "vdb_search_hierdocs": {
     "name": "vdb_search_hierdocs",
-    "description": "父子文档语义检索。先召回相关句子，再聚合到段落或文档后重排。",
+    "description": "使用父子文档检索器（Parent-Child Retriever）从向量数据库中获取与查询相关的内容（句子级召回，聚合到父段落/文档后重排）。",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "语义检索查询。",
+        "description": "检索的查询文本",
         "required": true
       },
       {
         "name": "limit",
         "type": "integer",
-        "description": "返回条数，默认 20。",
+        "description": "返回条数，默认 20",
         "required": false
       }
     ]
   },
   "vdb_search_sentences": {
     "name": "vdb_search_sentences",
-    "description": "句子级语义检索，适合查找细粒度证据和改写表达。",
+    "description": "使用句子级检索器从向量数据库中获取细粒度的相关语句。",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "语义检索查询。",
+        "description": "检索的查询文本",
         "required": true
       },
       {
         "name": "limit",
         "type": "integer",
-        "description": "返回条数，默认 5。",
+        "description": "返回条数，默认 5",
         "required": false
       }
     ]

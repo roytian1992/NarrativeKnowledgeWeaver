@@ -371,7 +371,7 @@ def _looks_like_tool_call_payload(answer_text: str) -> bool:
 def _extract_answer_confidence(answer_text: str) -> Optional[float]:
     payload = _extract_json_object(answer_text)
     if isinstance(payload, dict):
-        for key in ("confidence", "answer_confidence", "score"):
+        for key in ("confidence", "answer_confidence", "score", "suggested_choice_confidence", "choice_confidence"):
             value = payload.get(key)
             if value is None:
                 continue
@@ -386,6 +386,8 @@ def _extract_answer_confidence(answer_text: str) -> Optional[float]:
             r"confidence\s*[:=]\s*['\"]?([01](?:\.\d+)?)['\"]?",
             r"answer_confidence\s*[:=]\s*['\"]?([01](?:\.\d+)?)['\"]?",
             r"score\s*[:=]\s*['\"]?([01](?:\.\d+)?)['\"]?",
+            r"suggested_choice_confidence\s*[:=]\s*['\"]?([01](?:\.\d+)?)['\"]?",
+            r"choice_confidence\s*[:=]\s*['\"]?([01](?:\.\d+)?)['\"]?",
         ):
             m = re.search(pattern, raw, flags=re.IGNORECASE)
             if not m:
@@ -1536,6 +1538,10 @@ class AgentThreadLocal:
         self.cfg = cfg
         self.setting_name = setting_name
         self.enable_sql_tools = bool(enable_sql_tools)
+        self.disable_section_evidence_search = (
+            str(os.environ.get("NKW_DISABLE_SECTION_EVIDENCE_SEARCH", "") or "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
         base_hidden_tool_names: set[str] = {
             "retrieve_entity_by_id",
             "get_common_neighbors",
@@ -1546,6 +1552,8 @@ class AgentThreadLocal:
             "vdb_search_hierdocs",
             "search_related_content",
         }
+        if self.disable_section_evidence_search:
+            base_hidden_tool_names.add("section_evidence_search")
         extra_hidden_tool_names = {
             str(name or "").strip()
             for name in (getattr(getattr(cfg, "strategy_memory", None), "hidden_tool_names", []) or [])
@@ -1590,8 +1598,13 @@ class AgentEvaluator:
         self.cfg = cfg
         self.setting_name = setting_name
         self.article_name = article_name
+        self.disable_section_evidence_search = (
+            str(os.environ.get("NKW_DISABLE_SECTION_EVIDENCE_SEARCH", "") or "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
         self.open_answer_choice_adapter_enabled = False
         self.option_disambiguation_enabled = False
+        self.supported_choice_verifier_enabled = True
         self.mcq_answer_adapter_enabled = True
         self.terminal_mcq_enforcement_enabled = True
         self.posthoc_choice_recovery_enabled = True
@@ -1662,6 +1675,44 @@ class AgentEvaluator:
         except Exception:
             return current_answer
         return current_answer
+
+    def _materialize_mcq_answer_with_confidence(
+        self,
+        *,
+        row: Dict[str, str],
+        answer_text: str,
+        default_confidence: float = 0.62,
+    ) -> str:
+        raw = str(answer_text or "").strip()
+        if not raw:
+            return raw
+        parsed = _parse_choices(str(row.get("question", "") or ""))
+        choices = parsed.get("choices") if isinstance(parsed.get("choices"), dict) else {}
+        predicted_choice = self.choice_extractor.choose(
+            question_text=str(row.get("question", "") or ""),
+            answer_text=raw,
+        )
+        if not predicted_choice or predicted_choice not in choices:
+            return raw
+        payload = _extract_json_object(raw)
+        canonical_text = str((choices or {}).get(predicted_choice, "") or "").strip()
+        if isinstance(payload, dict):
+            payload["answer_choice"] = predicted_choice
+            payload["answer_text"] = str(payload.get("answer_text", "") or "").strip() or canonical_text
+            if payload.get("confidence") is None:
+                extracted = _extract_answer_confidence(raw)
+                payload["confidence"] = max(0.0, min(1.0, float(extracted if extracted is not None else default_confidence)))
+            return json.dumps(payload, ensure_ascii=False)
+        semantic = _extract_semantic_answer_text(raw)
+        return json.dumps(
+            {
+                "answer_choice": predicted_choice,
+                "answer_text": canonical_text,
+                "evidence": semantic if semantic and semantic != raw else "",
+                "confidence": max(0.0, min(1.0, float(default_confidence))),
+            },
+            ensure_ascii=False,
+        )
 
     def _adapt_mcq_answer_to_choice(
         self,
@@ -1797,6 +1848,49 @@ class AgentEvaluator:
             return current_answer
         return current_answer
 
+    def _run_hybrid_rrf_fallback(
+        self,
+        *,
+        row: Dict[str, str],
+    ) -> tuple[Optional[Dict[str, Any]], str]:
+        if self.setting_name != "no_strategy_agent" or self.hybrid_tlocal is None:
+            return None, ""
+        try:
+            hybrid_state = self.hybrid_tlocal.state()
+            prompt_question = _format_mcq_for_agent(str(row.get("question", "") or ""))
+            doc_hits = hybrid_state["doc_vs"].search(prompt_question, limit=8)
+            sent_hits = hybrid_state["sent_vs"].search(prompt_question, limit=8)
+            bm25_hits = hybrid_state["bm25"].retrieve(prompt_question, k=8)
+            fused = _rrf_merge(doc_hits, sent_hits, bm25_hits, top_k=8)
+            if not fused:
+                return None, ""
+            evidence_text = "\n\n".join(_format_evidence_item(i, item) for i, item in enumerate(fused, start=1))
+            prompt = hybrid_state["prompt_loader"].render(
+                "memory/answer_with_retrieved_evidence",
+                task_values={
+                    "question": prompt_question,
+                    "retrieved_evidence": evidence_text or "(none)",
+                },
+                strict=True,
+            )
+            llm_result = hybrid_state["llm"].run([{"role": "user", "content": prompt}])
+            answer = _extract_llm_text(llm_result)
+            tool_use = {
+                "tool_name": "evaluator_hybrid_rrf",
+                "tool_arguments": json.dumps(
+                    {
+                        "query": prompt_question,
+                        "top_k": 8,
+                        "channels": ["vector_document", "vector_sentence", "bm25"],
+                    },
+                    ensure_ascii=False,
+                ),
+                "tool_output": evidence_text[:6000],
+            }
+            return tool_use, answer
+        except Exception:
+            return None, ""
+
     def _build_disambiguation_query(self, *, row: Dict[str, str]) -> str:
         parsed = _parse_choices(str(row.get("question", "") or ""))
         order = list(parsed.get("choice_order") or [])
@@ -1849,7 +1943,7 @@ class AgentEvaluator:
                 "motive",
             )
         )
-        if "section_evidence_search" not in existing_names:
+        if (not self.disable_section_evidence_search) and "section_evidence_search" not in existing_names:
             section_hit = self._call_extra_retrieval_tool(
                 state=state,
                 tool_name="section_evidence_search",
@@ -1916,11 +2010,10 @@ class AgentEvaluator:
 
     def _has_strong_agent_evidence(self, tool_uses: List[Dict[str, Any]]) -> bool:
         names = self._normalize_tool_name_set(tool_uses)
-        local_hits = names & {
+        direct_local_hits = names & {
             "section_evidence_search",
             "bm25_search_docs",
             "vdb_search_sentences",
-            "choice_grounded_evidence_search",
             "fact_timeline_resolution_search",
         }
         narrative_hits = names & {
@@ -1928,7 +2021,7 @@ class AgentEvaluator:
             "entity_event_trace_search",
             "fact_timeline_resolution_search",
         }
-        return (len(local_hits) >= 2) or (bool(local_hits) and bool(narrative_hits))
+        return (len(direct_local_hits) >= 2) or (bool(direct_local_hits) and bool(narrative_hits))
 
     def _needs_option_disambiguation_support(
         self,
@@ -1941,10 +2034,102 @@ class AgentEvaluator:
         if self._has_strong_agent_evidence(tool_uses):
             return False
         names = self._normalize_tool_name_set(tool_uses)
-        if "choice_grounded_evidence_search" in names:
+        if "choice_grounded_evidence_search" in names and self._has_strong_agent_evidence(tool_uses):
             return False
         question_text = str(row.get("question", "") or "")
         return bool(_parse_choices(question_text).get("choice_order"))
+
+    def _should_verify_supported_mcq_choice(
+        self,
+        *,
+        row: Dict[str, str],
+        tool_uses: List[Dict[str, Any]],
+        predicted_choice: str,
+        answer_text: str,
+        confidence: Optional[float],
+    ) -> bool:
+        if self.setting_name != "no_strategy_agent":
+            return False
+        if not self.supported_choice_verifier_enabled:
+            return False
+        if not str(predicted_choice or "").strip():
+            return False
+        question_text = str(row.get("question", "") or "")
+        parsed = _parse_choices(question_text)
+        if not parsed.get("choice_order"):
+            return False
+        if _looks_like_tool_call_payload(answer_text):
+            return True
+        names = self._normalize_tool_name_set(tool_uses)
+        if not names:
+            return True
+
+        direct_local_hits = names & {
+            "section_evidence_search",
+            "bm25_search_docs",
+            "vdb_search_sentences",
+            "fact_timeline_resolution_search",
+        }
+        narrative_hits = names & {
+            "narrative_hierarchical_search",
+            "entity_event_trace_search",
+            "fact_timeline_resolution_search",
+        }
+        choice_tool_hit = "choice_grounded_evidence_search" in names
+
+        if len(direct_local_hits) >= 2:
+            return False
+        if direct_local_hits and narrative_hits:
+            return False
+        if len(tool_uses or []) <= 1:
+            return True
+        lowered = question_text.lower()
+        needs_explicit_compare = any(
+            cue in lowered
+            for cue in (
+                "which is not",
+                "which was not",
+                "which did not",
+                "which does not",
+                "which cannot",
+                "except",
+                "least",
+                "false",
+                "not true",
+                "not supported",
+                "not mentioned",
+                "difference",
+                "different",
+                "what is the",
+                "what was the",
+                "what were the",
+            )
+        )
+        needs_narrative = any(
+            cue in lowered
+            for cue in (
+                "why",
+                "imply",
+                "most likely",
+                "warning",
+                "attitude",
+                "feel",
+                "suggest",
+                "dilemma",
+                "motive",
+                "relationship",
+                "internal",
+            )
+        )
+        if choice_tool_hit and not direct_local_hits:
+            return True
+        if needs_explicit_compare and len(direct_local_hits) < 2:
+            return True
+        if needs_narrative and not narrative_hits:
+            return True
+        if confidence is None:
+            return True
+        return float(confidence) < 0.7
 
     def _get_tool_by_name(self, *, state: Dict[str, Any], tool_name: str) -> Any:
         agent = state.get("agent")
@@ -2006,18 +2191,19 @@ class AgentEvaluator:
         if not disambiguation_query:
             return extra_tool_uses
         existing_names = self._normalize_tool_name_set(tool_uses)
-        section_hit = self._call_extra_retrieval_tool(
-            state=state,
-            tool_name="section_evidence_search",
-            arguments={
-                "query": disambiguation_query,
-                "section_top_k": 6,
-                "max_length": 240,
-                "related_entity_limit": 2,
-            },
-        )
-        if section_hit and "section_evidence_search" not in existing_names:
-            extra_tool_uses.append(section_hit)
+        if not self.disable_section_evidence_search:
+            section_hit = self._call_extra_retrieval_tool(
+                state=state,
+                tool_name="section_evidence_search",
+                arguments={
+                    "query": disambiguation_query,
+                    "section_top_k": 6,
+                    "max_length": 240,
+                    "related_entity_limit": 2,
+                },
+            )
+            if section_hit and "section_evidence_search" not in existing_names:
+                extra_tool_uses.append(section_hit)
         bm25_hit = self._call_extra_retrieval_tool(
             state=state,
             tool_name="bm25_search_docs",
@@ -2399,6 +2585,36 @@ class AgentEvaluator:
                     predicted_choice = adapted_choice
                     final_answer_confidence = _extract_answer_confidence(final_answer)
             else:
+                predicted_choice = self.choice_extractor.choose(
+                    question_text=str(row.get("question", "") or ""),
+                    answer_text=final_answer,
+                )
+                if predicted_choice and final_answer_confidence is None:
+                    final_answer = self._materialize_mcq_answer_with_confidence(
+                        row=row,
+                        answer_text=final_answer,
+                        default_confidence=0.62,
+                    )
+                    final_answer_confidence = _extract_answer_confidence(final_answer)
+                explicit_low_confidence = (
+                    final_answer_confidence is not None and _is_low_confidence(final_answer_confidence)
+                )
+                supported_choice_requires_verification = self._should_verify_supported_mcq_choice(
+                    row=row,
+                    tool_uses=tool_uses,
+                    predicted_choice=predicted_choice,
+                    answer_text=final_answer,
+                    confidence=final_answer_confidence,
+                )
+                if supported_choice_requires_verification:
+                    extra_tool_uses = self._augment_tool_uses_for_option_disambiguation(
+                        state=state,
+                        row=row,
+                        tool_uses=tool_uses,
+                        force=True,
+                    )
+                    if extra_tool_uses:
+                        tool_uses = list(extra_tool_uses) + list(tool_uses)
                 if self.option_disambiguation_enabled:
                     extra_tool_uses = self._augment_tool_uses_for_option_disambiguation(
                         state=state,
@@ -2407,7 +2623,13 @@ class AgentEvaluator:
                     )
                     if extra_tool_uses:
                         tool_uses = list(extra_tool_uses) + list(tool_uses)
-                if self._should_calibrate_final_answer(
+                should_calibrate = (
+                    (not predicted_choice)
+                    or _looks_like_tool_call_payload(final_answer)
+                    or explicit_low_confidence
+                    or supported_choice_requires_verification
+                )
+                if should_calibrate and self._should_calibrate_final_answer(
                     question_text=str(row.get("question", "") or ""),
                     tool_uses=tool_uses,
                 ):
@@ -2425,6 +2647,9 @@ class AgentEvaluator:
                         final_answer = _ensure_answer_confidence(calibrated_answer)
                         predicted_choice = calibrated_choice
                         final_answer_confidence = _extract_answer_confidence(final_answer)
+                        explicit_low_confidence = (
+                            final_answer_confidence is not None and _is_low_confidence(final_answer_confidence)
+                        )
                 predicted_choice = self.choice_extractor.choose(
                     question_text=str(row.get("question", "") or ""),
                     answer_text=final_answer,
@@ -2445,7 +2670,10 @@ class AgentEvaluator:
                         final_answer = _ensure_answer_confidence(repaired_answer)
                         predicted_choice = repaired_choice
                         final_answer_confidence = _extract_answer_confidence(final_answer)
-                if self.option_disambiguation_enabled and ((not predicted_choice) or _is_low_confidence(final_answer_confidence)):
+                        explicit_low_confidence = (
+                            final_answer_confidence is not None and _is_low_confidence(final_answer_confidence)
+                        )
+                if self.option_disambiguation_enabled and ((not predicted_choice) or explicit_low_confidence):
                     choice_tool_hit, suggested_choice = self._run_mcq_choice_tool_fallback(
                         state=state,
                         row=row,
@@ -2483,10 +2711,13 @@ class AgentEvaluator:
                                 final_answer = _ensure_answer_confidence(repaired_answer)
                                 predicted_choice = repaired_choice
                                 final_answer_confidence = _extract_answer_confidence(final_answer)
+                                explicit_low_confidence = (
+                                    final_answer_confidence is not None and _is_low_confidence(final_answer_confidence)
+                                )
                 if self.mcq_answer_adapter_enabled and (
                     (not predicted_choice)
                     or _looks_like_tool_call_payload(final_answer)
-                    or _is_low_confidence(final_answer_confidence)
+                    or explicit_low_confidence
                 ):
                     adapted_answer = self._adapt_mcq_answer_to_choice(
                         state=state,
@@ -2502,10 +2733,40 @@ class AgentEvaluator:
                         final_answer = _ensure_answer_confidence(adapted_answer)
                         predicted_choice = adapted_choice
                         final_answer_confidence = _extract_answer_confidence(final_answer)
+                        explicit_low_confidence = (
+                            final_answer_confidence is not None and _is_low_confidence(final_answer_confidence)
+                        )
                         mcq_answer_adapter_used = True
                 elif final_answer_confidence is None:
                     final_answer_confidence = _extract_answer_confidence(final_answer)
-                if predicted_choice and not low_confidence_fallback_used and _is_low_confidence(final_answer_confidence):
+                    explicit_low_confidence = (
+                        final_answer_confidence is not None and _is_low_confidence(final_answer_confidence)
+                    )
+                should_try_hybrid_rrf = (
+                    self.setting_name == "no_strategy_agent"
+                    and (
+                        (not predicted_choice)
+                        or explicit_low_confidence
+                        or _looks_like_tool_call_payload(final_answer)
+                    )
+                )
+                if should_try_hybrid_rrf:
+                    hybrid_tool_use, hybrid_answer = self._run_hybrid_rrf_fallback(row=row)
+                    if hybrid_tool_use:
+                        tool_uses = [hybrid_tool_use, *tool_uses]
+                        hybrid_choice = self.choice_extractor.choose(
+                            question_text=str(row.get("question", "") or ""),
+                            answer_text=hybrid_answer,
+                        )
+                        if hybrid_choice:
+                            final_answer = _ensure_answer_confidence(hybrid_answer, default=0.62)
+                            predicted_choice = hybrid_choice
+                            final_answer_confidence = _extract_answer_confidence(final_answer)
+                            explicit_low_confidence = (
+                                final_answer_confidence is not None and _is_low_confidence(final_answer_confidence)
+                            )
+                            low_confidence_fallback_used = True
+                if predicted_choice and not low_confidence_fallback_used and explicit_low_confidence:
                     fallback_tool_uses = self._run_low_confidence_scene_narrative_fallback(
                         state=state,
                         row=row,

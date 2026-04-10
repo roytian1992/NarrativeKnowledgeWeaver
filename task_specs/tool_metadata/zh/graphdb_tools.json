@@ -31,48 +31,48 @@
   },
   "retrieve_entity_by_name": {
     "name": "retrieve_entity_by_name",
-    "description": "按名称、别名或简短描述检索实体，并可选加上实体类型约束。",
+    "description": "按指定实体类型执行混合实体检索，同时结合名称/别名模糊匹配与语义向量匹配，并对结果去重重排。可选把 source_documents 去重映射成可读的场次/章节标题。",
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "description": "实体名称、别名或简短描述。",
+        "description": "实体名称、别名或自然语言描述；可为空以列出该类型实体。",
         "required": true
       },
       {
         "name": "entity_type",
         "type": "string",
-        "description": "可选实体类型。",
+        "description": "目标实体类型；若无效将安全回退为 'Entity'。",
         "required": false
       },
       {
         "name": "top_k",
         "type": "number",
-        "description": "返回实体数量上限，默认 8。",
+        "description": "返回结果数量上限，默认 8。",
         "required": false
       },
       {
         "name": "resolve_source_documents",
         "type": "bool",
-        "description": "是否把 source_documents 映射成可读标题，默认 False。",
+        "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题，默认 False。",
         "required": false
       }
     ]
   },
   "get_entity_sections": {
     "name": "get_entity_sections",
-    "description": "查看某个实体出现过哪些场次或章节。",
+    "description": "根据实体 ID 查看该实体出现过哪些场次/章节。它会把 source_documents 去重映射成可读标题。",
     "parameters": [
       {
         "name": "entity_id",
         "type": "string",
-        "description": "实体 ID。",
+        "description": "实体唯一 ID。",
         "required": true
       },
       {
         "name": "include_document_ids",
         "type": "bool",
-        "description": "是否同时返回对应的 document_id，默认 False。",
+        "description": "是否同时显示每个场次/章节对应的 document_id，默认 False。",
         "required": false
       }
     ]

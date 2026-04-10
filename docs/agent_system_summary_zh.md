@@ -517,16 +517,15 @@ QUALITY 的 evaluator 不只是“把 agent 原话拿来判分”，还会做多
 - `vector_store_type: chroma`
 - `strategy_memory.enabled: false`
 - `strategy_memory.read_enabled: true`
-- `runtime_routing_note_enabled: true`
-- `runtime_router_mode: legacy_full`
+- `runtime_routing_note_enabled: false`
 - `hidden_tool_names: [search_related_content]`
 
 也就是说，这个 stable 配置经常表现为：
 
 - 不做正式 offline strategy 命中
-- 但仍可能启用 router / routing note / runtime read 逻辑
+- 默认不启用外部 router / routing note
 
-具体某次 benchmark 是否关闭这些能力，还要看运行时参数有没有覆盖 config。
+具体某次 benchmark 是否开启额外能力，还要看运行时参数有没有覆盖 config。
 
 ## 14. 当前系统和旧版的本质差异
 
@@ -568,4 +567,3 @@ QUALITY 的 evaluator 不只是“把 agent 原话拿来判分”，还会做多
 - [strategy_training_runner.py](/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/core/strategy_training/strategy_training_runner.py)
 - [online_strategy_training_runner.py](/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/core/strategy_training/online_strategy_training_runner.py)
 - [run_quality_benchmark.py](/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/quality/run_quality_benchmark.py)
-
