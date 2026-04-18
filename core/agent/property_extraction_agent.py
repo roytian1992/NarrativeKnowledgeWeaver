@@ -106,11 +106,14 @@ class PropertyExtractionAgent:
         *,
         exclude_relation_types: Optional[Set[str]] = None,
         include_relation_types: Optional[Set[str]] = None,
+        max_edge_descriptions_per_node: Optional[int] = None,
+        max_context_words_per_node: Optional[int] = None,
+        dedupe_edge_descriptions: bool = True,
     ) -> str:
         node_data = (G.nodes.get(nid, {}) or {})
         node_desc = safe_str(node_data.get("description"))
 
-        ctx: List[str] = []
+        ctx_items: List[Tuple[str, str]] = []
 
         def _keep_type(rtype: str) -> bool:
             if exclude_relation_types and rtype in exclude_relation_types:
@@ -127,7 +130,7 @@ class PropertyExtractionAgent:
                         continue
                     desc = self._edge_description(data)
                     if desc:
-                        ctx.append(desc)
+                        ctx_items.append((rtype, desc))
 
                 for _, _, _, data in G.in_edges(nid, keys=True, data=True):
                     rtype = self._edge_relation_type(data)
@@ -135,7 +138,7 @@ class PropertyExtractionAgent:
                         continue
                     desc = self._edge_description(data)
                     if desc:
-                        ctx.append(desc)
+                        ctx_items.append((rtype, desc))
             else:
                 for _, _, _, data in G.edges(nid, keys=True, data=True):
                     rtype = self._edge_relation_type(data)
@@ -143,7 +146,7 @@ class PropertyExtractionAgent:
                         continue
                     desc = self._edge_description(data)
                     if desc:
-                        ctx.append(desc)
+                        ctx_items.append((rtype, desc))
         else:
             for _, _, data in G.edges(nid, data=True):
                 rtype = self._edge_relation_type(data)
@@ -151,7 +154,38 @@ class PropertyExtractionAgent:
                     continue
                 desc = self._edge_description(data)
                 if desc:
-                    ctx.append(desc)
+                    ctx_items.append((rtype, desc))
+
+        if dedupe_edge_descriptions:
+            deduped_items: List[Tuple[str, str]] = []
+            seen_desc: Set[str] = set()
+            for rtype, desc in ctx_items:
+                norm = safe_str(desc).strip()
+                if not norm or norm in seen_desc:
+                    continue
+                seen_desc.add(norm)
+                deduped_items.append((rtype, norm))
+            ctx_items = deduped_items
+
+        if isinstance(max_edge_descriptions_per_node, int) and max_edge_descriptions_per_node > 0:
+            ctx_items = sorted(
+                ctx_items,
+                key=lambda item: (word_len(item[1]), len(item[1])),
+                reverse=True,
+            )[: int(max_edge_descriptions_per_node)]
+
+        ctx: List[str] = []
+        word_budget = max_context_words_per_node if isinstance(max_context_words_per_node, int) else None
+        used_words = word_len(node_desc) if node_desc else 0
+        for _, desc in ctx_items:
+            if word_budget is not None and word_budget > 0:
+                next_words = word_len(desc)
+                if ctx and used_words + next_words > int(word_budget):
+                    continue
+                if (not ctx) and node_desc and used_words + next_words > int(word_budget):
+                    continue
+                used_words += next_words
+            ctx.append(desc)
 
         text = (node_desc + "\n" + "\n".join(ctx)).strip()
         return text
@@ -177,6 +211,9 @@ class PropertyExtractionAgent:
         # chunking
         chunk_size: int = 1200,
         chunk_overlap: int = 200,
+        max_edge_descriptions_per_node: Optional[int] = None,
+        max_context_words_per_node: Optional[int] = None,
+        dedupe_edge_descriptions: bool = True,
         # concurrency control is handled by caller; here only prepare tasks + pure functions
         max_workers: int = 8,
         per_task_timeout: float = 120.0,
@@ -252,9 +289,11 @@ class PropertyExtractionAgent:
             chunk_overlap=int(chunk_overlap),
             length_function=word_len,
         )
+        single_shot_threshold = max(1, int(chunk_size))
 
         # 3) flatten node->chunks into tasks
         tasks: List[Dict[str, Any]] = []
+        single_shot_items: List[Dict[str, Any]] = []
         node_meta: Dict[str, Dict[str, Any]] = {}
 
         for nid in node_ids:
@@ -271,13 +310,27 @@ class PropertyExtractionAgent:
                 nid,
                 exclude_relation_types=exclude_relation_types,
                 include_relation_types=include_relation_types,
+                max_edge_descriptions_per_node=max_edge_descriptions_per_node,
+                max_context_words_per_node=max_context_words_per_node,
+                dedupe_edge_descriptions=dedupe_edge_descriptions,
             )
             if not full_text:
                 continue
 
             node_meta[nid] = {"name": name, "type": entity_type, "scope": (node_scope or scope)}
-            chunks = splitter.split_text(full_text)
 
+            if word_len(full_text) <= single_shot_threshold:
+                single_shot_items.append(
+                    {
+                        "node_id": nid,
+                        "name": name,
+                        "entity_type": entity_type,
+                        "text": full_text,
+                    }
+                )
+                continue
+
+            chunks = splitter.split_text(full_text)
             for cidx, chunk in enumerate(chunks):
                 chunk = (chunk or "").strip()
                 if not chunk:
@@ -292,10 +345,14 @@ class PropertyExtractionAgent:
                     }
                 )
 
+        total_extract_tasks = len(tasks) + len(single_shot_items)
         if verbose:
-            logger.info(f"[PropertyAgent] flattened tasks={len(tasks)} from nodes={len(node_meta)}")
+            logger.info(
+                f"[PropertyAgent] flattened tasks={total_extract_tasks} "
+                f"(chunk_tasks={len(tasks)} single_shot_nodes={len(single_shot_items)}) from nodes={len(node_meta)}"
+            )
 
-        if not tasks:
+        if not tasks and not single_shot_items:
             return PropertyExtractionResult(
                 ok=True,
                 updated_nodes=0,
@@ -306,17 +363,12 @@ class PropertyExtractionAgent:
                 entity_info=entities_by_id,
             )
 
-        # 4) concurrent extraction per chunk
         def _extract_task_fn(t: Dict[str, Any]) -> Dict[str, Any]:
             nid = t["node_id"]
-            name = t["name"]
-            entity_type = t["entity_type"]
-            text = t["text"]
-
             raw = self.info.extract_entity_properties(
-                text=text,
-                entity_name=name,
-                entity_type=entity_type,
+                text=t["text"],
+                entity_name=t["name"],
+                entity_type=t["entity_type"],
             )
 
             obj = json.loads(raw) if isinstance(raw, str) else (raw or {})
@@ -339,24 +391,69 @@ class PropertyExtractionAgent:
                 "new_description": new_desc,
             }
 
-        results_map, failed_indices = run_concurrent_with_retries_fn(
-            items=tasks,
-            task_fn=_extract_task_fn,
-            per_task_timeout=float(per_task_timeout),
-            max_retry_rounds=max(1, int(retries)),
-            max_in_flight=int(max_workers),
-            max_workers=int(max_workers),
-            thread_name_prefix="prop",
-            desc_prefix="Extracting properties from node chunks",
-            treat_empty_as_failure=True,
-            is_empty_fn=lambda r: (not r) or (not isinstance(r, dict)) or (not r.get("ok")),
-        )
+        def _single_shot_task_fn(t: Dict[str, Any]) -> Dict[str, Any]:
+            raw = self.info.extract_entity_properties(
+                text=t["text"],
+                entity_name=t["name"],
+                entity_type=t["entity_type"],
+            )
 
-        failed_extract_tasks = len(failed_indices or [])
+            obj = json.loads(raw) if isinstance(raw, str) else (raw or {})
+            if not isinstance(obj, dict):
+                obj = {}
+
+            props = obj.get("properties", {}) or {}
+            if not isinstance(props, dict):
+                props = {}
+
+            new_desc = obj.get("new_description", "") or ""
+            if not isinstance(new_desc, str):
+                new_desc = str(new_desc)
+
+            return {
+                "ok": True,
+                "node_id": t["node_id"],
+                "properties": props,
+                "new_description": new_desc,
+            }
+
+        if tasks:
+            results_map, failed_indices = run_concurrent_with_retries_fn(
+                items=tasks,
+                task_fn=_extract_task_fn,
+                per_task_timeout=float(per_task_timeout),
+                max_retry_rounds=max(1, int(retries)),
+                max_in_flight=int(max_workers),
+                max_workers=int(max_workers),
+                thread_name_prefix="prop",
+                desc_prefix="Extracting properties from node chunks",
+                treat_empty_as_failure=True,
+                is_empty_fn=lambda r: (not r) or (not isinstance(r, dict)) or (not r.get("ok")),
+            )
+        else:
+            results_map, failed_indices = {}, []
+
+        if single_shot_items:
+            single_shot_map, single_shot_failed = run_concurrent_with_retries_fn(
+                items=single_shot_items,
+                task_fn=_single_shot_task_fn,
+                per_task_timeout=float(per_task_timeout),
+                max_retry_rounds=max(1, int(retries)),
+                max_in_flight=int(max_workers),
+                max_workers=int(max_workers),
+                thread_name_prefix="prop_single",
+                desc_prefix="Extracting properties from short nodes",
+                treat_empty_as_failure=True,
+                is_empty_fn=lambda r: (not r) or (not isinstance(r, dict)) or (not r.get("ok")),
+            )
+        else:
+            single_shot_map, single_shot_failed = {}, []
+
+        failed_extract_tasks = len(failed_indices or []) + len(single_shot_failed or [])
         if verbose and failed_extract_tasks:
-            logger.warning(f"[PropertyAgent] failed extract tasks={failed_extract_tasks} / {len(tasks)}")
+            logger.warning(f"[PropertyAgent] failed extract tasks={failed_extract_tasks} / {total_extract_tasks}")
 
-        # 5) aggregate per node
+        # 5) aggregate per node for long-text chunk path
         per_node_desc: Dict[str, List[str]] = defaultdict(list)
         per_node_props: Dict[str, Dict[str, Any]] = defaultdict(dict)
 
@@ -376,7 +473,45 @@ class PropertyExtractionAgent:
             if isinstance(props, dict):
                 per_node_props[nid].update(props)
 
-        # 6) merge once per node
+        def _apply_final_result(nid: str, final_properties: Dict[str, Any], new_description: str) -> bool:
+            meta = node_meta.get(nid, {}) or {}
+            name = safe_str(meta.get("name")) or safe_str((G.nodes.get(nid, {}) or {}).get("name"))
+            entity_type = safe_str(meta.get("type")) or safe_str((G.nodes.get(nid, {}) or {}).get("type")) or general_semantic_type
+            node_scope = safe_str(meta.get("scope")) or safe_str((G.nodes.get(nid, {}) or {}).get("scope")) or scope
+
+            if nid in entities_by_id and isinstance(entities_by_id[nid], dict):
+                entities_by_id[nid]["properties"] = final_properties
+                if new_description:
+                    entities_by_id[nid]["description"] = new_description
+            else:
+                entities_by_id[nid] = {
+                    "id": nid,
+                    "name": name,
+                    "type": entity_type,
+                    "scope": node_scope,
+                    "description": new_description,
+                    "properties": final_properties,
+                }
+            return True
+
+        updated_nodes = 0
+        for i in range(len(single_shot_items)):
+            res = single_shot_map.get(i)
+            if not isinstance(res, dict) or not res.get("ok"):
+                continue
+            nid = safe_str(res.get("node_id"))
+            if not nid:
+                continue
+
+            final_properties = res.get("properties") or {}
+            if not isinstance(final_properties, dict):
+                final_properties = {}
+            new_description = safe_str(res.get("new_description"))
+
+            if _apply_final_result(nid, final_properties, new_description):
+                updated_nodes += 1
+
+        # 6) merge once per node for long-text path only
         merge_items: List[Dict[str, Any]] = []
         for nid, meta in node_meta.items():
             name = safe_str(meta.get("name"))
@@ -403,9 +538,9 @@ class PropertyExtractionAgent:
         if not merge_items:
             return PropertyExtractionResult(
                 ok=True,
-                updated_nodes=0,
+                updated_nodes=updated_nodes,
                 selected_nodes=len(node_ids),
-                flattened_tasks=len(tasks),
+                flattened_tasks=total_extract_tasks,
                 failed_extract_tasks=failed_extract_tasks,
                 failed_merge_nodes=0,
                 entity_info=entities_by_id,
@@ -463,7 +598,6 @@ class PropertyExtractionAgent:
         if verbose and failed_merge_nodes:
             logger.warning(f"[PropertyAgent] failed merge nodes={failed_merge_nodes} / {len(merge_items)}")
 
-        updated_nodes = 0
         for i in range(len(merge_items)):
             res = merge_map.get(i)
             if not isinstance(res, dict) or not res.get("ok"):
@@ -475,29 +609,10 @@ class PropertyExtractionAgent:
             final_properties = res.get("properties") or {}
             if not isinstance(final_properties, dict):
                 final_properties = {}
-
             new_description = safe_str(res.get("new_description"))
 
-            meta = node_meta.get(nid, {}) or {}
-            name = safe_str(meta.get("name")) or safe_str((G.nodes.get(nid, {}) or {}).get("name"))
-            entity_type = safe_str(meta.get("type")) or safe_str((G.nodes.get(nid, {}) or {}).get("type")) or general_semantic_type
-            node_scope = safe_str(meta.get("scope")) or safe_str((G.nodes.get(nid, {}) or {}).get("scope")) or scope
-
-            if nid in entities_by_id and isinstance(entities_by_id[nid], dict):
-                entities_by_id[nid]["properties"] = final_properties
-                if new_description:
-                    entities_by_id[nid]["description"] = new_description
-            else:
-                entities_by_id[nid] = {
-                    "id": nid,
-                    "name": name,
-                    "type": entity_type,
-                    "scope": node_scope,
-                    "description": new_description,
-                    "properties": final_properties,
-                }
-
-            updated_nodes += 1
+            if _apply_final_result(nid, final_properties, new_description):
+                updated_nodes += 1
 
         return PropertyExtractionResult(
             ok=True,

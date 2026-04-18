@@ -643,8 +643,10 @@ class SectionEvidenceSearch(BaseTool):
 class NarrativeHierarchicalSearch(BaseTool):
     name = "narrative_hierarchical_search"
     description = (
-        "按 Storyline -> Episode -> Event / source_documents 的叙事层级检索证据，"
-        "适合回答剧情主线、阶段推进、跨章节因果和关键事件关联问题。"
+        "按 Storyline -> Episode -> Event 的层级先定位相关叙事节点，"
+        "再回收到 source_documents 抽取原文证据。"
+        "更适合回答需要定位相关情节阶段、场景衔接、事件链或跨段对应关系的问题；"
+        "如果只是找一句直接事实，优先用句子或章节检索工具。"
         "当没有 Storyline 时，会自动降级到 Episode -> Event / source_documents。"
     )
     parameters = [

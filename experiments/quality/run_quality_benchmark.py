@@ -3085,6 +3085,21 @@ def _evaluate_online_setting_incremental(
     return setting_results, training_reports
 
 
+def _resolve_self_bootstrap_max_questions(
+    *,
+    mode: str,
+    max_questions: int,
+    default_when_enabled: int = 1,
+) -> int:
+    normalized = str(mode or "auto").strip().lower()
+    configured = max(0, int(max_questions or 0))
+    if normalized == "off":
+        return 0
+    if normalized == "on":
+        return max(1, configured or default_when_enabled)
+    return configured
+
+
 class TraditionalHybridThreadLocal:
     def __init__(self, cfg: KAGConfig) -> None:
         self.cfg = cfg
@@ -4281,6 +4296,8 @@ def main() -> None:
     parser.add_argument("--online-warmup-questions", type=int, default=0)
     parser.add_argument("--online-batch-size", type=int, default=3)
     parser.add_argument("--online-attempts-per-question", type=int, default=1)
+    parser.add_argument("--self-bootstrap-mode", choices=["auto", "on", "off"], default="auto")
+    parser.add_argument("--self-bootstrap-max-questions", type=int, default=1)
     parser.add_argument("--skip-offline-training", action="store_true")
     parser.add_argument("--train-only", action="store_true")
     parser.add_argument("--skip-online", action="store_true")
@@ -4344,6 +4361,11 @@ def main() -> None:
         else _default_workspace_asset_root().resolve()
     )
     workspace_asset_root.mkdir(parents=True, exist_ok=True)
+    resolved_self_bootstrap_max_questions = _resolve_self_bootstrap_max_questions(
+        mode=str(args.self_bootstrap_mode or "auto"),
+        max_questions=int(args.self_bootstrap_max_questions or 0),
+        default_when_enabled=1,
+    )
     if offline_runtime_source_dir is not None:
         if not args.skip_offline_training:
             raise ValueError("--offline-runtime-source-dir requires --skip-offline-training")
@@ -4737,7 +4759,7 @@ def main() -> None:
                         setting_name=setting_name,
                         subagent_enabled=False,
                         online_repeat_states=repeat_states,
-                        self_bootstrap_max_questions=1,
+                        self_bootstrap_max_questions=resolved_self_bootstrap_max_questions,
                         warmup_questions=args.online_warmup_questions,
                         batch_size=args.online_batch_size,
                         online_attempts_per_question=args.online_attempts_per_question,
@@ -4765,7 +4787,7 @@ def main() -> None:
                         setting_name=setting_name,
                         subagent_enabled=True,
                         online_repeat_states=repeat_states,
-                        self_bootstrap_max_questions=1,
+                        self_bootstrap_max_questions=resolved_self_bootstrap_max_questions,
                         warmup_questions=args.online_warmup_questions,
                         batch_size=args.online_batch_size,
                         online_attempts_per_question=args.online_attempts_per_question,

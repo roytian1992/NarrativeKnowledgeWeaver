@@ -38,6 +38,7 @@ def main() -> None:
     parser.add_argument("--eval-max-workers", type=int, default=4)
     parser.add_argument("--online-warmup-questions", type=int, default=5)
     parser.add_argument("--online-batch-size", type=int, default=3)
+    parser.add_argument("--self-bootstrap-mode", choices=["auto", "on", "off"], default="auto")
     parser.add_argument("--self-bootstrap-max-questions", type=int, default=1)
     parser.add_argument("--disable-sql-tools", action="store_true")
     parser.add_argument("--subagent", action="store_true")
@@ -82,6 +83,13 @@ def main() -> None:
     )
     online_accumulator.clear_runtime()
 
+    bootstrap_mode = str(args.self_bootstrap_mode or "auto").strip().lower()
+    resolved_self_bootstrap_max_questions = max(0, int(args.self_bootstrap_max_questions or 0))
+    if bootstrap_mode == "off":
+        resolved_self_bootstrap_max_questions = 0
+    elif bootstrap_mode == "on":
+        resolved_self_bootstrap_max_questions = max(1, resolved_self_bootstrap_max_questions or 1)
+
     # Strictly reuse an existing extracted workspace. This must never trigger rebuild.
     load_existing_article_workspace_or_raise(
         base_cfg=base_cfg,
@@ -101,7 +109,7 @@ def main() -> None:
         setting_name=str(args.setting_name or "online_strategy_agent").strip(),
         subagent_enabled=bool(args.subagent),
         online_accumulator=online_accumulator,
-        self_bootstrap_max_questions=max(0, int(args.self_bootstrap_max_questions or 0)),
+        self_bootstrap_max_questions=resolved_self_bootstrap_max_questions,
         warmup_questions=max(0, int(args.online_warmup_questions or 0)),
         batch_size=max(1, int(args.online_batch_size or 1)),
         eval_max_workers=max(1, int(args.eval_max_workers or 1)),
@@ -132,6 +140,8 @@ def main() -> None:
         "workspace_dir": str(workspace_dir),
         "setting": str(args.setting_name or "").strip(),
         "repeats": max(1, int(args.repeats or 1)),
+        "self_bootstrap_mode": bootstrap_mode,
+        "self_bootstrap_max_questions": resolved_self_bootstrap_max_questions,
         "enable_sql_tools": enable_sql_tools,
         "question_count": len(qa_rows),
         "summary": summary,

@@ -1,0 +1,57 @@
+id: judge_open_retrieval_answer
+category: memory
+name: Judge Open Retrieval Answer
+description: >
+  判断开放式检索问答是否正确，支持一个或多个可接受参考答案。
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  你是开放式检索问答的评测器。
+
+  问题：
+  {question}
+
+  可接受的参考答案：
+  {reference_answer}
+
+  候选答案：
+  {candidate_answer}
+
+  判定原则：
+  - 参考答案块中可能包含多个可接受答案、不同表述或部分重叠的答案变体。
+  - 如果候选答案与任意一个可接受答案在语义上匹配，或明显覆盖了这些答案共享的核心事实，应优先判为正确。
+  - 对措辞、粒度和抽象层次可适度宽松。
+  - 如果候选答案是某个可接受答案的语义超集，且没有引入明显矛盾或会实质改变结论的幻觉细节，应优先判为正确。
+  - 除非问题明确要求集合或列表，否则不要要求候选答案逐条复述所有参考答案。
+  - 对真正的列表题，部分但较强覆盖仍可给较高分；只有当候选答案覆盖主要请求项且没有矛盾时，才设置 `is_correct = true`。
+  - 只有在以下情况才应明显扣分或判错：
+    1. 没有回答问题要求的核心事实；
+    2. 与可接受答案直接矛盾；
+    3. 加入了会实质改变结论的具体幻觉信息。
+
+  输出要求：
+  - 只返回一个 JSON 对象。
+  - JSON 必须满足以下结构：
+    {
+      "is_correct": true,
+      "score": 0.0,
+      "reason": "string",
+      "matched_points": ["string"],
+      "missing_points": ["string"],
+      "hallucination_points": ["string"]
+    }
+  - `score` 必须在 0 到 1 之间。
+  - `is_correct` 必须反映语义正确性、核心事实覆盖度以及是否存在直接矛盾。
+  - 不要输出 markdown，不要输出额外解释。

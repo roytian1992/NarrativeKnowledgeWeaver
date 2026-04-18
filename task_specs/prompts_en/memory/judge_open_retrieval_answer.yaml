@@ -1,0 +1,57 @@
+id: judge_open_retrieval_answer
+category: memory
+name: Judge Open Retrieval Answer
+description: >
+  Judge whether an open-ended retrieval answer is correct using one or more acceptable reference answers.
+
+task_variables:
+  - name: question
+    type: string
+    required: true
+  - name: reference_answer
+    type: string
+    required: true
+  - name: candidate_answer
+    type: string
+    required: true
+
+static_variables: []
+
+template: |
+  You are an evaluator for open-ended retrieval QA.
+
+  Question:
+  {question}
+
+  Acceptable reference answers:
+  {reference_answer}
+
+  Candidate answer:
+  {candidate_answer}
+
+  Judgment policy:
+  - The reference block may contain multiple acceptable answers, paraphrases, or partially overlapping answer variants.
+  - If the candidate semantically matches any one acceptable answer, or clearly captures the shared core fact expressed by the acceptable answers, prefer judging it as correct.
+  - Be slightly lenient about wording, granularity, and abstraction level.
+  - If the candidate is a semantic superset of an acceptable answer and does not introduce clear contradictions or materially harmful hallucinated specifics, prefer judging it as correct.
+  - Do not require the candidate to restate every listed acceptable answer unless the question itself clearly asks for a set or list.
+  - For genuine list questions, partial but strong coverage can still receive a high score, but reserve `is_correct = true` for answers that cover the main requested items without contradiction.
+  - Only penalize strongly or mark false when the candidate answer:
+    1. misses the core fact asked by the question;
+    2. directly contradicts the acceptable answers;
+    3. adds specific hallucinations that materially change the conclusion.
+
+  Output requirements:
+  - Return exactly one JSON object.
+  - JSON schema must be:
+    {
+      "is_correct": true,
+      "score": 0.0,
+      "reason": "string",
+      "matched_points": ["string"],
+      "missing_points": ["string"],
+      "hallucination_points": ["string"]
+    }
+  - `score` must be between 0 and 1.
+  - `is_correct` should reflect semantic correctness, core-fact coverage, and absence of direct contradiction.
+  - No markdown. No extra explanation.

@@ -58,6 +58,54 @@ _JSON_TYPE_MAP: Dict[str, str] = {
 }
 
 
+def _resolve_positive_int_config(
+    rag_cfg: Dict[str, Any],
+    *,
+    key: str,
+    env_name: str,
+    default: int,
+    minimum: int = 1,
+) -> int:
+    env_value = str(os.environ.get(env_name, "") or "").strip()
+    if env_value:
+        try:
+            return max(minimum, int(env_value))
+        except Exception:
+            logger.warning("Invalid %s=%r; falling back to config/default.", env_name, env_value)
+    try:
+        return max(minimum, int(rag_cfg.get(key, default) or default))
+    except Exception:
+        logger.warning("Invalid rag_cfg[%s]=%r; falling back to default=%s.", key, rag_cfg.get(key), default)
+        return max(minimum, int(default))
+
+
+def _resolve_bool_config(
+    rag_cfg: Dict[str, Any],
+    *,
+    key: str,
+    env_name: str,
+    default: bool,
+) -> bool:
+    env_value = str(os.environ.get(env_name, "") or "").strip().lower()
+    if env_value:
+        if env_value in {"1", "true", "yes", "y", "on"}:
+            return True
+        if env_value in {"0", "false", "no", "n", "off"}:
+            return False
+        logger.warning("Invalid %s=%r; falling back to config/default.", env_name, env_value)
+    raw_value = rag_cfg.get(key, default)
+    if isinstance(raw_value, bool):
+        return raw_value
+    lowered = str(raw_value or "").strip().lower()
+    if lowered in {"1", "true", "yes", "y", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "n", "off"}:
+        return False
+    if raw_value not in (None, ""):
+        logger.warning("Invalid rag_cfg[%s]=%r; falling back to default=%s.", key, raw_value, default)
+    return bool(default)
+
+
 def _message_get(message: Any, key: str, default: Any = None) -> Any:
     if isinstance(message, dict):
         return message.get(key, default)
@@ -276,23 +324,30 @@ class LangGraphAssistantRuntime:
         self.llm = llm
         self.system_message = str(system_message or "").strip()
         self.rag_cfg = dict(rag_cfg or {})
-        self.max_tool_rounds_per_run = max(
-            1,
-            int(
-                self.rag_cfg.get(
-                    "max_tool_rounds_per_run",
-                    self.rag_cfg.get("max_tool_calls_per_run", 3),
-                )
-                or 3
-            ),
+        max_tool_rounds_default = int(
+            self.rag_cfg.get(
+                "max_tool_rounds_per_run",
+                self.rag_cfg.get("max_tool_calls_per_run", 3),
+            )
+            or 3
         )
-        self.first_round_max_tool_calls = max(
-            1,
-            int(self.rag_cfg.get("first_round_max_tool_calls", 5) or 5),
+        self.max_tool_rounds_per_run = _resolve_positive_int_config(
+            self.rag_cfg,
+            key="max_tool_rounds_per_run",
+            env_name="NKW_MAX_TOOL_ROUNDS_PER_RUN",
+            default=max_tool_rounds_default,
         )
-        self.followup_round_max_tool_calls = max(
-            1,
-            int(self.rag_cfg.get("followup_round_max_tool_calls", 1) or 1),
+        self.first_round_max_tool_calls = _resolve_positive_int_config(
+            self.rag_cfg,
+            key="first_round_max_tool_calls",
+            env_name="NKW_FIRST_ROUND_MAX_TOOL_CALLS",
+            default=5,
+        )
+        self.followup_round_max_tool_calls = _resolve_positive_int_config(
+            self.rag_cfg,
+            key="followup_round_max_tool_calls",
+            env_name="NKW_FOLLOWUP_ROUND_MAX_TOOL_CALLS",
+            default=3,
         )
         self.parallel_tool_workers = max(
             1,
@@ -347,7 +402,7 @@ class LangGraphAssistantRuntime:
                 "Rules:",
                 f"- Across the whole question, use at most {self.max_tool_rounds_per_run} tool rounds in total.",
                 f"- In the first tool round, you may call up to {self.first_round_max_tool_calls} complementary tools in parallel.",
-                f"- After the first tool round, call at most {self.followup_round_max_tool_calls} tool per round.",
+                f"- After the first tool round, call at most {self.followup_round_max_tool_calls} tool(s) per round.",
                 "- Use only the listed tool names.",
                 "- `tool_arguments` must be a JSON object.",
                 "- Do not wrap JSON in markdown fences.",
@@ -916,6 +971,12 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
         self.max_stagnation_rounds = max(1, int(rag_cfg.get("s4_max_stagnation_rounds", 1) or 1))
         self.evaluator_finalize_confidence = float(rag_cfg.get("s4_evaluator_finalize_confidence", 0.78) or 0.78)
         self.s4_candidate_tool_window = max(4, int(rag_cfg.get("s4_candidate_tool_window", 7) or 7))
+        self.s4_parallel_vector_on_second_loop = _resolve_bool_config(
+            rag_cfg,
+            key="s4_parallel_vector_on_second_loop",
+            env_name="NKW_S4_PARALLEL_VECTOR_ON_SECOND_LOOP",
+            default=False,
+        )
         super().__init__(
             function_list=function_list,
             llm=llm,
@@ -1010,6 +1071,15 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
             "lookup_titles_by_document_ids",
             "lookup_document_ids_by_title",
             "vdb_search_hierdocs",
+        }
+
+    @staticmethod
+    def _first_round_disallowed_tool_names() -> set[str]:
+        return {
+            "vdb_get_docs_by_document_ids",
+            "lookup_titles_by_document_ids",
+            "search_related_content",
+            "get_interactions_by_document_ids",
         }
 
     def _tool_usage_stats(self, state: _S4AgentState) -> Dict[str, int]:
@@ -1235,6 +1305,80 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
             return "followup_lookup"
         return "other"
 
+    def _should_parallelize_vector_on_current_round(self, state: _S4AgentState) -> bool:
+        if not bool(getattr(self, "s4_parallel_vector_on_second_loop", False)):
+            return False
+        current_round = int(state.get("tool_round_index", 0) or 0) + 1
+        return current_round == 2
+
+    def _build_second_loop_vector_tool_call(
+        self,
+        *,
+        state: _S4AgentState,
+        existing_tool_calls: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not self._should_parallelize_vector_on_current_round(state):
+            return None
+        if not list(existing_tool_calls or []):
+            return None
+        tool_name = "vdb_search_sentences"
+        if tool_name not in self.tool_map:
+            return None
+        existing_names = {
+            str(row.get("name") or "").strip()
+            for row in list(existing_tool_calls or [])
+            if str(row.get("name") or "").strip()
+        }
+        if tool_name in existing_names:
+            return None
+        prior_signatures = {
+            str(row.get("call_signature") or "").strip()
+            for row in list(state.get("evidence_pool") or [])
+            if isinstance(row, dict) and str(row.get("call_signature") or "").strip()
+        }
+        question_text = _content_to_text(self._extract_latest_user_text(state))
+        profile = self._question_profile(question_text)
+        parsed = profile.get("parsed") if isinstance(profile.get("parsed"), dict) else {}
+        query = question_text if profile["is_mcq"] else str(parsed.get("question_stem") or question_text or "").strip()
+        args = {
+            "query": query,
+            "limit": 6,
+        }
+        signature = self._tool_call_signature(tool_name=tool_name, args=args)
+        if signature in prior_signatures:
+            return None
+        return {
+            "id": f"s4_round2_parallel_{tool_name}",
+            "name": tool_name,
+            "args": args,
+            "type": "tool_call",
+        }
+
+    def _append_second_loop_vector_tool_call(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        *,
+        state: _S4AgentState,
+        allowed_tool_names: List[str],
+    ) -> List[Dict[str, Any]]:
+        extra_call = self._build_second_loop_vector_tool_call(
+            state=state,
+            existing_tool_calls=tool_calls,
+        )
+        if extra_call is None:
+            return tool_calls
+        allowed = list(allowed_tool_names or [])
+        if extra_call["name"] not in allowed:
+            allowed.append(str(extra_call["name"]))
+        augmented = self._prune_tool_calls_for_state(
+            list(tool_calls or []) + [extra_call],
+            state=state,
+            allowed_tool_names=allowed,
+        )
+        if any(str(row.get("name") or "").strip() == str(extra_call["name"]) for row in augmented):
+            return augmented
+        return tool_calls
+
     def _backbone_tool_calls_for_state(self, state: _S4AgentState) -> List[Dict[str, Any]]:
         if int(state.get("tool_round_index", 0) or 0) != 0:
             return []
@@ -1261,6 +1405,20 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
                 }
             )
 
+        add(
+            "bm25_search_docs",
+            {
+                "query": stem,
+                "k": 6,
+            },
+        )
+        add(
+            "vdb_search_sentences",
+            {
+                "query": question_text if profile["is_mcq"] else stem,
+                "limit": 6,
+            },
+        )
         add(
             "section_evidence_search",
             {
@@ -1316,14 +1474,6 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
                     "resolve_source_documents": True,
                 },
             )
-        else:
-            add(
-                "bm25_search_docs",
-                {
-                    "query": stem,
-                    "k": 6,
-                },
-            )
         return self._prune_tool_calls_for_state(
             calls,
             state=state,
@@ -1347,6 +1497,8 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
 
         for name in self.tool_map:
             if name not in allowed:
+                continue
+            if current_round <= 1 and name in self._first_round_disallowed_tool_names():
                 continue
             stage = tool_stage(name)
             score = 0.0
@@ -1402,6 +1554,7 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
                 shortlist.append(name)
 
         ensure("bm25_search_docs")
+        ensure("vdb_search_sentences")
         ensure("section_evidence_search")
         if profile["is_mcq"]:
             ensure("choice_grounded_evidence_search")
@@ -1486,7 +1639,7 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
                 '{"final_answer":"<answer>"}',
                 f"Across the whole question, use at most {self.max_tool_rounds_per_run} tool rounds.",
                 f"In the first tool round, you may call up to {self.first_round_max_tool_calls} complementary tools.",
-                f"After the first round, call at most {self.followup_round_max_tool_calls} tool per round.",
+                f"After the first round, call at most {self.followup_round_max_tool_calls} tool(s) per round.",
                 "Prefer diverse evidence in the first round and targeted follow-up afterward.",
                 "",
                 "Available tools:",
@@ -1680,9 +1833,12 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
         seen_tool_names_this_round: set[str] = set()
         seen_family_counts: Dict[str, int] = {}
         current_round = int(state.get("tool_round_index", 0) or 0) + 1
+        allow_second_loop_vector_parallel = self._should_parallelize_vector_on_current_round(state)
         for row in list(tool_calls or []):
             tool_name = str(row.get("name") or "").strip()
             if not tool_name or (allowed and tool_name not in allowed):
+                continue
+            if current_round <= 1 and tool_name in self._first_round_disallowed_tool_names():
                 continue
             family = self._tool_family(tool_name)
             signature = self._tool_call_signature(tool_name=tool_name, args=row.get("args", {}))
@@ -1705,7 +1861,14 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
                 "search_sections",
             }:
                 continue
-            family_cap = 2 if family == "local_evidence" and current_round <= 1 else 1
+            family_cap = 1
+            if family == "local_evidence":
+                if current_round <= 1:
+                    family_cap = 3
+                elif allow_second_loop_vector_parallel:
+                    family_cap = 2
+                else:
+                    family_cap = 1
             if seen_family_counts.get(family, 0) >= family_cap:
                 continue
             if family == "choice_evidence" and prior_family_counts.get(family, 0) >= 1:
@@ -1742,6 +1905,18 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
         candidate_tool_names = self._candidate_tool_names_for_state(state)
         used_tools = sorted(self._tool_usage_stats(state).items(), key=lambda item: (-item[1], item[0]))
         used_tools_text = ", ".join(f"{name} x{count}" for name, count in used_tools[:8]) if used_tools else "(none)"
+        followup_focus_lines: List[str] = []
+        if next_round >= 2:
+            followup_focus_lines.extend(
+                [
+                    "This is a follow-up round.",
+                    "Start from the evidence already gathered and identify the smallest missing fact that still blocks the final answer.",
+                    "Before selecting tools, decide what exact information is still missing: a scene, an action, a relation, a temporal order, or an option-specific contradiction.",
+                    "If you call `bm25_search_docs` or `vdb_search_sentences` again, rewrite the query to target that missing fact instead of reusing the original broad question.",
+                    "A good follow-up query usually names the key entity, event, scene, or time clue surfaced in earlier rounds.",
+                    "Prefer up to a few tightly targeted complementary tools over another broad first-pass style search.",
+                ]
+            )
         planner_lines: List[str] = [
             "You are a retrieval planner inside a planner-tools-evaluator-finalizer loop.",
             "Return JSON only.",
@@ -1765,9 +1940,12 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
                     f"Current unresolved comparison: {str(option_board.get('top_label') or '').strip()} vs {str(option_board.get('second_label') or '').strip() or 'others'} "
                     f"(margin={float(option_board.get('margin', 0.0) or 0.0):.2f})."
                 )
-                planner_lines.append("In later rounds, choose one tool that best separates the top competing options instead of repeating broad retrieval.")
+                planner_lines.append("In later rounds, choose targeted follow-up tools that best separate the top competing options instead of repeating broad retrieval.")
         if profile["needs_narrative"]:
             planner_lines.append("Because the question asks about motive, implication, attitude, or narrative meaning, keep at least one narrative-capable tool in consideration.")
+        if followup_focus_lines:
+            planner_lines.extend(["", "Follow-up round guidance:"])
+            planner_lines.extend(followup_focus_lines)
         planner_lines.extend(["", "Candidate tools:"])
         for name in candidate_tool_names:
             line = self._tool_line(name)
@@ -1786,7 +1964,9 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
                 f"Current round index: {next_round}",
                 f"Tool limit for this round: {tool_limit}",
                 "Decide whether to gather more evidence or stop and defer to the finalizer.",
-                "If more evidence is needed, return JSON tool calls only. Use a diverse evidence bundle in round 1 and a single targeted tool later.",
+                "If more evidence is needed, return JSON tool calls only. Use a diverse evidence bundle in round 1 and a small set of tightly targeted complementary tools later.",
+                "For follow-up rounds, explicitly state the missing clue in your head first, then choose tool arguments that narrow onto that clue.",
+                "If BM25 or sentence retrieval is reused in a follow-up round, the query should usually be different to the original question and should reflect the current evidence gap.",
                 "For MCQ follow-up rounds, explicitly target the strongest unresolved distinction between the current top options.",
                 "If the evidence is already sufficient, return a short JSON object with `final_answer` summarizing the answer intent, not a long explanation.",
             ]
@@ -1847,10 +2027,16 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
             call_index=remaining,
             tool_round_index=int(state.get("tool_round_index", 0) or 0),
         )
+        candidate_tool_names = self._candidate_tool_names_for_state(state)
         tool_calls = self._prune_tool_calls_for_state(
             list(getattr(response, "tool_calls", []) or []),
             state=state,
-            allowed_tool_names=self._candidate_tool_names_for_state(state),
+            allowed_tool_names=candidate_tool_names,
+        )
+        tool_calls = self._append_second_loop_vector_tool_call(
+            tool_calls,
+            state=state,
+            allowed_tool_names=candidate_tool_names,
         )
         draft_answer = str(state.get("draft_answer", "") or "").strip()
         next_step = "tools" if tool_calls and int(state.get("remaining_tool_rounds", 0) or 0) > 0 else "finalizer"
@@ -2026,7 +2212,7 @@ class S4LangGraphAssistantRuntime(LangGraphAssistantRuntime):
             default_next = "planner"
             evaluation_notes = (
                 evaluation_notes
-                or f"The main unresolved issue is distinguishing {top_label} from {second_label}; use one targeted follow-up tool instead of another broad search."
+                or f"The main unresolved issue is distinguishing {top_label} from {second_label}; use targeted follow-up tools with narrower queries instead of another broad search."
             )
 
         if remaining <= 0:

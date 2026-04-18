@@ -1096,6 +1096,60 @@ class RetrievalToolRouter:
             "deterministic_parse": parse,
         }
 
+    def _ensure_first_round_bm25(
+        self,
+        names: List[str],
+        *,
+        valid: Any,
+        limit: int,
+    ) -> List[str]:
+        valid_names = set(valid or [])
+        cleaned = self._sanitize_first_round_tools(list(names or []), valid=valid_names)
+        backstops = [name for name in ["bm25_search_docs", "vdb_search_sentences"] if name in valid_names]
+        if not backstops:
+            return unique_names(cleaned, valid=valid_names, limit=limit)
+
+        # Force BM25 + sentence-vector retrieval as extra first-round probes rather
+        # than treating them as model-selected tools. If the round is full, keep
+        # the earlier model choices and reserve trailing slots for the backstops.
+        cleaned = [name for name in cleaned if name not in set(backstops)]
+        if limit > 0 and len(cleaned) >= limit:
+            reserve = min(len(backstops), max(1, int(limit)))
+            cleaned = cleaned[: max(0, int(limit) - reserve)]
+        cleaned.extend(backstops)
+        return unique_names(cleaned, valid=valid_names, limit=limit)
+
+    @staticmethod
+    def _first_round_tool_blocklist() -> set[str]:
+        return {
+            "vdb_get_docs_by_document_ids",
+            "lookup_titles_by_document_ids",
+            "search_related_content",
+            "get_interactions_by_document_ids",
+        }
+
+    def _sanitize_first_round_tools(
+        self,
+        names: List[str],
+        *,
+        valid: Any,
+    ) -> List[str]:
+        valid_names = set(valid or [])
+        blocked = self._first_round_tool_blocklist()
+        cleaned: List[str] = []
+        for raw_name in names or []:
+            name = str(raw_name or "").strip()
+            if (
+                not name
+                or name not in valid_names
+                or name in blocked
+                or tool_stage(name) == "internal_only"
+                or name in cleaned
+            ):
+                continue
+            cleaned.append(name)
+        return cleaned
+
     def _build_stable_execution_plan(
         self,
         *,
@@ -1129,7 +1183,11 @@ class RetrievalToolRouter:
         def names_to_tools(names: List[str]) -> List[Any]:
             return [registry[name] for name in names if name in registry]
 
-        stage0_names = unique_names(route_plan.get("initial_tools") or [], valid=registry.keys(), limit=self.initial_tool_limit)
+        stage0_names = self._ensure_first_round_bm25(
+            list(route_plan.get("initial_tools") or []),
+            valid=registry.keys(),
+            limit=self.initial_tool_limit,
+        )
         stage1_names = unique_names(
             [*stage0_names, *(route_plan.get("escalation_tools") or [])],
             valid=registry.keys(),
@@ -1587,9 +1645,12 @@ class RetrievalToolRouter:
                 names = names[: max(1, int(limit))]
             return [registry[name] for name in names if name in registry]
 
-        stage0 = merge_names(selected_tools, [], limit=5)
-        if not stage0:
-            stage0 = merge_names(shared_core, [], limit=5)
+        stage0_names = self._ensure_first_round_bm25(
+            selected_tools if selected_tools else shared_core,
+            valid=registry.keys(),
+            limit=5,
+        )
+        stage0 = [registry[name] for name in stage0_names if name in registry]
         stage1 = merge_names([getattr(t, "name", "") for t in stage0], [*shared_core, *escalation], limit=10)
         stage2 = merge_names([getattr(t, "name", "") for t in stage1], all_branch_tools, limit=14)
         full = merge_names([getattr(t, "name", "") for t in stage2], list(registry.keys()), limit=None)
@@ -1652,11 +1713,12 @@ class RetrievalToolRouter:
                 names = names[: max(1, int(limit))]
             return [registry[name] for name in names if name in registry]
 
-        stage0 = merge_names(
-            [name for name in preferred_core if name in registry],
-            stage_names["core"],
+        stage0_names = self._ensure_first_round_bm25(
+            [*([name for name in preferred_core if name in registry]), *stage_names["core"]],
+            valid=registry.keys(),
             limit=6,
         )
+        stage0 = [registry[name] for name in stage0_names if name in registry]
         stage1 = merge_names(
             [getattr(t, "name", "") for t in stage0],
             [*stage_names["extended"], *stage_names["core"]],

@@ -171,6 +171,12 @@ class KnowledgeGraphBuilderConfig:
     max_workers: int = 64
     max_retries: int = 2
     per_task_timeout: int = 2400
+    extraction_pack_short_chunk_word_threshold: int = 220
+    extraction_pack_max_words: int = 900
+    property_context_max_edge_descriptions: int = 80
+    property_context_max_total_words: int = 2400
+    property_context_dedupe_descriptions: bool = True
+    interaction_min_entity_candidates: int = 2
 
 
 @dataclass
@@ -267,6 +273,26 @@ class NarrativeGraphBuilderConfig:
     episode_relation_threshold_step: float = 0.05
     episode_relation_backfill_by_similarity: bool = True
     episode_relation_backfill_max_episodes: int = 500
+    episode_relation_primary_anchor_fields: List[str] = field(
+        default_factory=lambda: ["related_event_ids", "related_occasion_ids"]
+    )
+    episode_relation_context_anchor_fields: List[str] = field(
+        default_factory=lambda: ["related_character_ids", "related_location_ids", "related_time_ids"]
+    )
+    episode_relation_anchor_weights: Dict[str, float] = field(
+        default_factory=lambda: {
+            "related_event_ids": 3.0,
+            "related_occasion_ids": 2.0,
+            "related_character_ids": 0.75,
+            "related_location_ids": 0.35,
+            "related_time_ids": 0.25,
+        }
+    )
+    episode_relation_max_primary_bucket_size: int = 24
+    episode_relation_max_context_bucket_size: int = 12
+    episode_relation_context_requires_primary_pair: bool = True
+    episode_relation_topk_per_episode: int = 96
+    episode_relation_min_weighted_score: float = 0.0
     causal_graph: CausalGraphConfig = field(default_factory=CausalGraphConfig)
     cycle_break: CycleBreakConfig = field(default_factory=CycleBreakConfig)
     chain_extraction: ChainExtractionConfig = field(default_factory=ChainExtractionConfig)

@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.builder.manager.information_manager import InformationExtractor
@@ -330,6 +331,26 @@ class InteractionExtractionAgent:
 
         return out, feedbacks
 
+    def _dedupe_interaction_records(self, interactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        deduped: List[Dict[str, Any]] = []
+        seen: set[Tuple[str, str, str, str, str, str]] = set()
+        for item in interactions or []:
+            if not isinstance(item, dict):
+                continue
+            key = (
+                _norm_text(item.get("document_id")),
+                _norm_text(item.get("subject_id")),
+                _norm_text(item.get("object_id")),
+                _norm_text(item.get("interaction_type")),
+                _norm_text(item.get("polarity")),
+                _norm_text(item.get("content")),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped
+
     def _extract_interactions_one_chunk(
         self,
         *,
@@ -404,9 +425,7 @@ class InteractionExtractionAgent:
             if not isinstance(doc_md, dict):
                 doc_md = {}
 
-            all_interactions: Dict[str, Dict[str, Any]] = {}
-            all_feedbacks: Dict[str, List[Dict[str, Any]]] = {}
-
+            chunk_items: List[Dict[str, Any]] = []
             for i, chunk_id in enumerate(chunk_ids):
                 chunk = chunk_map.get(chunk_id) or {}
                 if not isinstance(chunk, dict):
@@ -442,24 +461,52 @@ class InteractionExtractionAgent:
                     or doc_md.get("subtitle")
                 )
 
-                rid_ns = f"{document_rid_namespace}.chunk{i}"
-                all_interactions, feedbacks = self._extract_interactions_one_chunk(
-                    cleaned_text=content,
-                    document_id=document_id,
-                    chunk_id=_norm_text(chunk_id),
-                    section_id=section_id,
-                    section_title=section_title,
-                    subsection_title=subsection_title,
-                    entity_candidates=entity_candidates,
-                    prev_interactions=all_interactions,
-                    rid_namespace=rid_ns,
+                chunk_items.append(
+                    {
+                        "index": i,
+                        "chunk_id": _norm_text(chunk_id),
+                        "content": content,
+                        "section_id": section_id,
+                        "section_title": section_title,
+                        "subsection_title": subsection_title,
+                    }
                 )
 
-                for k, items in (feedbacks or {}).items():
-                    all_feedbacks.setdefault(k, [])
-                    all_feedbacks[k].extend(items)
+            all_feedbacks: Dict[str, List[Dict[str, Any]]] = {}
+            interactions_flat: List[Dict[str, Any]] = []
 
-            interactions_out = list(all_interactions.values())
+            if chunk_items:
+                raw_workers = getattr(self.config, "interaction_chunk_parallel_workers", 4)
+                try:
+                    worker_limit = max(1, int(raw_workers or 4))
+                except Exception:
+                    worker_limit = 4
+                worker_count = min(worker_limit, len(chunk_items))
+
+                def _run_chunk(item: Dict[str, Any]) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+                    rid_ns = f"{document_rid_namespace}.chunk{item['index']}"
+                    return self._extract_interactions_one_chunk(
+                        cleaned_text=item["content"],
+                        document_id=document_id,
+                        chunk_id=item["chunk_id"],
+                        section_id=item["section_id"],
+                        section_title=item["section_title"],
+                        subsection_title=item["subsection_title"],
+                        entity_candidates=entity_candidates,
+                        prev_interactions={},
+                        rid_namespace=rid_ns,
+                    )
+
+                with ThreadPoolExecutor(max_workers=worker_count) as ex:
+                    fut2item = {ex.submit(_run_chunk, item): item for item in chunk_items}
+                    for fut in as_completed(fut2item):
+                        chunk_interactions, feedbacks = fut.result()
+                        interactions_flat.extend(list((chunk_interactions or {}).values()))
+                        for k, items in (feedbacks or {}).items():
+                            all_feedbacks.setdefault(k, [])
+                            all_feedbacks[k].extend(items)
+
+            interactions_out = self._dedupe_interaction_records(interactions_flat)
             interactions_out.sort(
                 key=lambda x: (
                     _norm_text(x.get("document_id")),

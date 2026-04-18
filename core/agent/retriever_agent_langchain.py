@@ -49,7 +49,7 @@ from core.utils.prompt_loader import YAMLPromptLoader
 from core.model_providers.openai_llm import OpenAILLM
 from core.builder.manager.document_manager import DocumentParser
 from core.agent.retrieval import RetrievalToolRouter
-from core.agent.retrieval.tool_routing_heuristics import build_query_routing_hint
+from core.agent.retrieval.tool_routing_heuristics import build_query_routing_hint, tool_stage
 from core.agent.retrieval.langgraph_runtime import LangGraphAssistantRuntime, create_langgraph_assistant_runtime
 from core.agent.retrieval.strategy_subagent import StrategySubagentCandidate
 from core.memory.online_strategy_buffer import OnlineStrategyBuffer
@@ -1656,13 +1656,47 @@ class QuestionAnsweringAgent:
     ) -> List[Dict[str, Any]]:
         messages: List[Dict[str, Any]] = [{"role": "user", "content": user_text}]
         runtime_system_message = self._build_runtime_system_message(memory_ctx=memory_ctx)
-        tool_subsets = self._build_tool_execution_plan(query=user_text, memory_ctx=memory_ctx)
-        router_plan = self.tool_router.get_last_route_plan()
-        if router_plan:
+        bypass_runtime_router = bool(self.rag_cfg.get("bypass_runtime_tool_router", False))
+        if bypass_runtime_router:
+            visible_tools = [
+                tool
+                for tool in self._all_tools()
+                if tool_stage(str(getattr(tool, "name", "") or "").strip()) != "internal_only"
+            ]
+            tool_subsets = [visible_tools] if visible_tools else []
+            router_plan = {
+                "router_mode": "bypassed",
+                "selected_branch_index": 0,
+                "selected_branch": {
+                    "branch_id": "assistant_full_visible_toolset",
+                    "intent": "Bypass external runtime router and let the assistant plan over the current visible tools.",
+                    "tools": [
+                        str(getattr(tool, "name", "") or "").strip()
+                        for tool in visible_tools
+                        if str(getattr(tool, "name", "") or "").strip()
+                    ],
+                    "score": 1.0,
+                },
+                "stages": [
+                    [
+                        str(getattr(tool, "name", "") or "").strip()
+                        for tool in visible_tools
+                        if str(getattr(tool, "name", "") or "").strip()
+                    ]
+                ],
+                "query": str(user_text or "").strip(),
+            }
             memory_ctx["router_plan"] = copy.deepcopy(router_plan)
-            selected_branch = router_plan.get("selected_branch") if isinstance(router_plan.get("selected_branch"), dict) else {}
-            memory_ctx["router_selected_branch"] = copy.deepcopy(selected_branch)
+            memory_ctx["router_selected_branch"] = copy.deepcopy(router_plan["selected_branch"])
             self._last_strategy_context = copy.deepcopy(memory_ctx)
+        else:
+            tool_subsets = self._build_tool_execution_plan(query=user_text, memory_ctx=memory_ctx)
+            router_plan = self.tool_router.get_last_route_plan()
+            if router_plan:
+                memory_ctx["router_plan"] = copy.deepcopy(router_plan)
+                selected_branch = router_plan.get("selected_branch") if isinstance(router_plan.get("selected_branch"), dict) else {}
+                memory_ctx["router_selected_branch"] = copy.deepcopy(selected_branch)
+                self._last_strategy_context = copy.deepcopy(memory_ctx)
         last_error: Optional[Exception] = None
 
         for stage_idx, subset in enumerate(tool_subsets):
@@ -2766,7 +2800,7 @@ class QuestionAnsweringAgent:
         return assistant
 
     def _rebuild_assistant(self) -> None:
-        tools = [*self._base_tools, *self._aggregation_tools, *self._extra_tools]
+        tools = self._all_tools()
         tools = self._apply_tool_metadata(tools)
         self.assistant = create_langgraph_assistant_runtime(
             function_list=tools,

@@ -850,9 +850,10 @@ class KnowledgeGraphBuilder:
     ) -> Dict[str, Any]:
         chunks = document_pack.get("chunks") or []
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and c.get("id")]
+        packed_chunks = self._pack_document_chunks_for_extraction(document_id=document_id, chunks=chunks)
 
         out = self.extract_agent.run_document(
-            chunks,
+            packed_chunks,
             aggressive_clean=aggressive_clean,
             document_rid_namespace=f"document:{document_id}",
         )
@@ -866,6 +867,82 @@ class KnowledgeGraphBuilder:
             "relations": out.get("relations", []) or [],
             "error": "",
         }
+
+    def _pack_document_chunks_for_extraction(
+        self,
+        *,
+        document_id: str,
+        chunks: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        cfg = getattr(self.config, "knowledge_graph_builder", None)
+        short_part_word_threshold = max(
+            1,
+            int(getattr(cfg, "extraction_pack_short_chunk_word_threshold", 220) or 220),
+        )
+        max_pack_words = max(
+            short_part_word_threshold,
+            int(getattr(cfg, "extraction_pack_max_words", 900) or 900),
+        )
+
+        packed: List[Dict[str, Any]] = []
+        current_group: List[Dict[str, Any]] = []
+        current_words = 0
+        pack_index = 0
+
+        def _flush_group() -> None:
+            nonlocal current_group, current_words, pack_index
+            if not current_group:
+                return
+            if len(current_group) == 1:
+                packed.append(current_group[0])
+            else:
+                first = current_group[0]
+                text_parts: List[str] = []
+                source_chunk_ids: List[str] = []
+                for item in current_group:
+                    text = safe_str(item.get("content")).strip()
+                    if text:
+                        text_parts.append(text)
+                    cid = safe_str(item.get("id")).strip()
+                    if cid:
+                        source_chunk_ids.append(cid)
+
+                merged = dict(first)
+                merged["id"] = f"{safe_str(document_id)}__pack_{pack_index:04d}"
+                merged["content"] = "\n\n".join(text_parts).strip()
+                merged["source_chunk_ids"] = source_chunk_ids
+                packed.append(merged)
+                pack_index += 1
+
+            current_group = []
+            current_words = 0
+
+        ordered_chunks = [c for c in (chunks or []) if isinstance(c, dict)]
+        try:
+            ordered_chunks.sort(key=lambda c: (c.get("metadata", {}) or {}).get("order", 0))
+        except Exception:
+            pass
+
+        for chunk in ordered_chunks:
+            text = safe_str(chunk.get("content")).strip()
+            words = word_len(text, lang="auto")
+            if words <= 0:
+                continue
+
+            if words > short_part_word_threshold:
+                _flush_group()
+                packed.append(chunk)
+                continue
+
+            if current_group and current_words + words > max_pack_words:
+                _flush_group()
+
+            current_group.append(chunk)
+            current_words += words
+
+        _flush_group()
+
+        return packed or ordered_chunks
 
     def extract_entity_and_relation(
         self,
@@ -1777,6 +1854,9 @@ class KnowledgeGraphBuilder:
         # chunking
         chunk_size: int = 1200,
         chunk_overlap: int = 200,
+        max_edge_descriptions_per_node: Optional[int] = None,
+        max_context_words_per_node: Optional[int] = None,
+        dedupe_edge_descriptions: Optional[bool] = None,
         # concurrency
         max_workers: Optional[int] = None,
         per_task_timeout: float = 120.0,
@@ -1825,6 +1905,21 @@ class KnowledgeGraphBuilder:
 
         if max_workers is None:
             max_workers = int(getattr(self, "max_workers", 8))
+        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
+        if max_edge_descriptions_per_node is None:
+            max_edge_descriptions_per_node = int(
+                getattr(kg_cfg, "property_context_max_edge_descriptions", 80) or 80
+            )
+        if max_context_words_per_node is None:
+            max_context_words_per_node = int(
+                getattr(kg_cfg, "property_context_max_total_words", 2400) or 2400
+            )
+        if dedupe_edge_descriptions is None:
+            raw_dedupe = getattr(kg_cfg, "property_context_dedupe_descriptions", True)
+            if isinstance(raw_dedupe, bool):
+                dedupe_edge_descriptions = raw_dedupe
+            else:
+                dedupe_edge_descriptions = safe_str(raw_dedupe).strip().lower() not in {"", "0", "false", "no", "off"}
 
         agent = PropertyExtractionAgent(self.config, self.llm)
 
@@ -1842,6 +1937,9 @@ class KnowledgeGraphBuilder:
             include_relation_types=set(include_relation_types) if include_relation_types else None,
             chunk_size=int(chunk_size),
             chunk_overlap=int(chunk_overlap),
+            max_edge_descriptions_per_node=max_edge_descriptions_per_node,
+            max_context_words_per_node=max_context_words_per_node,
+            dedupe_edge_descriptions=bool(dedupe_edge_descriptions),
             max_workers=int(max_workers),
             per_task_timeout=float(per_task_timeout),
             retries=int(retries),
@@ -2005,6 +2103,8 @@ class KnowledgeGraphBuilder:
                 chunk_map[cid] = c
 
         entities_by_doc = self._build_interaction_entity_candidates_by_document(entities_by_id)
+        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
+        min_entity_candidates = max(1, int(getattr(kg_cfg, "interaction_min_entity_candidates", 2) or 2))
 
         if concurrency is None:
             concurrency = max(1, int(getattr(self, "max_workers", 8)))
@@ -2036,6 +2136,17 @@ class KnowledgeGraphBuilder:
                     "ok": True,
                     "document_id": doc_id,
                     "chunk_ids": chunk_ids if isinstance(chunk_ids, list) else [],
+                    "interactions": [],
+                    "feedback_count": 0,
+                    "feedbacks": {},
+                    "error": "",
+                }
+                continue
+            if len(doc_candidates) < min_entity_candidates:
+                per_doc[doc_id] = {
+                    "ok": True,
+                    "document_id": doc_id,
+                    "chunk_ids": chunk_ids,
                     "interactions": [],
                     "feedback_count": 0,
                     "feedbacks": {},

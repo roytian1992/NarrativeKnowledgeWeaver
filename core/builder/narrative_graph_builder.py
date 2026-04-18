@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -32,6 +33,7 @@ from core.utils.general_utils import (
     safe_list,
     safe_str,
     stable_relation_id,
+    word_len,
 )
 
 from core.algorithms.cycle_break import (
@@ -348,10 +350,16 @@ class NarrativeGraphBuilder:
 
         reached: List[Any] = []
         existing: List[Dict[str, Any]] = []
+        packed_parts = self._pack_source_parts_for_episode_extraction(src_parts, doc2chunks)
 
-        for i, part_id in enumerate(src_parts):
-            reached.extend(filter_entities_by_part(all_eo, part_id))
-            text = get_doc_text(doc2chunks, part_id)
+        for i, part_group in enumerate(packed_parts):
+            texts: List[str] = []
+            for part_id in part_group:
+                reached.extend(filter_entities_by_part(all_eo, part_id))
+                part_text = safe_str(get_doc_text(doc2chunks, part_id)).strip()
+                if part_text:
+                    texts.append(part_text)
+            text = "\n\n".join(texts).strip()
             if not safe_str(text):
                 continue
 
@@ -374,7 +382,7 @@ class NarrativeGraphBuilder:
                     return [x for x in parsed["episodes"] if isinstance(x, dict)]
                 return existing
 
-            desc = f"extract_episodes doc={doc_id} part={part_id}"
+            desc = f"extract_episodes doc={doc_id} parts={','.join(part_group)}"
             try:
                 existing = retry_fn(_one_call, desc, per_part_retries)
             except Exception as e:
@@ -382,6 +390,48 @@ class NarrativeGraphBuilder:
 
         packs, eps, edges = self._build_episode_entities_and_edges(doc_id, src_parts, existing)
         return eps, (edges if store_support else []), packs
+
+    def _pack_source_parts_for_episode_extraction(
+        self,
+        source_parts: List[str],
+        doc2chunks: Dict[str, Any],
+        *,
+        short_part_word_threshold: int = 220,
+        max_pack_words: int = 900,
+    ) -> List[List[str]]:
+        packed: List[List[str]] = []
+        current_group: List[str] = []
+        current_words = 0
+
+        for part_id in source_parts or []:
+            text = safe_str(get_doc_text(doc2chunks, part_id))
+            words = word_len(text)
+            if words <= 0:
+                continue
+
+            # Keep longer parts isolated; only pack short neighboring parts to reduce update rounds.
+            if words > int(short_part_word_threshold):
+                if current_group:
+                    packed.append(current_group)
+                    current_group = []
+                    current_words = 0
+                packed.append([part_id])
+                continue
+
+            if current_group and current_words + words > int(max_pack_words):
+                packed.append(current_group)
+                current_group = []
+                current_words = 0
+
+            current_group.append(part_id)
+            current_words += words
+
+        if current_group:
+            packed.append(current_group)
+
+        if not packed:
+            return [[p] for p in source_parts if safe_str(p)]
+        return packed
 
     def _build_episode_entities_and_edges(
         self,
@@ -657,57 +707,225 @@ class NarrativeGraphBuilder:
             if safe_str(p.get("episode_entity", {}).get("id"))
         }
 
-        buckets: Dict[str, List[str]] = {}
+        cfg_ngb = getattr(self.config, "narrative_graph_builder", None)
+        valid_anchor_fields = [
+            "related_event_ids",
+            "related_occasion_ids",
+            "related_character_ids",
+            "related_location_ids",
+            "related_time_ids",
+        ]
+
+        def _clean_anchor_fields(raw: Any, fallback: List[str]) -> List[str]:
+            vals = raw if isinstance(raw, list) else fallback
+            out: List[str] = []
+            for item in vals or []:
+                field = safe_str(item).strip()
+                if field in valid_anchor_fields and field not in out:
+                    out.append(field)
+            return out or list(fallback)
+
+        primary_anchor_fields = _clean_anchor_fields(
+            getattr(cfg_ngb, "episode_relation_primary_anchor_fields", None),
+            ["related_event_ids", "related_occasion_ids"],
+        )
+        context_anchor_fields = _clean_anchor_fields(
+            getattr(cfg_ngb, "episode_relation_context_anchor_fields", None),
+            ["related_character_ids", "related_location_ids", "related_time_ids"],
+        )
+        context_anchor_fields = [f for f in context_anchor_fields if f not in primary_anchor_fields]
+
+        default_anchor_weights: Dict[str, float] = {
+            "related_event_ids": 3.0,
+            "related_occasion_ids": 2.0,
+            "related_character_ids": 0.75,
+            "related_location_ids": 0.35,
+            "related_time_ids": 0.25,
+        }
+        anchor_weights = dict(default_anchor_weights)
+        raw_anchor_weights = getattr(cfg_ngb, "episode_relation_anchor_weights", None)
+        if isinstance(raw_anchor_weights, dict):
+            for k, v in raw_anchor_weights.items():
+                kk = safe_str(k).strip()
+                if kk not in valid_anchor_fields:
+                    continue
+                try:
+                    anchor_weights[kk] = float(v)
+                except Exception:
+                    continue
+
+        max_primary_bucket_size = max(0, int(getattr(cfg_ngb, "episode_relation_max_primary_bucket_size", 24) or 24))
+        max_context_bucket_size = max(0, int(getattr(cfg_ngb, "episode_relation_max_context_bucket_size", 12) or 12))
+        topk_per_episode = max(0, int(getattr(cfg_ngb, "episode_relation_topk_per_episode", 96) or 96))
+        min_weighted_score = float(getattr(cfg_ngb, "episode_relation_min_weighted_score", 0.0) or 0.0)
+
+        buckets_by_field: Dict[str, Dict[str, List[str]]] = {
+            field: defaultdict(list) for field in (primary_anchor_fields + context_anchor_fields)
+        }
+        episode_seed_rank: Dict[str, float] = {}
+
         for ep_id, p in pack_by_ep.items():
-            for k in (
-                "related_event_ids",
-                "related_occasion_ids",
-                "related_character_ids",
-                "related_location_ids",
-                "related_time_ids",
-            ):
-                for nei in safe_list(p.get(k)):
-                    nei = safe_str(nei)
-                    if nei:
-                        buckets.setdefault(nei, []).append(ep_id)
+            seed_score = 0.0
+            for field in (primary_anchor_fields + context_anchor_fields):
+                ids = dedupe_list([safe_str(x) for x in safe_list(p.get(field)) if safe_str(x)])
+                for nei in ids:
+                    buckets_by_field[field][nei].append(ep_id)
+                seed_score += float(anchor_weights.get(field, 1.0)) * len(ids)
+            episode_seed_rank[ep_id] = seed_score
 
-        pair_common: Dict[Tuple[str, str], int] = {}
-        pair_shared: Dict[Tuple[str, str], Set[str]] = {}
+        pair_common: Dict[Tuple[str, str], int] = defaultdict(int)
+        pair_shared: Dict[Tuple[str, str], Set[str]] = defaultdict(set)
+        pair_weighted: Dict[Tuple[str, str], float] = defaultdict(float)
+        pair_primary: Dict[Tuple[str, str], int] = defaultdict(int)
+        pair_context: Dict[Tuple[str, str], int] = defaultdict(int)
+        pair_field_counts: Dict[Tuple[str, str], Dict[str, int]] = defaultdict(dict)
+        candidate_stats: Dict[str, int] = {
+            "primary_anchor_buckets": 0,
+            "context_anchor_buckets": 0,
+            "trimmed_primary_anchor_buckets": 0,
+            "trimmed_context_anchor_buckets": 0,
+            "trimmed_primary_anchor_episodes": 0,
+            "trimmed_context_anchor_episodes": 0,
+        }
 
-        for nei_id, ep_ids in (buckets or {}).items():
+        def _sorted_bucket_episode_ids(ep_ids: List[str], bucket_limit: int) -> List[str]:
             uniq = dedupe_list([safe_str(x) for x in (ep_ids or []) if safe_str(x)])
+            uniq = [eid for eid in uniq if eid in pack_by_ep]
             if len(uniq) < 2:
-                continue
-            for i in range(len(uniq)):
-                for j in range(i + 1, len(uniq)):
-                    a, b = uniq[i], uniq[j]
-                    if not a or not b or a == b:
-                        continue
-                    key = (a, b) if a < b else (b, a)
-                    pa, pb = pack_by_ep.get(key[0]), pack_by_ep.get(key[1])
-                    if not pa or not pb:
-                        continue
-                    if cross_document_only and safe_str(pa.get("doc_id")) == safe_str(pb.get("doc_id")):
-                        continue
-                    pair_common[key] = pair_common.get(key, 0) + 1
-                    if include_shared_neighbor_ids:
-                        pair_shared.setdefault(key, set()).add(nei_id)
+                return uniq
+            uniq.sort(key=lambda eid: (episode_seed_rank.get(eid, 0.0), eid), reverse=True)
+            if bucket_limit > 0 and len(uniq) > bucket_limit:
+                return uniq[:bucket_limit]
+            return uniq
+
+        def _accumulate_pairs_for_field(
+            field: str,
+            *,
+            bucket_limit: int,
+            is_primary: bool,
+        ) -> None:
+            bucket_map = buckets_by_field.get(field) or {}
+            field_weight = float(anchor_weights.get(field, 1.0))
+            for anchor_id, ep_ids in bucket_map.items():
+                raw_ids = dedupe_list([safe_str(x) for x in (ep_ids or []) if safe_str(x)])
+                if len(raw_ids) < 2:
+                    continue
+                if is_primary:
+                    candidate_stats["primary_anchor_buckets"] += 1
+                else:
+                    candidate_stats["context_anchor_buckets"] += 1
+
+                trimmed_ids = _sorted_bucket_episode_ids(raw_ids, bucket_limit)
+                if bucket_limit > 0 and len(trimmed_ids) < len(raw_ids):
+                    removed = len(raw_ids) - len(trimmed_ids)
+                    if is_primary:
+                        candidate_stats["trimmed_primary_anchor_buckets"] += 1
+                        candidate_stats["trimmed_primary_anchor_episodes"] += removed
+                    else:
+                        candidate_stats["trimmed_context_anchor_buckets"] += 1
+                        candidate_stats["trimmed_context_anchor_episodes"] += removed
+
+                if len(trimmed_ids) < 2:
+                    continue
+
+                for i in range(len(trimmed_ids)):
+                    for j in range(i + 1, len(trimmed_ids)):
+                        a, b = trimmed_ids[i], trimmed_ids[j]
+                        if not a or not b or a == b:
+                            continue
+                        key = (a, b) if a < b else (b, a)
+                        pa, pb = pack_by_ep.get(key[0]), pack_by_ep.get(key[1])
+                        if not pa or not pb:
+                            continue
+                        if cross_document_only and safe_str(pa.get("doc_id")) == safe_str(pb.get("doc_id")):
+                            continue
+
+                        pair_common[key] += 1
+                        pair_weighted[key] += field_weight
+                        if include_shared_neighbor_ids:
+                            pair_shared[key].add(anchor_id)
+                        if is_primary:
+                            pair_primary[key] += 1
+                        else:
+                            pair_context[key] += 1
+
+                        field_counts = pair_field_counts[key]
+                        field_counts[field] = int(field_counts.get(field, 0)) + 1
+
+        for field in primary_anchor_fields:
+            _accumulate_pairs_for_field(
+                field,
+                bucket_limit=max_primary_bucket_size,
+                is_primary=True,
+            )
+
+        if context_anchor_fields:
+            for field in context_anchor_fields:
+                _accumulate_pairs_for_field(
+                    field,
+                    bucket_limit=max_context_bucket_size,
+                    is_primary=False,
+                )
 
         if not pair_common:
-            logger.info("[NarrativeGraph][P2] candidate_pairs_by_neighbors=0")
+            logger.info(
+                "[NarrativeGraph][P2] candidate_pairs_by_neighbors=0 primary=%s context=%s",
+                primary_anchor_fields,
+                context_anchor_fields,
+            )
             if save_candidate_pairs:
                 json_dump_atomic(cand_path, [])
             json_dump_atomic(self.global_ep_ep_edges_path, [])
             return []
 
-        cand_pairs = [
-            k
-            for k, _ in sorted(pair_common.items(), key=lambda kv: kv[1], reverse=True)[
-                : int(max_episode_pairs_global)
-            ]
-        ]
+        ranked_pairs = list(pair_common.keys())
+        if min_weighted_score > 0:
+            ranked_pairs = [key for key in ranked_pairs if float(pair_weighted.get(key, 0.0)) >= min_weighted_score]
 
-        cfg_ngb = getattr(self.config, "narrative_graph_builder", None)
+        ranked_pairs.sort(
+            key=lambda key: (
+                int(pair_common.get(key, 0)),
+                float(pair_weighted.get(key, 0.0)),
+                int(pair_primary.get(key, 0)),
+                int(pair_context.get(key, 0)),
+                key[0],
+                key[1],
+            ),
+            reverse=True,
+        )
+
+        if topk_per_episode > 0:
+            kept_pairs: List[Tuple[str, str]] = []
+            episode_degree: Dict[str, int] = defaultdict(int)
+            for key in ranked_pairs:
+                a, b = key
+                if episode_degree[a] >= topk_per_episode or episode_degree[b] >= topk_per_episode:
+                    continue
+                kept_pairs.append(key)
+                episode_degree[a] += 1
+                episode_degree[b] += 1
+            cand_pairs = kept_pairs[: int(max_episode_pairs_global)]
+        else:
+            cand_pairs = ranked_pairs[: int(max_episode_pairs_global)]
+
+        logger.info(
+            "[NarrativeGraph][P2] candidate generation: primary=%s context=%s cand_raw=%d cand_kept=%d "
+            "primary_buckets=%d context_buckets=%d trim_primary=%d/%d trim_context=%d/%d "
+            "topk_per_ep=%d min_weight=%.2f strategy=shared_anchor_union",
+            primary_anchor_fields,
+            context_anchor_fields,
+            len(ranked_pairs),
+            len(cand_pairs),
+            candidate_stats["primary_anchor_buckets"],
+            candidate_stats["context_anchor_buckets"],
+            candidate_stats["trimmed_primary_anchor_buckets"],
+            candidate_stats["trimmed_primary_anchor_episodes"],
+            candidate_stats["trimmed_context_anchor_buckets"],
+            candidate_stats["trimmed_context_anchor_episodes"],
+            topk_per_episode,
+            min_weighted_score,
+        )
+
         thr = (
             float(similarity_threshold)
             if similarity_threshold is not None
@@ -862,8 +1080,12 @@ class NarrativeGraphBuilder:
                         "a_id": a,
                         "b_id": b,
                         "common_neighbors": int(pair_common.get((a, b), 0)),
+                        "weighted_score": float(pair_weighted.get((a, b), 0.0)),
+                        "primary_shared_anchors": int(pair_primary.get((a, b), 0)),
+                        "context_shared_anchors": int(pair_context.get((a, b), 0)),
                         "similarity": pair_sim.get((a, b)),
                         "threshold_used": selected_thr,
+                        "shared_anchor_breakdown": dict(pair_field_counts.get((a, b), {})),
                     }
                     if include_shared_neighbor_ids:
                         item["shared_neighbor_ids"] = sorted(list(pair_shared.get((a, b), set())))
@@ -937,6 +1159,10 @@ class NarrativeGraphBuilder:
             props = safe_dict(parsed.get("properties"))
             props.setdefault("similarity", pair_sim.get(key))
             props.setdefault("common_neighbors", int(pair_common.get(key, 0)))
+            props.setdefault("weighted_score", float(pair_weighted.get(key, 0.0)))
+            props.setdefault("primary_shared_anchors", int(pair_primary.get(key, 0)))
+            props.setdefault("context_shared_anchors", int(pair_context.get(key, 0)))
+            props.setdefault("shared_anchor_breakdown", dict(pair_field_counts.get(key, {})))
             if include_shared_neighbor_ids:
                 props.setdefault("shared_neighbor_ids", sorted(list(pair_shared.get(key, set()))))
 
@@ -1357,7 +1583,13 @@ class NarrativeGraphBuilder:
         max_storyline_pairs_global: int = 50000,
         similarity_threshold: float = 0.5,
         overlap_pair_only: bool = True,
+        min_shared_anchor_count: int = 1,
         show_pair_progress: bool = False,
+        storyline_pair_concurrency: Optional[int] = None,
+        per_pair_retries: int = 3,
+        backoff_seconds: float = 0.8,
+        jitter_seconds: float = 0.2,
+        progress_log_every: int = 250,
     ) -> List[Dict[str, Any]]:
         sl_path = storylines_path or self.global_storylines_path
         out_path = out_relations_path or self.global_storyline_relations_path
@@ -1390,72 +1622,125 @@ class NarrativeGraphBuilder:
             locs = [safe_str(x).lower() for x in safe_list(props.get("key_locations")) if safe_str(x)]
             return set(chars + locs)
 
-        total_pairs_considered = 0
-        reject_missing_id = 0
-        reject_no_overlap = 0
-        reject_missing_embedding = 0
-        reject_low_similarity = 0
+        min_shared_anchor_count = max(0, int(min_shared_anchor_count or 0))
 
-        pair_cands: List[Tuple[str, str, float, int]] = []
-        for i in range(len(storylines)):
-            a = storylines[i]
-            a_id = safe_str(a.get("id"))
-            a_emb = a.get("embedding")
-            a_anchor = _anchors(a)
-            if not a_id:
-                continue
-            for j in range(i + 1, len(storylines)):
-                total_pairs_considered += 1
-                b = storylines[j]
-                b_id = safe_str(b.get("id"))
-                b_emb = b.get("embedding")
-                b_anchor = _anchors(b)
-                if not b_id:
-                    reject_missing_id += 1
+        def _collect_pair_candidates(
+            *,
+            current_min_shared_anchor_count: int,
+            current_similarity_threshold: float,
+        ) -> Tuple[List[Tuple[str, str, float, int]], Dict[str, int]]:
+            total_pairs_considered = 0
+            reject_missing_id = 0
+            reject_low_overlap = 0
+            reject_missing_embedding = 0
+            reject_low_similarity = 0
+            pair_cands: List[Tuple[str, str, float, int]] = []
+            for i in range(len(storylines)):
+                a = storylines[i]
+                a_id = safe_str(a.get("id"))
+                a_emb = a.get("embedding")
+                a_anchor = _anchors(a)
+                if not a_id:
                     continue
-                shared = len(a_anchor.intersection(b_anchor))
-                if overlap_pair_only and shared <= 0:
-                    reject_no_overlap += 1
-                    continue
-                sim = cosine_sim(a_emb, b_emb) if isinstance(a_emb, list) and isinstance(b_emb, list) else None
-                if sim is None:
-                    reject_missing_embedding += 1
-                    continue
-                if sim < float(similarity_threshold):
-                    reject_low_similarity += 1
-                    continue
-                pair_cands.append((a_id, b_id, float(sim), int(shared)))
+                for j in range(i + 1, len(storylines)):
+                    total_pairs_considered += 1
+                    b = storylines[j]
+                    b_id = safe_str(b.get("id"))
+                    b_emb = b.get("embedding")
+                    b_anchor = _anchors(b)
+                    if not b_id:
+                        reject_missing_id += 1
+                        continue
+                    shared = len(a_anchor.intersection(b_anchor))
+                    if overlap_pair_only and shared < current_min_shared_anchor_count:
+                        reject_low_overlap += 1
+                        continue
+                    sim = cosine_sim(a_emb, b_emb) if isinstance(a_emb, list) and isinstance(b_emb, list) else None
+                    if sim is None:
+                        reject_missing_embedding += 1
+                        continue
+                    if sim < float(current_similarity_threshold):
+                        reject_low_similarity += 1
+                        continue
+                    pair_cands.append((a_id, b_id, float(sim), int(shared)))
+            pair_cands = sorted(pair_cands, key=lambda x: (x[3], x[2]), reverse=True)[: int(max_storyline_pairs_global)]
+            stats = {
+                "total_pairs_considered": total_pairs_considered,
+                "reject_missing_id": reject_missing_id,
+                "reject_low_overlap": reject_low_overlap,
+                "reject_missing_embedding": reject_missing_embedding,
+                "reject_low_similarity": reject_low_similarity,
+            }
+            return pair_cands, stats
 
-        pair_cands = sorted(pair_cands, key=lambda x: (x[3], x[2]), reverse=True)[: int(max_storyline_pairs_global)]
+        active_min_shared_anchor_count = int(min_shared_anchor_count)
+        active_similarity_threshold = float(similarity_threshold)
+        pair_cands, pair_stats = _collect_pair_candidates(
+            current_min_shared_anchor_count=active_min_shared_anchor_count,
+            current_similarity_threshold=active_similarity_threshold,
+        )
+        if not pair_cands and overlap_pair_only and len(storylines) > 2:
+            while not pair_cands and active_min_shared_anchor_count > 0:
+                active_min_shared_anchor_count -= 1
+                active_similarity_threshold = max(0.0, active_similarity_threshold - 0.05)
+                pair_cands, pair_stats = _collect_pair_candidates(
+                    current_min_shared_anchor_count=active_min_shared_anchor_count,
+                    current_similarity_threshold=active_similarity_threshold,
+                )
+                logger.info(
+                    "[NarrativeGraph][Storyline] fallback relax: min_shared=%d thr=%.3f pairs=%d",
+                    active_min_shared_anchor_count,
+                    active_similarity_threshold,
+                    len(pair_cands),
+                )
+
         sl_by_id = {safe_str(s.get("id")): s for s in storylines if safe_str(s.get("id"))}
+
+        logger.info(
+            "[NarrativeGraph][Storyline] relation candidates: pairs=%d overlap_only=%s min_shared=%d thr=%.3f "
+            "(total_pairs=%d, missing_id=%d, low_overlap=%d, missing_emb=%d, low_sim=%d)",
+            len(pair_cands),
+            "yes" if overlap_pair_only else "no",
+            active_min_shared_anchor_count,
+            active_similarity_threshold,
+            pair_stats["total_pairs_considered"],
+            pair_stats["reject_missing_id"],
+            pair_stats["reject_low_overlap"],
+            pair_stats["reject_missing_embedding"],
+            pair_stats["reject_low_similarity"],
+        )
 
         llm_parse_fail = 0
         llm_none = 0
         llm_self_loop = 0
         llm_kept = 0
 
-        out_rels: List[Dict[str, Any]] = []
-        iterable = pair_cands
-        if show_pair_progress:
-            iterable = tqdm(pair_cands, total=len(pair_cands), desc="Storyline pairs", unit="pair", leave=False)
-        for a_id, b_id, sim, shared in iterable:
+        def _sl_info(s: Dict[str, Any]) -> Dict[str, Any]:
+            props = safe_dict(s.get("properties"))
+            compact_props = {
+                "scope": safe_str(s.get("scope")),
+                "key_characters": safe_list(props.get("key_characters")),
+                "key_locations": safe_list(props.get("key_locations")),
+                "key_events": safe_list(props.get("key_events")),
+                "impact": safe_str(props.get("impact")),
+            }
+            compact_props = {k: v for k, v in compact_props.items() if v or (isinstance(v, str) and v)}
+            return {
+                "id": safe_str(s.get("id")),
+                "name": safe_str(s.get("name")),
+                "description": safe_str(s.get("description")),
+                "properties": compact_props,
+            }
+
+        def _run_pair_once(a_id: str, b_id: str, sim: float, shared: int) -> Tuple[str, Optional[Dict[str, Any]]]:
             sa = sl_by_id.get(a_id)
             sb = sl_by_id.get(b_id)
             if not sa or not sb:
-                continue
+                return "missing_entity", None
+
             out = self.narrative_manager.extract_narrative_relation(
-                subject_entity_info={
-                    "id": safe_str(sa.get("id")),
-                    "name": safe_str(sa.get("name")),
-                    "description": safe_str(sa.get("description")),
-                    "properties": safe_dict(sa.get("properties")),
-                },
-                object_entity_info={
-                    "id": safe_str(sb.get("id")),
-                    "name": safe_str(sb.get("name")),
-                    "description": safe_str(sb.get("description")),
-                    "properties": safe_dict(sb.get("properties")),
-                },
+                subject_entity_info=_sl_info(sa),
+                object_entity_info=_sl_info(sb),
                 entity_type="Storyline",
             )
             try:
@@ -1463,18 +1748,15 @@ class NarrativeGraphBuilder:
             except Exception:
                 parsed = None
             if not isinstance(parsed, dict):
-                llm_parse_fail += 1
-                continue
+                return "parse_fail", None
 
             rel_type = safe_str(parsed.get("relation_type") or parsed.get("predicate")).strip()
             s_id = safe_str(parsed.get("subject_id"))
             o_id = safe_str(parsed.get("object_id"))
             if not rel_type or _is_none_relation(rel_type) or not s_id or not o_id:
-                llm_none += 1
-                continue
+                return "none", None
             if s_id == o_id:
-                llm_self_loop += 1
-                continue
+                return "self_loop", None
 
             try:
                 conf = float(parsed.get("confidence", 1.0))
@@ -1489,7 +1771,8 @@ class NarrativeGraphBuilder:
                 "similarity": float(sim),
                 "shared_anchor_count": int(shared),
             }
-            out_rels.append(
+            return (
+                "kept",
                 {
                     "id": rid,
                     "subject_id": s_id,
@@ -1500,26 +1783,93 @@ class NarrativeGraphBuilder:
                     "description": safe_str(parsed.get("description")),
                     "source_documents": source_docs,
                     "properties": props,
-                }
+                },
             )
-            llm_kept += 1
+
+        def _run_pair_with_retries(a_id: str, b_id: str, sim: float, shared: int) -> Tuple[str, Optional[Dict[str, Any]]]:
+            desc = f"storyline_pair {a_id}->{b_id}"
+            last = None
+            for i in range(max(1, int(per_pair_retries))):
+                try:
+                    return _run_pair_once(a_id, b_id, sim, shared)
+                except Exception as e:
+                    last = e
+                    sleep = float(backoff_seconds) * (2**i)
+                    if jitter_seconds > 0:
+                        sleep += (hash(f"{desc}|{i}") % 1000) / 1000.0 * float(jitter_seconds)
+                    logger.warning(
+                        "[NarrativeGraph][retry] %s round=%d/%d err=%s",
+                        desc,
+                        i + 1,
+                        per_pair_retries,
+                        e,
+                    )
+                    if sleep > 0:
+                        import time as _t
+
+                        _t.sleep(sleep)
+            if last:
+                logger.warning("[NarrativeGraph][Storyline] pair failed after retries: %s err=%s", desc, last)
+            return "exception", None
+
+        out_rels: List[Dict[str, Any]] = []
+        workers = max(1, int(storyline_pair_concurrency or self.max_workers))
+        workers = min(workers, len(pair_cands)) if pair_cands else 1
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            fut2pair = {
+                ex.submit(_run_pair_with_retries, a_id, b_id, sim, shared): (a_id, b_id)
+                for a_id, b_id, sim, shared in pair_cands
+            }
+            iterable = as_completed(fut2pair)
+            if show_pair_progress:
+                iterable = tqdm(iterable, total=len(fut2pair), desc="Storyline pairs", unit="pair", leave=False)
+
+            for idx, fut in enumerate(iterable, start=1):
+                try:
+                    status, rel_payload = fut.result()
+                except Exception as e:
+                    logger.exception("[NarrativeGraph][Storyline] pair failed: %s", e)
+                    status, rel_payload = "exception", None
+
+                if status == "parse_fail":
+                    llm_parse_fail += 1
+                elif status == "none":
+                    llm_none += 1
+                elif status == "self_loop":
+                    llm_self_loop += 1
+                elif status == "kept" and rel_payload:
+                    out_rels.append(rel_payload)
+                    llm_kept += 1
+
+                if progress_log_every and idx % int(progress_log_every) == 0:
+                    logger.info(
+                        "[NarrativeGraph][Storyline] progress: done=%d/%d kept=%d none=%d parse_fail=%d self_loop=%d",
+                        idx,
+                        len(pair_cands),
+                        llm_kept,
+                        llm_none,
+                        llm_parse_fail,
+                        llm_self_loop,
+                    )
 
         out_rels = self._dedupe_relations(out_rels)
         json_dump_atomic(out_path, out_rels)
 
         logger.info(
             "[NarrativeGraph][Storyline] relations extracted: pairs=%d rels=%d saved=%s "
-            "(total_pairs=%d, missing_id=%d, no_overlap=%d, missing_emb=%d, low_sim=%d, llm_none=%d, llm_parse_fail=%d)",
+            "(total_pairs=%d, missing_id=%d, low_overlap=%d, missing_emb=%d, low_sim=%d, llm_kept=%d, llm_none=%d, llm_parse_fail=%d, llm_self_loop=%d)",
             len(pair_cands),
             len(out_rels),
             out_path,
-            total_pairs_considered,
-            reject_missing_id,
-            reject_no_overlap,
-            reject_missing_embedding,
-            reject_low_similarity,
+            pair_stats["total_pairs_considered"],
+            pair_stats["reject_missing_id"],
+            pair_stats["reject_low_overlap"],
+            pair_stats["reject_missing_embedding"],
+            pair_stats["reject_low_similarity"],
+            llm_kept,
             llm_none,
             llm_parse_fail,
+            llm_self_loop,
         )
         return out_rels
 

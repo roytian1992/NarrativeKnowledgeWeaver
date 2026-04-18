@@ -1426,6 +1426,7 @@ class TopKByCentrality(BaseTool):
         "按中心度指标返回 Top-K 节点排名（已写回到节点属性的中心度）。"
         "支持的指标：pagerank/pr、degree/deg、betweenness/btw。"
         "可选按节点标签过滤（如 ['Plot','Event']）。"
+        "适合回答谁最重要、谁最核心、哪些角色最关键这类角色重要性问题。"
     )
     parameters = [
         {

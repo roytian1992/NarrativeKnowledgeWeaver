@@ -30,6 +30,12 @@ knowledge_graph_builder:
   max_workers: 4
   max_retries: 2
   per_task_timeout: 2400
+  extraction_pack_short_chunk_word_threshold: 220
+  extraction_pack_max_words: 900
+  property_context_max_edge_descriptions: 80
+  property_context_max_total_words: 2400
+  property_context_dedupe_descriptions: true
+  interaction_min_entity_candidates: 2
 
 # 存储配置
 storage:
@@ -105,6 +111,19 @@ narrative_graph_builder:
   episode_relation_threshold_step: 0.05
   episode_relation_backfill_by_similarity: true
   episode_relation_backfill_max_episodes: 500
+  episode_relation_primary_anchor_fields: ["related_event_ids", "related_occasion_ids"]
+  episode_relation_context_anchor_fields: ["related_character_ids", "related_location_ids", "related_time_ids"]
+  episode_relation_anchor_weights:
+    related_event_ids: 3.0
+    related_occasion_ids: 2.0
+    related_character_ids: 0.75
+    related_location_ids: 0.35
+    related_time_ids: 0.25
+  episode_relation_max_primary_bucket_size: 24
+  episode_relation_max_context_bucket_size: 12
+  episode_relation_context_requires_primary_pair: true
+  episode_relation_topk_per_episode: 96
+  episode_relation_min_weighted_score: 0.0
   causal_graph:
     tau_conf: 0.0
     tau_eff: 0.0
