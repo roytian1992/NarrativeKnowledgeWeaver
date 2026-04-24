@@ -1,0 +1,67 @@
+{
+  "keywords": {
+    "kinship_with": [
+      "父亲",
+      "母亲",
+      "哥哥",
+      "姐姐",
+      "弟弟",
+      "妹妹",
+      "丈夫",
+      "妻子",
+      "儿子",
+      "女儿",
+      "家人"
+    ],
+    "member_of": [
+      "成员",
+      "属于",
+      "隶属",
+      "加入",
+      "任职于",
+      "效力于",
+      "一家人",
+      "警队",
+      "剧团",
+      "团队"
+    ],
+    "part_of": [
+      "一部分",
+      "组成部分",
+      "里面",
+      "其中",
+      "位于",
+      "在屋里",
+      "在房间里"
+    ],
+    "affinity_with": [
+      "朋友",
+      "伙伴",
+      "信任",
+      "亲近",
+      "盟友"
+    ],
+    "hostility_with": [
+      "敌人",
+      "仇人",
+      "敌对",
+      "对立"
+    ]
+  },
+  "experience_bank": [
+    {
+      "phrase": "属于",
+      "relation_type": "member_of",
+      "subject_type": "Character",
+      "object_type": "Concept",
+      "source": "seed_lexicon"
+    },
+    {
+      "phrase": "父亲",
+      "relation_type": "kinship_with",
+      "subject_type": "Character",
+      "object_type": "Character",
+      "source": "seed_lexicon"
+    }
+  ]
+}

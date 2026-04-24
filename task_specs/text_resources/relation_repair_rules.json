@@ -1,0 +1,35 @@
+{
+  "rules": [
+    {
+      "id": "kinship_explicit_zh",
+      "relation_type": "kinship_with",
+      "relation_name": "亲属关系",
+      "subject_types": ["Character"],
+      "object_types": ["Character"],
+      "symmetric": true,
+      "markers": ["父亲", "母亲", "哥哥", "姐姐", "弟弟", "妹妹", "丈夫", "妻子", "儿子", "女儿", "家人"],
+      "window_chars": 80,
+      "description_template": "[{subject}] 与 [{object}] 在当前文本中被明确用亲属线索 '{marker}' 联系起来。"
+    },
+    {
+      "id": "member_of_explicit_zh",
+      "relation_type": "member_of",
+      "relation_name": "属于",
+      "subject_types": ["Character"],
+      "object_types": ["Concept"],
+      "markers": ["成员", "属于", "隶属", "加入", "任职于", "效力于", "一家人", "警队", "团队", "剧团"],
+      "window_chars": 100,
+      "description_template": "[{subject}] 在当前文本中通过线索 '{marker}' 被明确表述为属于 [{object}]。"
+    },
+    {
+      "id": "part_of_explicit_zh",
+      "relation_type": "part_of",
+      "relation_name": "组成部分",
+      "subject_types": ["Location", "Object"],
+      "object_types": ["Location", "Concept"],
+      "markers": ["一部分", "组成部分", "里面", "其中", "位于"],
+      "window_chars": 80,
+      "description_template": "[{subject}] 在当前文本中通过线索 '{marker}' 被明确表述为 [{object}] 的一部分。"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "rules": [
+    {
+      "id": "kinship_explicit_en",
+      "relation_type": "kinship_with",
+      "relation_name": "family relation",
+      "subject_types": ["Character"],
+      "object_types": ["Character"],
+      "symmetric": true,
+      "markers": ["father", "mother", "brother", "sister", "husband", "wife", "son", "daughter", "family"],
+      "window_chars": 120,
+      "description_template": "[{subject}] and [{object}] are explicitly linked by the kinship cue '{marker}' in the current passage."
+    },
+    {
+      "id": "member_of_explicit_en",
+      "relation_type": "member_of",
+      "relation_name": "member of",
+      "subject_types": ["Character"],
+      "object_types": ["Concept"],
+      "markers": ["member of", "belongs to", "works for", "serves in", "serves with", "on the team", "with the police", "part of the family"],
+      "window_chars": 140,
+      "description_template": "[{subject}] is explicitly associated with [{object}] via the membership cue '{marker}'."
+    },
+    {
+      "id": "part_of_explicit_en",
+      "relation_type": "part_of",
+      "relation_name": "part of",
+      "subject_types": ["Location", "Object"],
+      "object_types": ["Location", "Concept"],
+      "markers": ["part of", "inside", "inside the", "within", "attached to"],
+      "window_chars": 100,
+      "description_template": "[{subject}] is explicitly localized within or attached to [{object}] via the cue '{marker}'."
+    }
+  ]
+}

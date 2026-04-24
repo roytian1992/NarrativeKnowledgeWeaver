@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 from core.builder.manager.information_manager import InformationExtractor  # keep same dependency
 from core.builder.manager.error_manager import ProblemSolver
 from core.utils.general_utils import safe_dict, safe_list, safe_str
+from core.utils.task_specs import load_task_spec_json
 from tqdm import tqdm
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -270,6 +271,8 @@ class InformationExtractionAgent:
                 if rtype and rtype not in self._relation_type_to_group:
                     self._relation_type_to_group[rtype] = safe_str(group_name).strip()
 
+        self._relation_grounding_lexicon = self._load_relation_grounding_lexicon()
+        self._relation_repair_rules = self._load_relation_repair_rules()
         self._relation_grounding_keywords = self._build_relation_grounding_keyword_index()
 
     # -------------------------
@@ -407,28 +410,71 @@ class InformationExtractionAgent:
         merged = " ".join(safe_str(text) for text in texts if safe_str(text).strip())
         return "zh" if _contains_cjk(merged) else "en"
 
+    def _load_relation_grounding_lexicon(self) -> Dict[str, Dict[str, Any]]:
+        out: Dict[str, Dict[str, Any]] = {}
+        for lang, rel_path in {
+            "zh": "text_resources/relation_grounding_lexicon.json",
+            "en": "text_resources_en/relation_grounding_lexicon.json",
+        }.items():
+            out[lang] = load_task_spec_json(
+                self.config,
+                relative_path=rel_path,
+                default={"keywords": {}, "experience_bank": []},
+            )
+        return out
+
+    def _load_relation_repair_rules(self) -> Dict[str, Dict[str, Any]]:
+        out: Dict[str, Dict[str, Any]] = {}
+        for lang, rel_path in {
+            "zh": "text_resources/relation_repair_rules.json",
+            "en": "text_resources_en/relation_repair_rules.json",
+        }.items():
+            out[lang] = load_task_spec_json(
+                self.config,
+                relative_path=rel_path,
+                default={"rules": []},
+            )
+        return out
+
     def _build_relation_grounding_keyword_index(self) -> Dict[str, Dict[str, List[str]]]:
         out: Dict[str, Dict[str, List[str]]] = {
             lang: {rtype: list(items) for rtype, items in mapping.items()}
             for lang, mapping in _RELATION_GROUNDING_KEYWORDS.items()
         }
-        active_lang = self._relation_grounding_language()
-        lang_map = out.setdefault(active_lang, {})
-        for group_items in (self.relation_schema or {}).values():
-            for item in group_items or []:
-                if not isinstance(item, dict):
-                    continue
-                rtype = safe_str(item.get("type")).strip()
-                if not rtype:
-                    continue
-                bucket = lang_map.setdefault(rtype, [])
-                for sample in safe_list(item.get("samples")):
-                    if not isinstance(sample, dict):
+        for lang in ["zh", "en"]:
+            lang_map = out.setdefault(lang, {})
+            for group_items in (self.relation_schema or {}).values():
+                for item in group_items or []:
+                    if not isinstance(item, dict):
                         continue
-                    relation_name = _normalize_relation_text(sample.get("relation_name"))
-                    if relation_name and relation_name not in bucket:
-                        bucket.append(relation_name)
+                    rtype = safe_str(item.get("type")).strip()
+                    if not rtype:
+                        continue
+                    bucket = lang_map.setdefault(rtype, [])
+                    for sample in safe_list(item.get("samples")):
+                        if not isinstance(sample, dict):
+                            continue
+                        relation_name = _normalize_relation_text(sample.get("relation_name"))
+                        if relation_name and relation_name not in bucket:
+                            bucket.append(relation_name)
+            lexicon = safe_dict((self._relation_grounding_lexicon or {}).get(lang))
+            for rtype, items in safe_dict(lexicon.get("keywords")).items():
+                bucket = lang_map.setdefault(safe_str(rtype).strip(), [])
+                for item in safe_list(items):
+                    keyword = _normalize_relation_text(item)
+                    if keyword and keyword not in bucket:
+                        bucket.append(keyword)
         return out
+
+    def _relation_repair_rule_set(self, lang: str) -> List[Dict[str, Any]]:
+        payload = safe_dict((self._relation_repair_rules or {}).get(lang))
+        rules = payload.get("rules") or []
+        return [item for item in rules if isinstance(item, dict)]
+
+    def _relation_grounding_experience_bank(self, lang: str) -> List[Dict[str, Any]]:
+        payload = safe_dict((self._relation_grounding_lexicon or {}).get(lang))
+        items = payload.get("experience_bank") or []
+        return [item for item in items if isinstance(item, dict)]
 
     def _score_relation_keyword_match(self, text: str, keyword: str) -> int:
         norm_text = _normalize_relation_text(text)
@@ -507,6 +553,196 @@ class InformationExtractionAgent:
             "matched_language": lang,
             "matched_score": top_score,
         }
+
+    def _match_repair_rule_window(
+        self,
+        *,
+        text: str,
+        subject_name: str,
+        object_name: str,
+        markers: List[str],
+        window_chars: int,
+    ) -> Tuple[str, str]:
+        norm_text = _normalize_relation_text(text)
+        subject = _normalize_relation_text(subject_name)
+        object_ = _normalize_relation_text(object_name)
+        if not norm_text or not subject or not object_:
+            return "", ""
+
+        subject_positions = [m.start() for m in re.finditer(re.escape(subject), norm_text)]
+        object_positions = [m.start() for m in re.finditer(re.escape(object_), norm_text)]
+        if not subject_positions or not object_positions:
+            return "", ""
+
+        best_marker = ""
+        best_window = ""
+        best_score = 0
+        max_window = max(20, int(window_chars or 120))
+
+        for s_pos in subject_positions:
+            for o_pos in object_positions:
+                if s_pos == o_pos and subject == object_:
+                    continue
+                start = min(s_pos, o_pos)
+                end = max(s_pos + len(subject), o_pos + len(object_))
+                if end - start > max_window:
+                    continue
+                window = norm_text[max(0, start - 24):min(len(norm_text), end + 24)]
+                for marker in markers:
+                    score = self._score_relation_keyword_match(window, marker)
+                    if score > best_score:
+                        best_score = score
+                        best_marker = safe_str(marker).strip()
+                        best_window = window
+        if best_score < 3:
+            return "", ""
+        return best_marker, best_window
+
+    def _build_rule_repair_relation(
+        self,
+        *,
+        rid: str,
+        subject: str,
+        object_: str,
+        relation_type: str,
+        relation_name: str,
+        description: str,
+        properties: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "rid": rid,
+            "subject": subject,
+            "object": object_,
+            "relation_type": relation_type,
+            "relation_name": relation_name,
+            "description": description,
+            "conf": 0.85,
+        }
+        if properties:
+            payload["properties"] = dict(properties)
+        return payload
+
+    def _repair_relation_coverage_by_rules(
+        self,
+        *,
+        cleaned_text: str,
+        entities: List[Dict[str, Any]],
+        all_relations: Dict[str, Dict[str, Any]],
+        rid_namespace: str,
+        focus_entity_names: Set[str],
+    ) -> Dict[str, Dict[str, Any]]:
+        lang = self._relation_grounding_language(cleaned_text)
+        rules = self._relation_repair_rule_set(lang)
+        if not rules:
+            return all_relations
+
+        entity_list = [
+            ent for ent in (entities or [])
+            if isinstance(ent, dict) and safe_str(ent.get("name")).strip() and safe_str(ent.get("type")).strip()
+        ]
+        if len(entity_list) < 2:
+            return all_relations
+
+        existing_keys = {
+            (
+                safe_str(rel.get("subject")).strip(),
+                safe_str(rel.get("relation_type")).strip(),
+                safe_str(rel.get("object")).strip(),
+            )
+            for rel in (all_relations or {}).values()
+            if isinstance(rel, dict)
+        }
+        next_idx = 1 + sum(1 for rid in (all_relations or {}) if safe_str(rid).startswith(f"{rid_namespace}:rule#"))
+
+        for rule in rules:
+            relation_type = safe_str(rule.get("relation_type")).strip()
+            markers = [safe_str(x).strip() for x in safe_list(rule.get("markers")) if safe_str(x).strip()]
+            subject_types = {safe_str(x).strip() for x in safe_list(rule.get("subject_types")) if safe_str(x).strip()}
+            object_types = {safe_str(x).strip() for x in safe_list(rule.get("object_types")) if safe_str(x).strip()}
+            window_chars = int(rule.get("window_chars", 120) or 120)
+            symmetric = bool(rule.get("symmetric", False))
+            if not relation_type or not markers:
+                continue
+
+            for subject_ent in entity_list:
+                subject_name = safe_str(subject_ent.get("name")).strip()
+                subject_type = safe_str(subject_ent.get("type")).strip()
+                if subject_types and subject_type not in subject_types:
+                    continue
+                for object_ent in entity_list:
+                    object_name = safe_str(object_ent.get("name")).strip()
+                    object_type = safe_str(object_ent.get("type")).strip()
+                    if not object_name or subject_name == object_name:
+                        continue
+                    if object_types and object_type not in object_types:
+                        continue
+                    if focus_entity_names and subject_name not in focus_entity_names and object_name not in focus_entity_names:
+                        continue
+
+                    candidate_specs = self._candidate_relation_specs_for_seed(
+                        subject_name=subject_name,
+                        object_name=object_name,
+                        entities=entity_list,
+                    )
+                    chosen_spec = next(
+                        (
+                            spec for spec in candidate_specs
+                            if safe_str(spec.get("relation_type")).strip() == relation_type
+                        ),
+                        None,
+                    )
+                    if not isinstance(chosen_spec, dict):
+                        continue
+
+                    matched_marker, matched_window = self._match_repair_rule_window(
+                        text=cleaned_text,
+                        subject_name=subject_name,
+                        object_name=object_name,
+                        markers=markers,
+                        window_chars=window_chars,
+                    )
+                    if not matched_marker:
+                        continue
+
+                    final_subject = subject_name
+                    final_object = object_name
+                    if chosen_spec.get("endpoint_mapping") == "object_to_subject":
+                        final_subject, final_object = final_object, final_subject
+                    if symmetric and final_subject > final_object:
+                        final_subject, final_object = final_object, final_subject
+
+                    rel_key = (final_subject, relation_type, final_object)
+                    if rel_key in existing_keys:
+                        continue
+
+                    description_template = safe_str(rule.get("description_template")).strip()
+                    description = description_template.format(
+                        subject=final_subject,
+                        object=final_object,
+                        marker=matched_marker,
+                    ) if description_template else safe_str(matched_window).strip()
+                    rel = self._build_rule_repair_relation(
+                        rid=f"{rid_namespace}:rule#{next_idx}",
+                        subject=final_subject,
+                        object_=final_object,
+                        relation_type=relation_type,
+                        relation_name=safe_str(rule.get("relation_name")).strip() or matched_marker or relation_type,
+                        description=description,
+                        properties={
+                            "repair_mode": "rule_based",
+                            "rule_id": safe_str(rule.get("id")).strip(),
+                            "matched_marker": matched_marker,
+                            "matched_language": lang,
+                        },
+                    )
+                    rel2, fb = self._revalidate_one_relation_global(rel, entities=entity_list)
+                    if fb is not None or float(rel2.get("conf", 0.85) or 0.85) == 0.0:
+                        continue
+                    all_relations[safe_str(rel2.get("rid")).strip()] = rel2
+                    existing_keys.add(rel_key)
+                    next_idx += 1
+
+        return all_relations
 
     def _relation_incident_entity_names(self, all_relations: Dict[str, Dict[str, Any]]) -> Set[str]:
         names: Set[str] = set()
@@ -1649,6 +1885,22 @@ class InformationExtractionAgent:
         if not mentioned_entities:
             return all_relations
 
+        incident_names = self._relation_incident_entity_names(all_relations)
+        uncovered_entities = [
+            ent for ent in mentioned_entities
+            if safe_str(ent.get("name")).strip() and safe_str(ent.get("name")).strip() not in incident_names
+        ]
+        if not uncovered_entities:
+            return all_relations
+
+        uncovered_names = {safe_str(ent.get("name")).strip() for ent in uncovered_entities if safe_str(ent.get("name")).strip()}
+        all_relations = self._repair_relation_coverage_by_rules(
+            cleaned_text=cleaned_text,
+            entities=entities,
+            all_relations=all_relations,
+            rid_namespace=rid_namespace,
+            focus_entity_names=uncovered_names,
+        )
         incident_names = self._relation_incident_entity_names(all_relations)
         uncovered_entities = [
             ent for ent in mentioned_entities

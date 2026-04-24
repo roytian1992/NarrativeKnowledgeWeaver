@@ -1,0 +1,64 @@
+{
+  "keywords": {
+    "kinship_with": [
+      "father of",
+      "mother of",
+      "brother of",
+      "sister of",
+      "husband of",
+      "wife of",
+      "son of",
+      "daughter of",
+      "family"
+    ],
+    "member_of": [
+      "member of",
+      "belongs to",
+      "part of the family",
+      "works for",
+      "works at",
+      "serves in",
+      "serves with",
+      "on the team",
+      "with the police"
+    ],
+    "part_of": [
+      "part of",
+      "inside",
+      "inside the",
+      "within",
+      "attached to",
+      "in the house",
+      "in the room"
+    ],
+    "affinity_with": [
+      "friend of",
+      "friends with",
+      "close to",
+      "trusts",
+      "allies with"
+    ],
+    "hostility_with": [
+      "enemy of",
+      "against",
+      "hostile to",
+      "rival of"
+    ]
+  },
+  "experience_bank": [
+    {
+      "phrase": "member of",
+      "relation_type": "member_of",
+      "subject_type": "Character",
+      "object_type": "Concept",
+      "source": "seed_lexicon"
+    },
+    {
+      "phrase": "father of",
+      "relation_type": "kinship_with",
+      "subject_type": "Character",
+      "object_type": "Character",
+      "source": "seed_lexicon"
+    }
+  ]
+}
