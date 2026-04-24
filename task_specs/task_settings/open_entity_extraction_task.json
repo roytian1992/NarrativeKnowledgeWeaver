@@ -1,0 +1,35 @@
+[
+  {
+    "task": "open_entity_extraction",
+    "task_name": "开放实体抽取",
+    "task_goal": "抽取非 Event、非 Occasion 的叙事实体，先只返回实体名和描述，后续再做 schema grounding。",
+    "global_constraints": [
+      "不要臆造文本中不存在的实体。",
+      "不要输出 schema type。",
+      "排除 Event 和 Occasion。",
+      "名称尽量保留原文表层形式和原始语言，不要无故翻译。",
+      "只输出 JSON 数组。"
+    ],
+    "output_fields": ["name", "description"],
+    "extraction_rules": [
+      "高召回优先，但只保留有明确文本依据的实体。",
+      "优先抽取稳定角色、稳定地点、关键道具、组织/家族/婚姻/职业身份等高价值概念。",
+      "避免与已知实体重复。",
+      "对于只是在举例名单中一闪而过、对当前片段没有局部叙事作用的名字，可以不抽。",
+      "不要优先抽取泛化日常物件、纯时间修饰语、描述性地点短语或临时群体称呼，例如 book、door、day、evening、a room where...、the area around...。",
+      "如果实体既不会进入关键关系网络，也不太可能在后续叙事中稳定复现，优先不抽。"
+    ],
+    "few_shot": {
+      "examples": [
+        {
+          "name": "匿名戒酒会",
+          "description": "一个提供戒酒支持的组织或会议体系。"
+        },
+        {
+          "name": "埋藏的酒瓶",
+          "description": "被埋在草坪下、后续可能被取出的酒瓶。"
+        }
+      ]
+    }
+  }
+]

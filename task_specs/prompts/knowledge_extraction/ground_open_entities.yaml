@@ -1,0 +1,81 @@
+id: entity_schema_grounding
+category: knowledge_extraction
+name: Entity Schema Grounding
+description: >
+  Ground open-form entities to schema entity types.
+
+task_variables:
+  - name: text
+    type: string
+    required: false
+  - name: open_entities
+    type: string
+    required: true
+  - name: memory_context
+    type: string
+    required: false
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: grounding_rules_block
+    type: string
+    required: false
+  - name: type_definitions
+    type: string
+    required: true
+  - name: output_fields_block
+    type: string
+    required: true
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  你正在执行开放实体到 schema 的 grounding 任务。
+
+  任务：
+  {task_name}
+
+  目标：
+  {task_goal}
+
+  全局约束：
+  {global_constraints}
+
+  额外规则：
+  {grounding_rules_block}
+
+  可选 schema 类型：
+  {type_definitions}
+
+  输出字段：
+  {output_fields_block}
+
+  关键要求：
+  - 只对适合作为独立图谱节点的实体输出 grounding 结果；太弱、太模糊、纯命题化或纯背景举例的条目可以直接省略。
+  - type 只能从 Character / Object / Concept / Location / TimePoint 中选择。
+  - 同时给出 scope（global 或 local）。
+  - 名称尽量保持输入表层形式，不要额外翻译或改写。
+  - 对于泛化日常物件、纯修饰时间词、描述性地点短语、临时群体称呼，优先省略而不是勉强归类。
+  - 优先保留稳定角色、稳定地点、关键道具，以及组织/家族/婚姻/职业身份等高价值概念。
+  - 只输出 JSON 数组，不要输出解释文字。
+
+  示例：
+  {few_shot_samples}
+
+  输入文本：
+  {text}
+
+  开放实体：
+  {open_entities}
+
+  可选记忆：
+  {memory_context}

@@ -7,11 +7,67 @@ from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 from core.builder.manager.information_manager import InformationExtractor  # keep same dependency
 from core.builder.manager.error_manager import ProblemSolver
+from core.utils.general_utils import safe_dict, safe_list, safe_str
 from tqdm import tqdm
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _WORD_HYPHEN_LINEBREAK_RE = re.compile(r"([A-Za-z])-\s*\n\s*([A-Za-z])")
 _WORD_HYPHEN_SPACE_RE = re.compile(r"([A-Za-z])-\s+([a-z])")
+_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+
+_RELATION_GROUNDING_KEYWORDS: Dict[str, Dict[str, List[str]]] = {
+    "zh": {
+        "kinship_with": [
+            "父亲", "母亲", "爸爸", "妈妈", "儿子", "女儿", "兄弟", "姐妹", "哥哥", "姐姐", "弟弟", "妹妹",
+            "丈夫", "妻子", "配偶", "父母", "孩子", "家人", "祖父", "祖母", "爷爷", "奶奶", "外公", "外婆",
+            "叔叔", "阿姨", "舅舅", "姑妈", "姑姑", "侄子", "侄女", "外甥", "外甥女", "表亲",
+        ],
+        "affinity_with": [
+            "朋友", "友人", "伙伴", "搭档", "盟友", "战友", "同伴", "知己", "信任", "亲近", "站在一边",
+        ],
+        "hostility_with": [
+            "敌人", "敌对", "仇人", "宿敌", "死敌", "死对头", "对头", "仇敌", "敌视", "对立",
+        ],
+        "allied_with": [
+            "结盟", "联盟", "盟友", "同盟", "联合阵线",
+        ],
+        "member_of": [
+            "成员", "属于", "隶属", "加入", "效力于", "任职于", "就职于", "服役于", "在职于", "是其中一员",
+        ],
+        "part_of": [
+            "一部分", "组成部分", "构成部分", "隶属于", "附属", "下属", "从属于",
+        ],
+        "possesses": [
+            "拥有", "持有", "带着", "携带", "拿着", "握着", "掌握",
+        ],
+    },
+    "en": {
+        "kinship_with": [
+            "father", "mother", "dad", "mom", "son", "daughter", "brother", "sister", "husband", "wife",
+            "spouse", "parent", "child", "children", "sibling", "grandfather", "grandmother", "uncle", "aunt",
+            "cousin", "nephew", "niece",
+        ],
+        "affinity_with": [
+            "friend", "friends", "partner", "partners", "ally", "allies", "trusted partner", "close ally",
+            "companion", "teammate", "confidant", "loyal to",
+        ],
+        "hostility_with": [
+            "enemy", "enemies", "adversary", "adversaries", "rival", "rivals", "nemesis", "hostile to", "at war with",
+        ],
+        "allied_with": [
+            "allied with", "ally of", "allies with", "in alliance with",
+        ],
+        "member_of": [
+            "member of", "belongs to", "affiliated with", "works for", "serves in", "serves with", "part of the",
+        ],
+        "part_of": [
+            "part of", "component of", "section of", "subset of", "belongs within",
+        ],
+        "possesses": [
+            "has", "have", "holds", "holding", "carries", "carrying", "owns", "possesses",
+        ],
+    },
+}
 
 
 def clean_screenplay_text(content: str, *, aggressive: bool = True) -> str:
@@ -31,6 +87,14 @@ def normalize_name_basic(name: str) -> str:
     s = str(name)
     s = _WHITESPACE_RE.sub(" ", s).strip()
     return s
+
+
+def _contains_cjk(text: Any) -> bool:
+    return bool(_CJK_RE.search(str(text or "")))
+
+
+def _normalize_relation_text(text: Any) -> str:
+    return _WHITESPACE_RE.sub(" ", safe_str(text)).strip().lower()
 
 
 def titlecase_global_name(name: str) -> str:
@@ -188,6 +252,7 @@ class InformationExtractionAgent:
 
         self.typepair_index = build_typepair_relation_index(self.relation_type_info)
         self._global_rule_finder: Dict[str, Dict[str, Any]] = {}
+        self._relation_type_to_group: Dict[str, str] = {}
         for rtype, info in (self.relation_type_info or {}).items():
             self._global_rule_finder[rtype] = {
                 "from": info.get("from", []) or [],
@@ -197,6 +262,15 @@ class InformationExtractionAgent:
                 "description": info.get("description", ""),
                 "allow_self_loop": bool(info.get("allow_self_loop", False)),
             }
+        for group_name, group_items in (self.relation_schema or {}).items():
+            for item in group_items or []:
+                if not isinstance(item, dict):
+                    continue
+                rtype = safe_str(item.get("type")).strip()
+                if rtype and rtype not in self._relation_type_to_group:
+                    self._relation_type_to_group[rtype] = safe_str(group_name).strip()
+
+        self._relation_grounding_keywords = self._build_relation_grounding_keyword_index()
 
     # -------------------------
     # public APIs
@@ -279,6 +353,191 @@ class InformationExtractionAgent:
             )
         return json.dumps(ctx, ensure_ascii=False, indent=2) if ctx else ""
 
+    def _focus_entities_text(self, entities: List[Dict[str, Any]]) -> str:
+        lines = []
+        for ent in entities or []:
+            if not isinstance(ent, dict):
+                continue
+            name = safe_str(ent.get("name")).strip()
+            etype = safe_str(ent.get("type")).strip()
+            if not name:
+                continue
+            line = f"entity_name: {name}"
+            if etype:
+                line += f"        type: {etype}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _build_open_relation_hints(
+        self,
+        *,
+        entities: List[Dict[str, Any]],
+        focus_entity_names: Optional[Set[str]] = None,
+    ) -> str:
+        entity_name2type = {
+            safe_str(e.get("name")).strip(): safe_str(e.get("type")).strip()
+            for e in (entities or [])
+            if isinstance(e, dict) and safe_str(e.get("name")).strip() and safe_str(e.get("type")).strip()
+        }
+        focus_types: Set[str] = set()
+        for name in focus_entity_names or set():
+            etype = entity_name2type.get(name)
+            if etype:
+                focus_types.add(etype)
+
+        lines: List[str] = []
+        for rtype, info in sorted((self.relation_type_info or {}).items()):
+            from_types = [safe_str(x).strip() for x in (info.get("from") or []) if safe_str(x).strip()]
+            to_types = [safe_str(x).strip() for x in (info.get("to") or []) if safe_str(x).strip()]
+            if focus_types and not (focus_types.intersection(from_types) or focus_types.intersection(to_types)):
+                continue
+            desc = safe_str(info.get("description")).strip()
+            direction = safe_str(info.get("direction", "directed")).strip() or "directed"
+            lines.append(
+                f"{rtype}: {desc}        allowed_types: {','.join(from_types)} -> {','.join(to_types)}        direction: {direction}"
+            )
+
+        return "\n".join(lines)
+
+    def _relation_grounding_language(self, *texts: Any) -> str:
+        global_cfg = getattr(self.config, "global_config", None)
+        lang = safe_str(getattr(global_cfg, "language", "") or getattr(global_cfg, "locale", "")).strip().lower()
+        if lang in {"zh", "en"}:
+            return lang
+        merged = " ".join(safe_str(text) for text in texts if safe_str(text).strip())
+        return "zh" if _contains_cjk(merged) else "en"
+
+    def _build_relation_grounding_keyword_index(self) -> Dict[str, Dict[str, List[str]]]:
+        out: Dict[str, Dict[str, List[str]]] = {
+            lang: {rtype: list(items) for rtype, items in mapping.items()}
+            for lang, mapping in _RELATION_GROUNDING_KEYWORDS.items()
+        }
+        active_lang = self._relation_grounding_language()
+        lang_map = out.setdefault(active_lang, {})
+        for group_items in (self.relation_schema or {}).values():
+            for item in group_items or []:
+                if not isinstance(item, dict):
+                    continue
+                rtype = safe_str(item.get("type")).strip()
+                if not rtype:
+                    continue
+                bucket = lang_map.setdefault(rtype, [])
+                for sample in safe_list(item.get("samples")):
+                    if not isinstance(sample, dict):
+                        continue
+                    relation_name = _normalize_relation_text(sample.get("relation_name"))
+                    if relation_name and relation_name not in bucket:
+                        bucket.append(relation_name)
+        return out
+
+    def _score_relation_keyword_match(self, text: str, keyword: str) -> int:
+        norm_text = _normalize_relation_text(text)
+        norm_keyword = _normalize_relation_text(keyword)
+        if not norm_text or not norm_keyword:
+            return 0
+        if norm_text == norm_keyword:
+            return 4
+        if _contains_cjk(norm_text) or _contains_cjk(norm_keyword):
+            return 3 if norm_keyword in norm_text else 0
+        if re.search(rf"(?<![a-z0-9]){re.escape(norm_keyword)}(?![a-z0-9])", norm_text):
+            return 3
+        return 0
+
+    def _heuristic_ground_open_relation(
+        self,
+        *,
+        proposal_id: str,
+        proposal: Dict[str, Any],
+        candidate_specs: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if len(candidate_specs) <= 1:
+            return None
+
+        relation_phrase = safe_str(proposal.get("relation_phrase")).strip()
+        description = safe_str(proposal.get("description")).strip()
+        evidence = safe_str(proposal.get("evidence")).strip()
+        lang = self._relation_grounding_language(relation_phrase, description, evidence)
+        keyword_map = self._relation_grounding_keywords.get(lang, {})
+        if not keyword_map:
+            return None
+
+        scores: List[Tuple[int, str, str]] = []
+        for spec in candidate_specs:
+            rtype = safe_str(spec.get("relation_type")).strip()
+            if not rtype:
+                continue
+            best_score = 0
+            best_keyword = ""
+            for keyword in keyword_map.get(rtype, []):
+                phrase_score = self._score_relation_keyword_match(relation_phrase, keyword)
+                desc_score = self._score_relation_keyword_match(description, keyword)
+                evidence_score = self._score_relation_keyword_match(evidence, keyword)
+                score = max(phrase_score, max(desc_score - 1, 0), max(evidence_score - 1, 0))
+                if score > best_score:
+                    best_score = score
+                    best_keyword = keyword
+            if best_score > 0:
+                scores.append((best_score, rtype, best_keyword))
+
+        if not scores:
+            return None
+
+        scores.sort(key=lambda item: (-item[0], item[1]))
+        top_score, top_rtype, top_keyword = scores[0]
+        second_score = scores[1][0] if len(scores) > 1 else 0
+        if top_score < 3 or top_score <= second_score:
+            return None
+
+        chosen_spec = next(
+            (item for item in candidate_specs if safe_str(item.get("relation_type")).strip() == top_rtype),
+            None,
+        )
+        if not isinstance(chosen_spec, dict):
+            return None
+
+        return {
+            "proposal_id": proposal_id,
+            "decision": "ground",
+            "relation_type": top_rtype,
+            "swap_subject_object": chosen_spec.get("endpoint_mapping") == "object_to_subject",
+            "relation_name": relation_phrase,
+            "description": description or evidence,
+            "grounding_mode": "keyword_shortcut",
+            "matched_keyword": top_keyword,
+            "matched_language": lang,
+            "matched_score": top_score,
+        }
+
+    def _relation_incident_entity_names(self, all_relations: Dict[str, Dict[str, Any]]) -> Set[str]:
+        names: Set[str] = set()
+        for rel in (all_relations or {}).values():
+            if not isinstance(rel, dict):
+                continue
+            subj = safe_str(rel.get("subject")).strip()
+            obj = safe_str(rel.get("object")).strip()
+            if subj:
+                names.add(subj)
+            if obj:
+                names.add(obj)
+        return names
+
+    def _entities_mentioned_in_text(self, text: str, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        lower_text = f" {safe_str(text).lower()} "
+        mentioned: List[Dict[str, Any]] = []
+        for ent in entities or []:
+            if not isinstance(ent, dict):
+                continue
+            name = safe_str(ent.get("name")).strip()
+            if not name:
+                continue
+            pattern = r"\b" + re.escape(name.lower()) + r"\b"
+            if re.search(pattern, lower_text):
+                mentioned.append(ent)
+                continue
+            if name.lower() in lower_text:
+                mentioned.append(ent)
+        return mentioned
+
     def _build_entities_text_for_group(self, entities: List[Dict[str, Any]], group: List[Dict[str, Any]]) -> str:
         selector = {t for rel in group for t in (rel.get("from", []) + rel.get("to", []))}
         lines = []
@@ -308,6 +567,8 @@ class InformationExtractionAgent:
 
         kept = []
         for rel in relations:
+            if not isinstance(rel, dict):
+                continue
             rtype = (rel.get("relation_type") or rel.get("type") or "").strip()
             if rtype != "is_a":
                 kept.append(rel)
@@ -1070,6 +1331,466 @@ class InformationExtractionAgent:
 
         return out
 
+    def _relation_extraction_mode(self) -> str:
+        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
+        raw = safe_str(getattr(kg_cfg, "relation_extraction_mode", "schema_direct") if kg_cfg is not None else "schema_direct")
+        mode = raw.strip().lower() or "schema_direct"
+        aliases = {
+            "schema_direct": "schema_direct",
+            "schema": "schema_direct",
+            "legacy": "schema_direct",
+            "open_then_ground": "open_then_ground",
+            "open": "open_then_ground",
+            "free_then_ground": "open_then_ground",
+        }
+        return aliases.get(mode, "schema_direct")
+
+    def _append_relation_feedback(
+        self,
+        all_feedbacks: Dict[str, List[Dict[str, Any]]],
+        key: str,
+        *,
+        rid: str,
+        feedback: str,
+        subject: str,
+        object: str,
+        relation_type: str,
+        relation_name: str,
+    ) -> None:
+        all_feedbacks.setdefault(key, []).append(
+            {
+                "rid": rid,
+                "feedback": feedback,
+                "subject": subject,
+                "object": object,
+                "relation_type": relation_type,
+                "relation_name": relation_name,
+            }
+        )
+
+    def _candidate_relation_types_for_seed(
+        self,
+        *,
+        subject_name: str,
+        object_name: str,
+        entities: List[Dict[str, Any]],
+    ) -> List[str]:
+        entity_name2type = {
+            e.get("name", ""): e.get("type", "")
+            for e in (entities or [])
+            if isinstance(e, dict) and e.get("name") and e.get("type")
+        }
+        st = safe_str(entity_name2type.get(subject_name)).strip()
+        ot = safe_str(entity_name2type.get(object_name)).strip()
+        if not st or not ot:
+            return []
+        forward = get_allowed_relations_between_types(self.typepair_index, st, ot)
+        backward = get_allowed_relations_between_types(self.typepair_index, ot, st)
+        merged: List[str] = []
+        for rtype in forward + backward:
+            if rtype not in merged:
+                merged.append(rtype)
+        return merged
+
+    def _candidate_relation_specs_for_seed(
+        self,
+        *,
+        subject_name: str,
+        object_name: str,
+        entities: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        entity_name2type = {
+            e.get("name", ""): e.get("type", "")
+            for e in (entities or [])
+            if isinstance(e, dict) and e.get("name") and e.get("type")
+        }
+        st = safe_str(entity_name2type.get(subject_name)).strip()
+        ot = safe_str(entity_name2type.get(object_name)).strip()
+        if not st or not ot:
+            return []
+
+        specs: List[Dict[str, Any]] = []
+        seen: Set[str] = set()
+        for rtype, info in (self.relation_type_info or {}).items():
+            from_types = info.get("from", []) or []
+            to_types = info.get("to", []) or []
+            direction = safe_str(info.get("direction", "directed")).strip() or "directed"
+
+            forward_ok = st in from_types and ot in to_types
+            reverse_ok = ot in from_types and st in to_types
+            if direction == "symmetric":
+                forward_ok = ((st in from_types and ot in to_types) or (st in to_types and ot in from_types))
+                reverse_ok = forward_ok
+
+            if not forward_ok and not reverse_ok:
+                continue
+            if rtype in seen:
+                continue
+            seen.add(rtype)
+
+            if direction == "symmetric":
+                endpoint_mapping = "either"
+            elif forward_ok and reverse_ok:
+                endpoint_mapping = "either"
+            elif forward_ok:
+                endpoint_mapping = "subject_to_object"
+            else:
+                endpoint_mapping = "object_to_subject"
+
+            specs.append(
+                {
+                    "relation_type": rtype,
+                    "description": safe_str(info.get("description")).strip(),
+                    "endpoint_mapping": endpoint_mapping,
+                    "subject_type": st,
+                    "object_type": ot,
+                }
+            )
+
+        return specs
+
+    def _build_open_relation_seed(
+        self,
+        *,
+        proposal: Dict[str, Any],
+        entities: List[Dict[str, Any]],
+        rid_prefix: str,
+        idx: int,
+        grounded: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        subject = safe_str(proposal.get("subject")).strip()
+        object_ = safe_str(proposal.get("object")).strip()
+        relation_phrase = safe_str(proposal.get("relation_phrase")).strip()
+        description = safe_str(proposal.get("description")).strip()
+        evidence = safe_str(proposal.get("evidence")).strip()
+        candidate_specs = [
+            dict(item)
+            for item in safe_list(proposal.get("candidate_relations"))
+            if isinstance(item, dict) and safe_str(item.get("relation_type")).strip()
+        ]
+        if not candidate_specs:
+            candidate_specs = self._candidate_relation_specs_for_seed(
+                subject_name=subject,
+                object_name=object_,
+                entities=entities,
+            )
+        candidate_types = [safe_str(x.get("relation_type")).strip() for x in candidate_specs if safe_str(x.get("relation_type")).strip()]
+
+        if grounded and bool(grounded.get("swap_subject_object", False)):
+            subject, object_ = object_, subject
+
+        if grounded and safe_str(grounded.get("relation_type")).strip():
+            relation_type = safe_str(grounded.get("relation_type")).strip()
+            grounding_mode = safe_str(grounded.get("grounding_mode")).strip() or "llm_grounded"
+        elif len(candidate_specs) == 1:
+            relation_type = candidate_specs[0]["relation_type"]
+            grounding_mode = "unique_candidate_shortcut"
+            if candidate_specs[0].get("endpoint_mapping") == "object_to_subject":
+                subject, object_ = object_, subject
+        else:
+            relation_type = relation_phrase
+            grounding_mode = "defer_to_fix"
+
+        props = safe_dict(proposal.get("properties"))
+        props = dict(props) if isinstance(props, dict) else {}
+        props["open_relation_phrase"] = relation_phrase
+        if evidence:
+            props["open_relation_evidence"] = evidence
+        if description:
+            props["open_relation_description"] = description
+        if candidate_types:
+            props["grounding_candidate_types"] = candidate_types
+        if candidate_specs:
+            props["grounding_candidate_specs"] = candidate_specs
+        props["grounding_mode"] = grounding_mode
+        if grounded:
+            props["grounding_decision"] = safe_str(grounded.get("decision")).strip()
+            if safe_str(grounded.get("description")).strip():
+                props["grounding_description"] = safe_str(grounded.get("description")).strip()
+            if safe_str(grounded.get("matched_keyword")).strip():
+                props["grounding_matched_keyword"] = safe_str(grounded.get("matched_keyword")).strip()
+            if safe_str(grounded.get("matched_language")).strip():
+                props["grounding_matched_language"] = safe_str(grounded.get("matched_language")).strip()
+            if grounded.get("matched_score") is not None:
+                props["grounding_matched_score"] = grounded.get("matched_score")
+
+        return {
+            "rid": f"{rid_prefix}#{idx}",
+            "subject": subject,
+            "object": object_,
+            "relation_type": relation_type,
+            "relation_name": safe_str((grounded or {}).get("relation_name")).strip() or relation_phrase or relation_type,
+            "description": safe_str((grounded or {}).get("description")).strip() or description or evidence,
+            "properties": props,
+        }
+
+    def _prepare_grounded_open_relation_seeds(
+        self,
+        *,
+        cleaned_text: str,
+        proposals: List[Dict[str, Any]],
+        entities: List[Dict[str, Any]],
+        rid_prefix: str,
+        memory_context: str = "",
+    ) -> List[Dict[str, Any]]:
+        ambiguous_proposals: List[Dict[str, Any]] = []
+        grounded_by_id: Dict[str, Dict[str, Any]] = {}
+        seeded_relations: List[Dict[str, Any]] = []
+
+        for idx, proposal in enumerate(proposals, start=1):
+            if not isinstance(proposal, dict):
+                continue
+            proposal = dict(proposal)
+            proposal_id = f"{rid_prefix}:proposal#{idx}"
+            proposal["proposal_id"] = proposal_id
+            candidate_specs = [
+                dict(item)
+                for item in safe_list(proposal.get("candidate_relations"))
+                if isinstance(item, dict) and safe_str(item.get("relation_type")).strip()
+            ]
+            if not candidate_specs:
+                candidate_specs = self._candidate_relation_specs_for_seed(
+                    subject_name=safe_str(proposal.get("subject")).strip(),
+                    object_name=safe_str(proposal.get("object")).strip(),
+                    entities=entities,
+                )
+            proposal["candidate_relations"] = candidate_specs
+            if not candidate_specs:
+                continue
+            grounded = self._heuristic_ground_open_relation(
+                proposal_id=proposal_id,
+                proposal=proposal,
+                candidate_specs=candidate_specs,
+            )
+            if len(candidate_specs) > 1:
+                if grounded is None:
+                    ambiguous_proposals.append(
+                        {
+                            "proposal_id": proposal_id,
+                            "subject": safe_str(proposal.get("subject")).strip(),
+                            "subject_type": next((safe_str(e.get("type")).strip() for e in entities if safe_str(e.get("name")).strip() == safe_str(proposal.get("subject")).strip()), ""),
+                            "object": safe_str(proposal.get("object")).strip(),
+                            "object_type": next((safe_str(e.get("type")).strip() for e in entities if safe_str(e.get("name")).strip() == safe_str(proposal.get("object")).strip()), ""),
+                            "relation_phrase": safe_str(proposal.get("relation_phrase")).strip(),
+                            "description": safe_str(proposal.get("description")).strip(),
+                            "evidence": safe_str(proposal.get("evidence")).strip(),
+                            "candidate_relations": candidate_specs,
+                        }
+                    )
+            if grounded is None and len(candidate_specs) == 1:
+                grounded = {
+                    "proposal_id": proposal_id,
+                    "decision": "ground",
+                    "relation_type": candidate_specs[0]["relation_type"],
+                    "swap_subject_object": candidate_specs[0].get("endpoint_mapping") == "object_to_subject",
+                    "relation_name": safe_str(proposal.get("relation_phrase")).strip(),
+                    "description": safe_str(proposal.get("description")).strip() or safe_str(proposal.get("evidence")).strip(),
+                    "grounding_mode": "unique_candidate_shortcut",
+                }
+            if grounded is not None:
+                grounded_by_id[proposal_id] = grounded
+
+            proposal["_grounded"] = grounded
+            proposals[idx - 1] = proposal
+
+        if ambiguous_proposals:
+            raw_grounded = self.extractor.ground_open_relations(
+                text=cleaned_text,
+                proposals=ambiguous_proposals,
+                memory_context=memory_context,
+            )
+            try:
+                grounded_items = json.loads(raw_grounded) if raw_grounded else []
+            except Exception:
+                grounded_items = []
+            if not isinstance(grounded_items, list):
+                grounded_items = []
+            for item in grounded_items:
+                if not isinstance(item, dict):
+                    continue
+                proposal_id = safe_str(item.get("proposal_id")).strip()
+                if proposal_id:
+                    grounded_by_id[proposal_id] = item
+
+        for idx, proposal in enumerate(proposals, start=1):
+            if not isinstance(proposal, dict):
+                continue
+            proposal_id = safe_str(proposal.get("proposal_id")).strip()
+            grounded = proposal.get("_grounded")
+            if proposal_id:
+                grounded = grounded_by_id.get(proposal_id, grounded)
+            if len(safe_list(proposal.get("candidate_relations"))) > 1:
+                if not grounded or safe_str(grounded.get("decision")).strip().lower() != "ground":
+                    continue
+            seed = self._build_open_relation_seed(
+                proposal=proposal,
+                entities=entities,
+                rid_prefix=rid_prefix,
+                idx=idx,
+                grounded=grounded if isinstance(grounded, dict) else None,
+            )
+            seeded_relations.append(seed)
+
+        return seeded_relations
+
+    def _repair_relation_coverage(
+        self,
+        *,
+        cleaned_text: str,
+        entities: List[Dict[str, Any]],
+        all_relations: Dict[str, Dict[str, Any]],
+        rid_namespace: str,
+        memory_context: str = "",
+    ) -> Dict[str, Dict[str, Any]]:
+        if self._relation_extraction_mode() != "open_then_ground":
+            return all_relations
+
+        mentioned_entities = self._entities_mentioned_in_text(cleaned_text, entities)
+        if not mentioned_entities:
+            return all_relations
+
+        incident_names = self._relation_incident_entity_names(all_relations)
+        uncovered_entities = [
+            ent for ent in mentioned_entities
+            if safe_str(ent.get("name")).strip() and safe_str(ent.get("name")).strip() not in incident_names
+        ]
+        if not uncovered_entities:
+            return all_relations
+
+        uncovered_names = {safe_str(ent.get("name")).strip() for ent in uncovered_entities if safe_str(ent.get("name")).strip()}
+        relation_hints = self._build_open_relation_hints(entities=entities, focus_entity_names=uncovered_names)
+        focus_entities_text = self._focus_entities_text(uncovered_entities)
+        entities_text = self._entities_text_for_extractor(entities)
+        extracted_relations_ctx = self._relations_text_for_extractor(all_relations)
+
+        raw = self.extractor.extract_open_relations(
+            text=cleaned_text,
+            extracted_entities=entities_text,
+            previous_results=extracted_relations_ctx or None,
+            feedbacks=None,
+            memory_context=memory_context,
+            relation_hints=relation_hints,
+            focus_entities=focus_entities_text,
+        )
+        try:
+            proposals = json.loads(raw) if raw else []
+        except Exception:
+            proposals = []
+        if not isinstance(proposals, list):
+            proposals = []
+
+        proposals = [
+            proposal for proposal in proposals
+            if isinstance(proposal, dict)
+            and (
+                safe_str(proposal.get("subject")).strip() in uncovered_names
+                or safe_str(proposal.get("object")).strip() in uncovered_names
+            )
+        ]
+        if not proposals:
+            return all_relations
+
+        seed_prefix = f"{rid_namespace}:coverage"
+        seeded_relations = self._prepare_grounded_open_relation_seeds(
+            cleaned_text=cleaned_text,
+            proposals=proposals,
+            entities=entities,
+            rid_prefix=seed_prefix,
+            memory_context=memory_context,
+        )
+        seeded_relations = apply_canonicalization_to_relations(seeded_relations, build_name_canonicalizer(entities))
+        seeded_relations = self._filter_illegal_is_a_relations(seeded_relations, entities=entities)
+
+        existing_keys = {
+            (
+                safe_str(rel.get("subject")).strip(),
+                safe_str(rel.get("relation_type")).strip(),
+                safe_str(rel.get("object")).strip(),
+            )
+            for rel in (all_relations or {}).values()
+            if isinstance(rel, dict)
+        }
+        for rel in seeded_relations:
+            rel2, fb = self._revalidate_one_relation_global(rel, entities=entities)
+            if fb is not None or float(rel2.get("conf", 0.8) or 0.8) == 0.0:
+                continue
+            rel_key = (
+                safe_str(rel2.get("subject")).strip(),
+                safe_str(rel2.get("relation_type")).strip(),
+                safe_str(rel2.get("object")).strip(),
+            )
+            if rel_key in existing_keys:
+                continue
+            existing_keys.add(rel_key)
+            all_relations[safe_str(rel2.get("rid")).strip()] = rel2
+
+        return all_relations
+
+    def _extract_relations_one_chunk_open_then_ground(
+        self,
+        *,
+        cleaned_text: str,
+        entities: List[Dict[str, Any]],
+        prev_all_relations: Dict[str, Dict[str, Any]],
+        rid_namespace: str,
+        memory_context: str = "",
+    ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+        raw2canon = build_name_canonicalizer(entities)
+        all_relations: Dict[str, Dict[str, Any]] = dict(prev_all_relations or {})
+        all_feedbacks: Dict[str, List[Dict[str, Any]]] = {}
+
+        extracted_relations_ctx = self._relations_text_for_extractor(all_relations)
+        entities_text = self._entities_text_for_extractor(entities)
+        relation_hints = self._build_open_relation_hints(entities=entities)
+        raw = self.extractor.extract_open_relations(
+            text=cleaned_text,
+            extracted_entities=entities_text,
+            previous_results=extracted_relations_ctx or None,
+            feedbacks=None,
+            memory_context=memory_context,
+            relation_hints=relation_hints,
+            focus_entities="",
+        )
+
+        try:
+            proposals = json.loads(raw) if raw else []
+        except Exception:
+            proposals = []
+        if not isinstance(proposals, list):
+            proposals = []
+
+        seed_prefix = f"{rid_namespace}:open"
+        seeded_relations = self._prepare_grounded_open_relation_seeds(
+            cleaned_text=cleaned_text,
+            proposals=[proposal for proposal in proposals if isinstance(proposal, dict)],
+            entities=entities,
+            rid_prefix=seed_prefix,
+            memory_context=memory_context,
+        )
+
+        seeded_relations = apply_canonicalization_to_relations(seeded_relations, raw2canon)
+        seeded_relations = self._filter_illegal_is_a_relations(seeded_relations, entities=entities)
+
+        for rel in seeded_relations:
+            rid = safe_str(rel.get("rid")).strip()
+            if not rid:
+                continue
+            rel2, fb = self._revalidate_one_relation_global(rel, entities=entities)
+            all_relations[rid] = rel2
+            if fb is not None:
+                self._append_relation_feedback(
+                    all_feedbacks,
+                    safe_str(fb.get("error_type")).strip() or "unknown validation error",
+                    rid=rid,
+                    feedback=safe_str(fb.get("feedback")).strip(),
+                    subject=safe_str(fb.get("subject")).strip() or safe_str(rel2.get("subject")).strip(),
+                    object=safe_str(fb.get("object")).strip() or safe_str(rel2.get("object")).strip(),
+                    relation_type=safe_str(fb.get("relation_type")).strip() or safe_str(rel2.get("relation_type")).strip(),
+                    relation_name=safe_str(fb.get("relation_name")).strip() or safe_str(rel2.get("relation_name")).strip(),
+                )
+
+        return all_relations, all_feedbacks
+
 
     def _extract_relations_one_chunk(
         self,
@@ -1080,6 +1801,15 @@ class InformationExtractionAgent:
         rid_namespace: str,
         memory_context: str = "",
     ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+        if self._relation_extraction_mode() == "open_then_ground":
+            return self._extract_relations_one_chunk_open_then_ground(
+                cleaned_text=cleaned_text,
+                entities=entities,
+                prev_all_relations=prev_all_relations,
+                rid_namespace=rid_namespace,
+                memory_context=memory_context,
+            )
+
         raw2canon = build_name_canonicalizer(entities)
 
         all_relations: Dict[str, Dict[str, Any]] = dict(prev_all_relations or {})
@@ -1101,7 +1831,13 @@ class InformationExtractionAgent:
                 feedbacks=None,
                 memory_context=memory_context,
             )
-            rels = json.loads(raw) if raw else []
+            try:
+                rels = json.loads(raw) if raw else []
+            except Exception:
+                rels = []
+            if not isinstance(rels, list):
+                rels = []
+            rels = [rel for rel in rels if isinstance(rel, dict)]
 
             rels = self._filter_illegal_is_a_relations(rels, entities=entities)
             rels = apply_canonicalization_to_relations(rels, raw2canon)
@@ -1290,6 +2026,14 @@ class InformationExtractionAgent:
                 all_relations=all_relations,
                 all_feedbacks=feedbacks,
                 content=cleaned,
+            )
+
+            all_relations = self._repair_relation_coverage(
+                cleaned_text=cleaned,
+                entities=entities_all,
+                all_relations=all_relations,
+                rid_namespace=rid_ns,
+                memory_context=relation_memory_context,
             )
 
             # 4) canonicalize entities again (after potential additions)

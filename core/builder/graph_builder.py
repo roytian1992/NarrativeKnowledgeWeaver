@@ -20,6 +20,7 @@ from core.utils.format import DOC_TYPE_META
 from core.utils.config import KAGConfig
 from core.model_providers.openai_llm import OpenAILLM
 from core.builder.document_processor import DocumentProcessor
+from core.builder.event_first_extractor import EventFirstExtractor
 from core.agent.knowledge_extraction_agent import InformationExtractionAgent
 from core.agent.property_extraction_agent import PropertyExtractionAgent
 from core.agent.interaction_extraction_agent import InteractionExtractionAgent
@@ -194,6 +195,11 @@ class KnowledgeGraphBuilder:
             config=self.config,
             llm=self.llm,
             interaction_schema=self.INTERACTION_SCHEMA,
+        )
+        self.event_first_extractor = EventFirstExtractor(
+            config=self.config,
+            llm=self.llm,
+            agent=self.extract_agent,
         )
 
     # -------------------------
@@ -847,16 +853,65 @@ class KnowledgeGraphBuilder:
         document_pack: Dict[str, Any],
         *,
         aggressive_clean: bool = True,
+        pipeline_mode: str = "legacy",
+        short_scene_skip_word_threshold: int = 0,
     ) -> Dict[str, Any]:
         chunks = document_pack.get("chunks") or []
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and c.get("id")]
         packed_chunks = self._pack_document_chunks_for_extraction(document_id=document_id, chunks=chunks)
+        combined_text = "\n\n".join(
+            safe_str(item.get("content")).strip()
+            for item in packed_chunks
+            if isinstance(item, dict) and safe_str(item.get("content")).strip()
+        ).strip()
+        total_words = word_len(combined_text, lang="auto")
+        sentence_count = len([x for x in re.split(r"(?<=[\.\!\?。！？])\s+", combined_text) if safe_str(x).strip()])
+        if combined_text and sentence_count == 0:
+            sentence_count = 1
 
-        out = self.extract_agent.run_document(
-            packed_chunks,
-            aggressive_clean=aggressive_clean,
-            document_rid_namespace=f"document:{document_id}",
+        skip_short_scene = bool(
+            pipeline_mode == "event_first_fast"
+            and int(short_scene_skip_word_threshold or 0) > 0
+            and combined_text
+            and (total_words <= int(short_scene_skip_word_threshold) or sentence_count <= 1)
         )
+
+        if skip_short_scene:
+            return {
+                "ok": True,
+                "document_id": document_id,
+                "document_metadata": document_pack.get("document_metadata") or {},
+                "chunk_ids": chunk_ids,
+                "entities": [],
+                "relations": [],
+                "error": "",
+                "pipeline_mode": pipeline_mode,
+                "skipped_extraction": True,
+                "skip_reason": "short_scene_section_only",
+                "stats": {
+                    "packed_chunk_count": len(packed_chunks),
+                    "word_count": total_words,
+                    "sentence_count": sentence_count,
+                },
+            }
+
+        if pipeline_mode == "event_first_fast":
+            out = self.event_first_extractor.run_document(
+                ordered_chunks=packed_chunks,
+                aggressive_clean=aggressive_clean,
+                document_rid_namespace=f"document:{document_id}",
+            )
+            stats = dict(out.get("stats") or {})
+        else:
+            out = self.extract_agent.run_document(
+                packed_chunks,
+                aggressive_clean=aggressive_clean,
+                document_rid_namespace=f"document:{document_id}",
+            )
+            stats = {}
+        stats["packed_chunk_count"] = len(packed_chunks)
+        stats["word_count"] = total_words
+        stats["sentence_count"] = sentence_count
 
         return {
             "ok": True,
@@ -866,6 +921,10 @@ class KnowledgeGraphBuilder:
             "entities": out.get("entities", []) or [],
             "relations": out.get("relations", []) or [],
             "error": "",
+            "pipeline_mode": pipeline_mode,
+            "skipped_extraction": False,
+            "skip_reason": "",
+            "stats": stats,
         }
 
     def _pack_document_chunks_for_extraction(
@@ -953,6 +1012,8 @@ class KnowledgeGraphBuilder:
         concurrency: Optional[int] = None,
         reset_outputs: bool = False,
         aggressive_clean: bool = True,
+        pipeline_mode: str = "legacy",
+        short_scene_skip_word_threshold: int = 0,
     ) -> None:
         """
         document-level extraction (threaded, like property_extraction):
@@ -1029,7 +1090,13 @@ class KnowledgeGraphBuilder:
         def _task(doc_id: str) -> Dict[str, Any]:
             pack = doc2chunks.get(doc_id, {}) or {}
             try:
-                return self._extract_one_document(doc_id, pack, aggressive_clean=aggressive_clean)
+                return self._extract_one_document(
+                    doc_id,
+                    pack,
+                    aggressive_clean=aggressive_clean,
+                    pipeline_mode=pipeline_mode,
+                    short_scene_skip_word_threshold=short_scene_skip_word_threshold,
+                )
             except Exception as e:
                 chunks = pack.get("chunks") or []
                 chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and c.get("id")]
@@ -1041,6 +1108,10 @@ class KnowledgeGraphBuilder:
                     "entities": [],
                     "relations": [],
                     "error": f"{type(e).__name__}: {e}",
+                    "pipeline_mode": pipeline_mode,
+                    "skipped_extraction": False,
+                    "skip_reason": "",
+                    "stats": {},
                 }
 
         def _is_empty_fn(res: Any) -> bool:

@@ -171,6 +171,7 @@ class KnowledgeGraphBuilderConfig:
     max_workers: int = 64
     max_retries: int = 2
     per_task_timeout: int = 2400
+    relation_extraction_mode: str = "schema_direct"  # schema_direct | open_then_ground
     extraction_pack_short_chunk_word_threshold: int = 220
     extraction_pack_max_words: int = 900
     property_context_max_edge_descriptions: int = 80

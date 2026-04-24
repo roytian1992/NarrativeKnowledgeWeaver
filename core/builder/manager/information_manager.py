@@ -34,6 +34,8 @@ from typing import Dict, Any
 from core.utils.config import KAGConfig
 from core.functions.regular_functions import (
     EntityExtractor,
+    OpenRelationExtractor,
+    SchemaRelationGrounder,
     RelationExtractor,
     PropertyExtractor,
     PropertyFinalizer,
@@ -64,10 +66,24 @@ class InformationExtractor:
         relation_schema_path = os.path.join(schema_dir, "default_relation_schema.json")
         interaction_schema_path = os.path.join(schema_dir, "default_interaction_schema.json")
         entity_task_path = os.path.join(task_dir, "entity_extraction_task.json")
+        open_relation_task_path = os.path.join(task_dir, "open_relation_extraction_task.json")
+        schema_relation_grounding_task_path = os.path.join(task_dir, "schema_relation_grounding_task.json")
         relation_task_path = os.path.join(task_dir, "relation_extraction_task.json")
         interaction_task_path = os.path.join(task_dir, "interaction_extraction_task.json")
 
         self.entity_extraction = EntityExtractor(llm=self.llm, prompt_loader=self.prompt_loader, task_schema_path=entity_task_path, entity_schema_path=entity_schema_path)
+        self.open_relation_extraction = OpenRelationExtractor(
+            llm=self.llm,
+            prompt_loader=self.prompt_loader,
+            task_schema_path=open_relation_task_path,
+            relation_schema_path=relation_schema_path,
+        )
+        self.schema_relation_grounding = SchemaRelationGrounder(
+            llm=self.llm,
+            prompt_loader=self.prompt_loader,
+            task_schema_path=schema_relation_grounding_task_path,
+            relation_schema_path=relation_schema_path,
+        )
         self.relation_extraction = RelationExtractor(llm=self.llm, prompt_loader=self.prompt_loader, task_schema_path=relation_task_path, relation_schema_path=relation_schema_path)
         self.interaction_extraction = InteractionExtractor(
             llm=self.llm,
@@ -122,6 +138,44 @@ class InformationExtractor:
             "memory_context": memory_context,
         }
         result = self.relation_extraction.call(params=json.dumps(params))
+        return result
+
+    def extract_open_relations(
+        self,
+        text: str,
+        extracted_entities: str = None,
+        previous_results: str = None,
+        feedbacks: str = None,
+        memory_context: str = "",
+        relation_hints: str = "",
+        focus_entities: str = "",
+    ) -> str:
+        """Extract open-form relations from text without schema typing."""
+        params = {
+            "text": text,
+            "extracted_entities": extracted_entities,
+            "previous_results": previous_results,
+            "feedbacks": feedbacks,
+            "memory_context": memory_context,
+            "relation_hints": relation_hints,
+            "focus_entities": focus_entities,
+        }
+        result = self.open_relation_extraction.call(params=json.dumps(params))
+        return result
+
+    def ground_open_relations(
+        self,
+        text: str,
+        proposals: Any,
+        memory_context: str = "",
+    ) -> str:
+        """Ground open-form relation proposals to schema relation types."""
+        params = {
+            "text": text,
+            "proposals": proposals,
+            "memory_context": memory_context,
+        }
+        result = self.schema_relation_grounding.call(params=json.dumps(params))
         return result
 
     def extract_interactions(

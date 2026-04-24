@@ -1,0 +1,56 @@
+[
+  {
+    "task": "schema_relation_grounding",
+    "task_name": "开放关系归类到 Schema",
+    "task_goal": "将开放关系 proposal 归类到候选 schema relation type，或在无法清晰归类且不重要时直接丢弃。",
+    "global_constraints": [
+      "只能在每条 proposal 提供的 candidate_relations 范围内选择 relation_type。",
+      "只能依据输入文本和 proposal 自带证据做判断，不要臆造信息。",
+      "如果最合适的 schema 关系方向与当前 subject/object 相反，使用 swap_subject_object=true。",
+      "如果没有清晰映射，或者关系过于细碎、边际价值低，选择 drop。",
+      "仅输出 JSON 数组，不要输出解释性文本。"
+    ],
+    "output_fields": [
+      "proposal_id",
+      "decision",
+      "relation_type",
+      "swap_subject_object",
+      "relation_name",
+      "description"
+    ],
+    "grounding_rules": [
+      "优先选择与文本事实最贴近、最稳定的 schema relation type。",
+      "relation_name 保持为简洁自然语言短语，可以沿用原 relation_phrase 或做轻微规范化。",
+      "description 用一句话概括为何该 schema relation 被支持。",
+      "如果一个开放关系更像局部互动细节，而 schema 更关心高层事件/参与/发生位置关系，可以直接 drop。"
+    ],
+    "few_shot": {
+      "examples": [
+        {
+          "proposal_id": "p1",
+          "decision": "ground",
+          "relation_type": "performs",
+          "swap_subject_object": false,
+          "relation_name": "performs",
+          "description": "The character directly carries out the event described in the text."
+        },
+        {
+          "proposal_id": "p2",
+          "decision": "ground",
+          "relation_type": "occurs_at",
+          "swap_subject_object": true,
+          "relation_name": "occurs at",
+          "description": "The text supports that the event or occasion happens at that location, so the endpoints should be reversed."
+        },
+        {
+          "proposal_id": "p3",
+          "decision": "drop",
+          "relation_type": "",
+          "swap_subject_object": false,
+          "relation_name": "",
+          "description": ""
+        }
+      ]
+    }
+  }
+]

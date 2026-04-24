@@ -1,0 +1,42 @@
+[
+  {
+    "task": "entity_schema_grounding",
+    "task_name": "实体 Schema Grounding",
+    "task_goal": "将开放实体归类到 Character / Object / Concept / Location / TimePoint 中的一个类型，并给出合适的 scope。",
+    "global_constraints": [
+      "只对适合作为独立图谱节点的实体输出结果；弱背景、纯命题化或不值得建节点的条目可以省略。",
+      "type 只能从 Character / Object / Concept / Location / TimePoint 中选择。",
+      "结合输入文本、实体名和描述做判断，不要臆造。",
+      "只输出 JSON 数组。"
+    ],
+    "output_fields": ["name", "description", "type", "scope"],
+    "grounding_rules": [
+      "优先结合输入文本判断实体在当前片段中的真实语义角色，再选择类型。",
+      "如果是具体角色个体，用 Character。",
+      "如果是具体物理地点，用 Location。",
+      "如果是时间表达，用 TimePoint。",
+      "如果是物理物品，用 Object。",
+      "如果是组织、制度、群体、抽象框架，用 Concept。",
+      "scope 用 global 或 local；跨场景稳定实体优先 global，场景限定表达优先 local。",
+      "如果条目本质上是'消息''说法''一次发言内容''模糊列表项'，优先省略而不是硬分类型。",
+      "如果条目只是泛化日常物件、纯时间修饰语、描述性地点短语或临时群体称呼，优先省略。",
+      "优先保留稳定角色、稳定地点、关键道具，以及组织/家族/婚姻/职业身份等高价值概念。"
+    ],
+    "few_shot": {
+      "examples": [
+        {
+          "name": "Dewey",
+          "description": "故事中的主要角色之一。",
+          "type": "Character",
+          "scope": "global"
+        },
+        {
+          "name": "次日上午",
+          "description": "相对于当前场景的时间锚点。",
+          "type": "TimePoint",
+          "scope": "local"
+        }
+      ]
+    }
+  }
+]

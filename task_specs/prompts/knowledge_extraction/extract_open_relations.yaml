@@ -1,0 +1,115 @@
+id: open_relation_extraction
+category: knowledge_extraction
+name: Open Relation Extraction
+description: >
+  Extract explicit open-form relations between already-extracted entities without mapping them to schema relation types.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input chunk text.
+
+  - name: entities
+    type: string
+    required: true
+    description: Already-extracted entity list. Subject and object must come from this list.
+
+  - name: memory_context
+    type: string
+    required: false
+    description: Optional retrieval memory for extraction hints.
+
+  - name: relation_hints
+    type: string
+    required: false
+    description: Optional schema-aware relation family hints. These guide extraction but do not constrain output types directly.
+
+  - name: focus_entities
+    type: string
+    required: false
+    description: Optional entity subset that should be prioritized for relation coverage.
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: output_fields_block
+    type: string
+    required: true
+  - name: extraction_rules_block
+    type: string
+    required: false
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  你正在执行开放关系抽取任务。
+
+  任务：
+  {task_name}
+
+  目标：
+  {task_goal}
+
+  全局约束：
+  {global_constraints}
+
+  额外抽取规则：
+  {extraction_rules_block}
+
+  目标关系类型参考（仅作提示，不限制输出）：
+  {relation_hints}
+
+  输出格式：
+  返回一个 JSON 数组。
+  每个元素必须包含以下字段：
+  {output_fields_block}
+  其中 `new_entities` 是可选字段；如果 subject 或 object 引入了实体列表中尚未出现、但对当前关系重要的新实体，使用:
+  [
+    {{
+      "name": "...",
+      "description": "..."
+    }}
+  ]
+
+  不要输出 schema relation type。
+  relation_phrase 必须是贴近原文的自然语言关系短语。
+  subject 和 object 优先使用给定实体列表中的名称；如果文本里存在重要但尚未给出的实体，可以引入，但必须同时放进 `new_entities`。
+  先追求高召回：只要文本明确支持，就尽量多抽关系，后续会再做 grounding、去重和丢弃。
+  在开始输出前，先按下面的关系桶做一轮内部检查；如果某个桶在文本中明显存在关系，优先把该桶里的关系抽出来：
+  1. 人物-人物：亲属、敌意、亲近、从属、成员关系。
+  2. 人物-事件：谁执行、发起、推动、体验、卷入了某个事件，尤其是对话、命令、威胁、请求、决定、承诺。
+  3. 事件-地点：核心事件发生在哪里。
+  4. 人物/物体-地点：关键人物或关键物体在当前片段位于哪里。
+  5. 实体-组织/场合：谁属于什么组织、参与什么场合、由谁发起。
+  6. 事件-物体/对象：事件直接作用到什么对象、消耗/使用/持有什么东西。
+  不要主动补抽事件-时间关系；时间通常会在 Event/Occasion 结构里单独处理。
+  不要机械地给每个桶都凑关系；只有文本明确支持时才输出。
+  “目标关系类型参考”只是帮助你优先想到哪些关系更常见，不是硬约束；不要因为暂时看不出 schema 对应就漏掉文本中明确存在的关系。
+  同一对实体如果存在多个语义不同、且都被文本直接支持的关系，可以同时输出。
+  如果提供了“优先覆盖实体”，优先确保这些实体至少参与一条有文本支持的关系，但不要因此忽略其他明显关系。
+  如果文本没有明确支持关系，则返回空数组 []。
+  不要在 JSON 之外输出任何解释。
+
+  示例：
+  {few_shot_samples}
+
+  输入文本：
+  {text}
+
+  已抽取实体：
+  {entities}
+
+  优先覆盖实体：
+  {focus_entities}
+
+  可选记忆：
+  {memory_context}

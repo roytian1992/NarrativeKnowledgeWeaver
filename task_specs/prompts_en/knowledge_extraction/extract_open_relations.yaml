@@ -1,0 +1,107 @@
+id: open_relation_extraction
+category: knowledge_extraction
+name: Open Relation Extraction
+description: >
+  Extract explicit open-form relations between already-extracted entities without mapping them to schema relation types.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input chunk text.
+
+  - name: entities
+    type: string
+    required: true
+    description: Already-extracted entity list. Subject and object must come from this list.
+
+  - name: memory_context
+    type: string
+    required: false
+    description: Optional retrieval memory for extraction hints.
+
+  - name: relation_hints
+    type: string
+    required: false
+    description: Optional schema-aware relation family hints. These guide extraction without forcing schema labels in the output.
+
+  - name: focus_entities
+    type: string
+    required: false
+    description: Optional entity subset that should be prioritized for relation coverage.
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: output_fields_block
+    type: string
+    required: true
+  - name: extraction_rules_block
+    type: string
+    required: false
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  You are performing open relation extraction.
+
+  Task:
+  {task_name}
+
+  Goal:
+  {task_goal}
+
+  Global constraints:
+  {global_constraints}
+
+  Additional extraction rules:
+  {extraction_rules_block}
+
+  Target relation families (guidance only, not output labels):
+  {relation_hints}
+
+  Output format:
+  Return a JSON array.
+  Each item must contain the following fields:
+  {output_fields_block}
+
+  Do not output schema relation types.
+  relation_phrase must be a natural-language relation phrase close to the wording in the text.
+  subject and object should preferentially come from the provided entity list; if the text introduces an important missing entity for the relation, include it in `new_entities`.
+  Optimize for recall first: if the text explicitly supports a relation, prefer extracting it and let later grounding / dedup / dropping handle cleanup.
+  Before producing the final JSON, do one internal pass over these relation buckets and prioritize the ones clearly supported by the text:
+  1. Character-character: kinship, hostility, affinity, hierarchy, membership.
+  2. Character-event: who performs, initiates, drives, experiences, or is drawn into an event, especially dialogue, commands, threats, requests, decisions, and promises.
+  3. Event-location: where the core event takes place.
+  4. Character/object-location: where key characters or key objects are located in the current chunk.
+  5. Entity-organization/occasion: who belongs to what organization, participates in what occasion, or who initiated it.
+  6. Event-object/target: what object, target, or affected entity the event directly acts on, uses, consumes, or carries.
+  Do not proactively add event-time relations here; time is usually handled inside the Event/Occasion structure.
+  The target relation families are only hints to help you think of likely useful relations; do not suppress an explicit relation just because the schema mapping is not obvious yet.
+  If the same entity pair has multiple semantically distinct relations that are each directly supported by the text, you may output multiple items.
+  If priority entities are provided, prioritize finding at least one text-supported relation involving them, but do not ignore other clearly supported relations.
+  If the text does not explicitly support a relation, return [].
+  Do not output any explanation outside JSON.
+
+  Examples:
+  {few_shot_samples}
+
+  Input text:
+  {text}
+
+  Extracted entities:
+  {entities}
+
+  Priority entities:
+  {focus_entities}
+
+  Optional memory:
+  {memory_context}

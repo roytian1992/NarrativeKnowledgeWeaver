@@ -1,0 +1,52 @@
+[
+  {
+    "task": "open_relation_extraction",
+    "task_name": "Open Relation Extraction",
+    "task_goal": "Extract natural-language relations explicitly supported by the text between already-provided entities, without mapping them to schema relation types yet.",
+    "global_constraints": [
+      "Prefer using names from the provided entity list; if the text introduces an important missing entity for a supported relation, include it in new_entities.",
+      "If subject or object is not already in the entity list, the missing endpoint must be provided in new_entities with a short description.",
+      "Do not output schema relation types or ontology labels.",
+      "Only extract relations with explicit textual support; omit speculative relations.",
+      "If relation_phrase is too abstract, rewrite it into a wording closer to the text.",
+      "Output a JSON array only, with no commentary."
+    ],
+    "output_fields": [
+      "subject",
+      "object",
+      "relation_phrase",
+      "description",
+      "evidence",
+      "new_entities"
+    ],
+    "extraction_rules": [
+      "Use a concise natural-language phrase for relation_phrase, such as \"argues with\", \"works for\", or \"hides from\".",
+      "Use one short sentence in description to summarize the relation.",
+      "Use the most direct supporting snippet or a faithful short paraphrase for evidence.",
+      "Favor recall first: if the text explicitly supports a relation, extract it now and let later grounding / dedup / dropping clean it up.",
+      "Treat relation_hints as guidance rather than a constraint; do not skip explicit relations just because the schema match is not obvious yet.",
+      "If the same entity pair has multiple semantically distinct and explicitly supported relations, you may output multiple items.",
+      "If priority entities are provided, prioritize ensuring they participate in at least one explicitly supported relation.",
+      "If a relation requires an important missing entity, include it in new_entities as [{\"name\": \"...\", \"description\": \"...\"}].",
+      "Do not emit duplicate relations with the same meaning for the same entity pair."
+    ],
+    "few_shot": {
+      "examples": [
+        {
+          "subject": "Alice",
+          "object": "Bob",
+          "relation_phrase": "argues with",
+          "description": "Alice and Bob are in open verbal conflict.",
+          "evidence": "Alice shouted at Bob and accused him of lying."
+        },
+        {
+          "subject": "Captain Reed",
+          "object": "the patrol team",
+          "relation_phrase": "leads",
+          "description": "Captain Reed directs and leads the patrol team.",
+          "evidence": "Captain Reed ordered the patrol team to move out."
+        }
+      ]
+    }
+  }
+]

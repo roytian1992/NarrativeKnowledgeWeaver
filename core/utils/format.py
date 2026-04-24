@@ -2,6 +2,11 @@ import json
 import re
 from typing import Dict, List, Any
 
+try:
+    from json_repair import repair_json as _json_repair
+except Exception:
+    _json_repair = None
+
 DOC_TYPE_META: Dict[str, Dict[str, str]] = {
     "screenplay": {
         "section_label": "Scene",
@@ -554,6 +559,26 @@ def _ensure_matching_outer_brackets(text: str) -> str:
     return s + expected_closer
 
 
+def _repair_with_json_repair(text: str) -> str:
+    if _json_repair is None:
+        return ""
+    try:
+        repaired = _json_repair(
+            text,
+            return_objects=False,
+            skip_json_loads=True,
+            ensure_ascii=False,
+        )
+    except TypeError:
+        try:
+            repaired = _json_repair(text)
+        except Exception:
+            return ""
+    except Exception:
+        return ""
+    return repaired if isinstance(repaired, str) else ""
+
+
 def correct_json_format(text: str) -> str:
     body0 = _extract_json_code(text)
     body0 = extract_first_json_block(body0) or body0
@@ -573,12 +598,16 @@ def correct_json_format(text: str) -> str:
     patched = _ensure_matching_outer_brackets(patched)
     if is_valid_json(patched):
         return patched
-    
+
+    repaired = _repair_with_json_repair(body)
+    repaired = extract_first_json_block(repaired) or repaired
+    repaired = _ensure_matching_outer_brackets(repaired)
+    if is_valid_json(repaired):
+        return repaired
+
     final_fix = fix_json_str(text, verbose=False)
     if is_valid_json(final_fix):
         return final_fix
-    else:
-        print("**失败**", final_fix)
 
     return text
 

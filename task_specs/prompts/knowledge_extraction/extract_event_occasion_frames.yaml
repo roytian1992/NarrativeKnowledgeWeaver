@@ -1,0 +1,77 @@
+id: event_occasion_frame_extraction
+category: knowledge_extraction
+name: Event Occasion Frame Extraction
+description: >
+  Extract atomic Event frames and Occasion frames, together with attached participant, time, location, and related entity mentions.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+  - name: memory_context
+    type: string
+    required: false
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: extraction_rules_block
+    type: string
+    required: false
+  - name: output_schema_block
+    type: string
+    required: true
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  你正在执行 Event / Occasion frame 抽取任务。
+
+  任务：
+  {task_name}
+
+  目标：
+  {task_goal}
+
+  全局约束：
+  {global_constraints}
+
+  额外抽取规则：
+  {extraction_rules_block}
+
+  输出结构：
+  {output_schema_block}
+
+  关键要求：
+  - 只抽取 Event 和 Occasion 两类 induced 实体。
+  - Event 要尽量保持原子性。
+  - Occasion 是可以容纳多个 Event 的有组织活动/场合。
+  - 名称必须尽量保留原文中的表层形式和语言；如果输入文本是英文，不要把 entity / event / occasion 名字翻译成中文。
+  - 在抽取 Event / Occasion 的同时，尽量带出它们明确关联的人物、时间、地点、以及其他相关实体。
+  - 附属实体先保持开放描述，不要给它们分配 schema type。
+  - `related_entities` 只保留真正值得成为节点的实体或概念；不要把“某条消息/某种说法/一次对话内容”这类命题化表述塞进去。
+  - 如果某个实体只是背景举例、顺口一提、没有局部叙事作用，不要挂到 frame 上。
+  - 每个附属实体对象使用:
+    {{
+      "name": "...",
+      "description": "..."
+    }}
+  - 如果某个字段没有明确支持，就返回空数组。
+  - 只输出 JSON，不要输出解释文本。
+
+  示例：
+  {few_shot_samples}
+
+  输入文本：
+  {text}
+
+  可选记忆：
+  {memory_context}

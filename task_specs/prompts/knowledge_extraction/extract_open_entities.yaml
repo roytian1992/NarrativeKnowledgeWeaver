@@ -1,0 +1,82 @@
+id: open_entity_extraction
+category: knowledge_extraction
+name: Open Entity Extraction
+description: >
+  Extract non-event, non-occasion entities in open form with name and description only.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+  - name: known_entities
+    type: string
+    required: false
+  - name: memory_context
+    type: string
+    required: false
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: extraction_rules_block
+    type: string
+    required: false
+  - name: output_fields_block
+    type: string
+    required: true
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  你正在执行开放实体抽取任务。
+
+  任务：
+  {task_name}
+
+  目标：
+  {task_goal}
+
+  全局约束：
+  {global_constraints}
+
+  额外规则：
+  {extraction_rules_block}
+
+  输出字段：
+  {output_fields_block}
+
+  关键要求：
+  - 这里只抽取非 Event、非 Occasion 的实体。
+  - 人物通常已经由 Event / Occasion frame 中的角色槽位覆盖；除非文本里有明显未被 frame 捕获、且对当前片段叙事重要的人物，否则不要重复补人物。
+  - 时间通常作为 Event / Occasion 的锚点处理；不要把时间表达当作这里的主要补充目标。
+  - 这里优先补充值得单独成节点的 Character / Location / Object / Concept，尤其是稳定角色、稳定地点、关键道具、组织/家族/婚姻/职业身份等高价值概念。
+  - 先不要输出 schema type。
+  - 实体名称必须尽量保留原文中的表层形式和语言；如果原文是英文，不要翻译名称。
+  - 只返回实体名和基于文本的简短描述。
+  - 如果实体已在已知实体列表中出现，即使你能补充更长描述，也不要重复输出。
+  - 只保留值得成为图谱节点的实体；对于纯背景举例、路人名单、顺口列举且不影响当前片段叙事的名字，可以省略。
+  - 不要优先抽取泛化日常物件或描述性短语，例如 `book`、`door`、`coat`、`day`、`evening`、`a room where...`、`the area around...` 这类条目；除非它们在当前片段里承担了明确剧情作用。
+  - 对于纯方位、纯修饰、纯舞台说明派生出的短语地点或临时群体称呼，优先省略。
+  - 如果一个实体既不会进入关键关系网络，也不会在后续叙事中稳定复现，优先不抽。
+  - 高召回优先，但不要臆造。
+  - 只输出 JSON 数组，不要输出解释文字。
+
+  示例：
+  {few_shot_samples}
+
+  输入文本：
+  {text}
+
+  已知实体（避免重复）：
+  {known_entities}
+
+  可选记忆：
+  {memory_context}

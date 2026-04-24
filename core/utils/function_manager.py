@@ -659,17 +659,18 @@ class EnhancedJSONUtils:
         # First attempt
         result = llm_client.run(initial_messages)
         content = unwrap_llm_content(result)
-
-        is_valid, error_msg, parsed, corrected_content = EnhancedJSONUtils.enhanced_json_validation(
+        issue_type, error_msg, parsed = EnhancedJSONUtils.analyze_json_response(
             content, required_fields, field_validators
         )
+        corrected_content = correct_json_format(content)
+        is_valid = issue_type == JSONIssueType.VALID
         if is_valid:
             return parsed, corrected_content
 
-        current_content = content
+        # Prefer the locally repaired JSON as the repair basis before escalating to LLM repair.
+        current_content = corrected_content or content
         for attempt in range(max_retries):
             logger.warning("Attempting to repair JSON response (try %d/%d).", attempt + 1, max_retries)
-            print("****", current_content, "****")
 
             try:
                 if repair_prompt_template:

@@ -1,0 +1,68 @@
+[
+  {
+    "task": "event_occasion_frame_extraction",
+    "task_name": "事件与场合框架抽取",
+    "task_goal": "先抽取原子 Event 和 Occasion，并顺带抽取它们明确关联的人物、时间、地点及其他相关实体信息，为后续自动建边和实体 grounding 提供基础。",
+    "global_constraints": [
+      "只依据文本，不要臆造。",
+      "Event 保持原子性，不要把多个不同动作揉成一个 Event。",
+      "Occasion 是有组织活动或场合容器，不是单次动作。",
+      "名称尽量保留原文表层形式和原始语言，不要无故翻译。",
+      "附属实体只输出 name 和 description，不要提前赋予 schema type。",
+      "只输出 JSON。"
+    ],
+    "extraction_rules": [
+      "如果同一文本片段既支持 Occasion 又支持其中的 Event，两者都可以抽。",
+      "对 Event 尽量带出 agents / experiencers / patients / locations / times / occasion / related_entities。",
+      "对 Occasion 尽量带出 participants / initiators / locations / times / related_entities。",
+      "如果角色或实体只是弱背景提及，不必强行挂到每个 frame 上。",
+      "related_entities 只保留具有独立节点价值的实体或概念，不要输出'某条消息''某种说法''一次对话内容'这类命题化条目。"
+    ],
+    "output_schema": {
+      "events": [
+        {
+          "name": "事件名",
+          "description": "事件描述",
+          "agents": [{"name": "实体名", "description": "简短描述"}],
+          "experiencers": [],
+          "patients": [],
+          "locations": [],
+          "times": [],
+          "occasion": [],
+          "related_entities": []
+        }
+      ],
+      "occasions": [
+        {
+          "name": "场合名",
+          "description": "场合描述",
+          "participants": [{"name": "实体名", "description": "简短描述"}],
+          "initiators": [],
+          "locations": [],
+          "times": [],
+          "related_entities": []
+        }
+      ]
+    },
+    "few_shot": {
+      "examples": [
+        {
+          "events": [
+            {
+              "name": "医生向家属宣布病危消息",
+              "description": "医生在病房外向家属说明病人情况恶化。",
+              "agents": [{"name": "医生", "description": "负责说明病情的人"}],
+              "experiencers": [],
+              "patients": [{"name": "家属", "description": "接收病危消息的人群"}],
+              "locations": [{"name": "病房外走廊", "description": "医院病房外的走廊"}],
+              "times": [{"name": "深夜", "description": "事件发生的时间段"}],
+              "occasion": [],
+              "related_entities": [{"name": "病危通知单", "description": "用于说明病情的文件"}]
+            }
+          ],
+          "occasions": []
+        }
+      ]
+    }
+  }
+]

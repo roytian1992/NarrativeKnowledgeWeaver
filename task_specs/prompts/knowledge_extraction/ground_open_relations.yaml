@@ -1,0 +1,83 @@
+id: schema_relation_grounding
+category: knowledge_extraction
+name: Schema Relation Grounding
+description: >
+  Ground open-form relation proposals to schema relation types or drop them.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input chunk text.
+
+  - name: open_relation_proposals
+    type: string
+    required: true
+    description: JSON list of open relation proposals with candidate schema relation types.
+
+  - name: memory_context
+    type: string
+    required: false
+    description: Optional memory hint.
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: grounding_rules_block
+    type: string
+    required: false
+  - name: output_fields_block
+    type: string
+    required: true
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  你正在执行开放关系到 schema 关系的归类任务。
+
+  任务：
+  {task_name}
+
+  目标：
+  {task_goal}
+
+  全局约束：
+  {global_constraints}
+
+  额外归类规则：
+  {grounding_rules_block}
+
+  输出格式：
+  返回一个 JSON 数组。
+  每个元素必须包含以下字段：
+  {output_fields_block}
+
+  决策说明：
+  - `decision = "ground"`：该开放关系可以明确归入某个候选 schema relation type。
+  - `decision = "drop"`：没有清晰对应，或关系太细碎/不重要，不值得保留。
+  - 只能从每条 proposal 自带的 `candidate_relations` 中选择 `relation_type`。
+  - 如果正确的 schema 关系方向与当前 subject/object 相反，则设置 `swap_subject_object = true`。
+  - 如果文本只支持事件脚手架关系而不支持原开放短语本身，也可以 ground 到对应 schema 关系。
+  - 如果你不够确定，宁可 drop，也不要硬归类。
+
+  示例：
+  {few_shot_samples}
+
+  输入文本：
+  {text}
+
+  开放关系 proposals：
+  {open_relation_proposals}
+
+  可选记忆：
+  {memory_context}
+
+  只输出 JSON，不要输出解释文字。

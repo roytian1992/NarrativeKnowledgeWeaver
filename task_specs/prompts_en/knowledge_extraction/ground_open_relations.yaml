@@ -1,0 +1,83 @@
+id: schema_relation_grounding
+category: knowledge_extraction
+name: Schema Relation Grounding
+description: >
+  Ground open-form relation proposals to schema relation types or drop them.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+    description: Input chunk text.
+
+  - name: open_relation_proposals
+    type: string
+    required: true
+    description: JSON list of open relation proposals with candidate schema relation types.
+
+  - name: memory_context
+    type: string
+    required: false
+    description: Optional memory hint.
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: grounding_rules_block
+    type: string
+    required: false
+  - name: output_fields_block
+    type: string
+    required: true
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  You are performing schema grounding for open-form relations.
+
+  Task:
+  {task_name}
+
+  Goal:
+  {task_goal}
+
+  Global constraints:
+  {global_constraints}
+
+  Additional grounding rules:
+  {grounding_rules_block}
+
+  Output format:
+  Return a JSON array.
+  Each item must contain:
+  {output_fields_block}
+
+  Decision guide:
+  - `decision = "ground"`: the open relation can be clearly mapped to one candidate schema relation type.
+  - `decision = "drop"`: there is no clear schema match, or the relation is too minor / not important enough to keep.
+  - You may only choose `relation_type` values that appear in that proposal's `candidate_relations`.
+  - If the correct schema direction is the reverse of the current subject/object ordering, set `swap_subject_object = true`.
+  - If the text supports a schema-level scaffold relation better than the literal open phrase, you may ground to that schema relation.
+  - If you are not confident, prefer `drop` over forced grounding.
+
+  Examples:
+  {few_shot_samples}
+
+  Input text:
+  {text}
+
+  Open relation proposals:
+  {open_relation_proposals}
+
+  Optional memory:
+  {memory_context}
+
+  Return JSON only. No extra commentary.

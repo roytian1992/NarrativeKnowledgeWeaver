@@ -1,0 +1,52 @@
+[
+  {
+    "task": "open_relation_extraction",
+    "task_name": "开放关系抽取",
+    "task_goal": "从输入文本中抽取已给定实体之间被文本明确支持的自然语言关系，但暂时不要映射到 schema relation type。",
+    "global_constraints": [
+      "优先使用已给定实体列表中的名称；如果文本里存在重要但尚未给出的实体，可以在 new_entities 中补充。",
+      "如果 subject 或 object 不是已给定实体，必须在 new_entities 中提供对应实体名和简短描述。",
+      "不要输出 schema relation type 或任何本体标签。",
+      "只抽取有明确文本证据支持的关系，不要输出推测性关系。",
+      "如果 relation_phrase 过于抽象，改写为更贴近原文的短语。",
+      "仅输出 JSON 数组，不要包含注释或额外文本。"
+    ],
+    "output_fields": [
+      "subject",
+      "object",
+      "relation_phrase",
+      "description",
+      "evidence",
+      "new_entities"
+    ],
+    "extraction_rules": [
+      "relation_phrase 使用简洁的自然语言短语，例如“argues with”“works for”“hides from”。",
+      "description 用一句短话概括关系含义。",
+      "evidence 尽量摘取最直接支持该关系的文本片段或等价短句。",
+      "高召回优先：只要文本明确支持，就尽量先抽出来，后续再 grounding / dedup / drop。",
+      "relation_hints 只是提示，不是约束；不要因为暂时看不出 schema 对应就漏掉文本中明确存在的关系。",
+      "同一对实体如果有多个被文本明确支持且语义不同的关系，可以同时输出。",
+      "如果系统给出了优先覆盖实体，优先确保这些实体参与至少一条明确支持的关系。",
+      "如果关系涉及新的重要实体，可以在 new_entities 中补充，格式为 [{\"name\": \"...\", \"description\": \"...\"}]。",
+      "不要重复输出同一对实体之间语义相同的关系。"
+    ],
+    "few_shot": {
+      "examples": [
+        {
+          "subject": "Alice",
+          "object": "Bob",
+          "relation_phrase": "argues with",
+          "description": "Alice and Bob are in open verbal conflict.",
+          "evidence": "Alice shouted at Bob and accused him of lying."
+        },
+        {
+          "subject": "Captain Reed",
+          "object": "the patrol team",
+          "relation_phrase": "leads",
+          "description": "Captain Reed directs and leads the patrol team.",
+          "evidence": "Captain Reed ordered the patrol team to move out."
+        }
+      ]
+    }
+  }
+]

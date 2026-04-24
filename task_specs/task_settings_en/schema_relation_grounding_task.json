@@ -1,0 +1,56 @@
+[
+  {
+    "task": "schema_relation_grounding",
+    "task_name": "Ground Open Relations To Schema",
+    "task_goal": "Map open relation proposals to candidate schema relation types, or drop them when no clear mapping exists and the relation is not important enough to keep.",
+    "global_constraints": [
+      "You may only choose relation_type values from the candidate_relations of that proposal.",
+      "Use only the input text and proposal evidence; do not invent facts.",
+      "If the correct schema direction reverses the current subject/object order, set swap_subject_object=true.",
+      "If there is no clear mapping, or the relation is too minor / low-value, choose drop.",
+      "Return a JSON array only."
+    ],
+    "output_fields": [
+      "proposal_id",
+      "decision",
+      "relation_type",
+      "swap_subject_object",
+      "relation_name",
+      "description"
+    ],
+    "grounding_rules": [
+      "Prefer the schema relation type that most directly matches the textual evidence.",
+      "Keep relation_name as a short natural-language phrase; you may reuse the original relation phrase or lightly normalize it.",
+      "Use description as a one-sentence justification grounded in the text.",
+      "If the open relation is just a local interaction detail while the schema mainly captures higher-level event / participation / location relations, you may drop it."
+    ],
+    "few_shot": {
+      "examples": [
+        {
+          "proposal_id": "p1",
+          "decision": "ground",
+          "relation_type": "performs",
+          "swap_subject_object": false,
+          "relation_name": "performs",
+          "description": "The character directly carries out the event described in the text."
+        },
+        {
+          "proposal_id": "p2",
+          "decision": "ground",
+          "relation_type": "occurs_at",
+          "swap_subject_object": true,
+          "relation_name": "occurs at",
+          "description": "The text supports that the event or occasion happens at that location, so the endpoints should be reversed."
+        },
+        {
+          "proposal_id": "p3",
+          "decision": "drop",
+          "relation_type": "",
+          "swap_subject_object": false,
+          "relation_name": "",
+          "description": ""
+        }
+      ]
+    }
+  }
+]
