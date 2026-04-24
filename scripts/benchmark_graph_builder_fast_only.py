@@ -41,6 +41,10 @@ def _summarize_extraction_results(path: Path) -> Dict[str, Any]:
     auto_rel_total = 0
     open_rel_total = 0
     coverage_repair_triggered_chunks = 0
+    external_entity_raw_count = 0
+    external_entity_typed_count = 0
+    external_entity_open_candidate_count = 0
+    open_entity_llm_skipped_chunks = 0
     for payload in data.values():
         if not isinstance(payload, dict):
             continue
@@ -59,6 +63,10 @@ def _summarize_extraction_results(path: Path) -> Dict[str, Any]:
             auto_rel_total += int(stats.get("auto_relation_count", 0) or 0)
             open_rel_total += int(stats.get("open_relation_count_after_fix", 0) or 0)
             coverage_repair_triggered_chunks += int(stats.get("coverage_repair_triggered_chunks", 0) or 0)
+            external_entity_raw_count += int(stats.get("external_entity_raw_count", 0) or 0)
+            external_entity_typed_count += int(stats.get("external_entity_typed_count", 0) or 0)
+            external_entity_open_candidate_count += int(stats.get("external_entity_open_candidate_count", 0) or 0)
+            open_entity_llm_skipped_chunks += int(stats.get("open_entity_llm_skipped_chunks", 0) or 0)
     return {
         "total_docs": total_docs,
         "ok_docs": ok_docs,
@@ -71,6 +79,10 @@ def _summarize_extraction_results(path: Path) -> Dict[str, Any]:
         "auto_relation_total": auto_rel_total,
         "open_relation_after_fix_total": open_rel_total,
         "coverage_repair_triggered_chunks": coverage_repair_triggered_chunks,
+        "external_entity_raw_count": external_entity_raw_count,
+        "external_entity_typed_count": external_entity_typed_count,
+        "external_entity_open_candidate_count": external_entity_open_candidate_count,
+        "open_entity_llm_skipped_chunks": open_entity_llm_skipped_chunks,
     }
 
 
@@ -83,7 +95,15 @@ def main() -> None:
     parser.add_argument("--llm-base-url", default="")
     parser.add_argument("--llm-model-name", default="")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--pipeline-mode", default="event_first_fast")
     parser.add_argument("--short-scene-skip-word-threshold", type=int, default=25)
+    parser.add_argument("--external-entity-backend", default="")
+    parser.add_argument("--external-entity-model-name", default="")
+    parser.add_argument("--external-entity-device", default="")
+    parser.add_argument("--external-entity-threshold", type=float, default=-1.0)
+    parser.add_argument("--external-entity-high-conf-threshold", type=float, default=-1.0)
+    parser.add_argument("--external-entity-max-items", type=int, default=-1)
+    parser.add_argument("--external-entity-skip-llm-min-typed", type=int, default=-1)
     args = parser.parse_args()
 
     os.chdir(REPO_ROOT)
@@ -103,6 +123,20 @@ def main() -> None:
         config.llm.base_url = args.llm_base_url
     if args.llm_model_name:
         config.llm.model_name = args.llm_model_name
+    if args.external_entity_backend:
+        config.knowledge_graph_builder.fast_external_entity_backend = str(args.external_entity_backend)
+    if args.external_entity_model_name:
+        config.knowledge_graph_builder.fast_external_entity_model_name = str(args.external_entity_model_name)
+    if args.external_entity_device:
+        config.knowledge_graph_builder.fast_external_entity_device = str(args.external_entity_device)
+    if args.external_entity_threshold >= 0.0:
+        config.knowledge_graph_builder.fast_external_entity_threshold = float(args.external_entity_threshold)
+    if args.external_entity_high_conf_threshold >= 0.0:
+        config.knowledge_graph_builder.fast_external_entity_high_confidence_threshold = float(args.external_entity_high_conf_threshold)
+    if args.external_entity_max_items > 0:
+        config.knowledge_graph_builder.fast_external_entity_max_items = int(args.external_entity_max_items)
+    if args.external_entity_skip_llm_min_typed >= 0:
+        config.knowledge_graph_builder.fast_external_entity_skip_llm_min_typed = int(args.external_entity_skip_llm_min_typed)
 
     builder = KnowledgeGraphBuilder(config)
 
@@ -114,17 +148,20 @@ def main() -> None:
         concurrency=int(args.workers),
         reset_outputs=True,
         aggressive_clean=True,
-        pipeline_mode="event_first_fast",
+        pipeline_mode=str(args.pipeline_mode),
         short_scene_skip_word_threshold=int(args.short_scene_skip_word_threshold),
     )
     elapsed = time.perf_counter() - start
 
     summary = _summarize_extraction_results(kg_dir / "extraction_results.json")
     summary["elapsed_sec"] = round(elapsed, 3)
-    summary["pipeline_mode"] = "event_first_fast"
+    summary["pipeline_mode"] = str(args.pipeline_mode)
     summary["relation_extraction_mode"] = "open_then_ground"
     summary["workspace_dir"] = str(workspace_dir)
     summary["workers"] = int(args.workers)
+    summary["external_entity_backend"] = str(config.knowledge_graph_builder.fast_external_entity_backend)
+    summary["external_entity_model_name"] = str(config.knowledge_graph_builder.fast_external_entity_model_name)
+    summary["external_entity_device"] = str(config.knowledge_graph_builder.fast_external_entity_device)
 
     _dump_json(output_dir / "benchmark_summary.json", summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

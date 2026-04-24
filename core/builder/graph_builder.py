@@ -870,7 +870,7 @@ class KnowledgeGraphBuilder:
             sentence_count = 1
 
         skip_short_scene = bool(
-            pipeline_mode == "event_first_fast"
+            pipeline_mode in {"event_first_fast", "event_first_doc_grounded_fast"}
             and int(short_scene_skip_word_threshold or 0) > 0
             and combined_text
             and (total_words <= int(short_scene_skip_word_threshold) or sentence_count <= 1)
@@ -897,6 +897,13 @@ class KnowledgeGraphBuilder:
 
         if pipeline_mode == "event_first_fast":
             out = self.event_first_extractor.run_document(
+                ordered_chunks=packed_chunks,
+                aggressive_clean=aggressive_clean,
+                document_rid_namespace=f"document:{document_id}",
+            )
+            stats = dict(out.get("stats") or {})
+        elif pipeline_mode == "event_first_doc_grounded_fast":
+            out = self.event_first_extractor.run_document_doc_grounded_fast(
                 ordered_chunks=packed_chunks,
                 aggressive_clean=aggressive_clean,
                 document_rid_namespace=f"document:{document_id}",

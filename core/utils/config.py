@@ -178,6 +178,14 @@ class KnowledgeGraphBuilderConfig:
     property_context_max_total_words: int = 2400
     property_context_dedupe_descriptions: bool = True
     interaction_min_entity_candidates: int = 2
+    fast_external_entity_backend: str = "none"  # none | auto | qwen | gliner | uie
+    fast_external_entity_model_name: str = ""
+    fast_external_entity_device: str = "auto"  # auto | cpu | cuda | cuda:N
+    fast_external_entity_threshold: float = 0.55
+    fast_external_entity_high_confidence_threshold: float = 0.82
+    fast_external_entity_max_items: int = 24
+    fast_external_entity_skip_llm_min_typed: int = 3
+    fast_external_entity_enable_direct_type: bool = True
 
 
 @dataclass
