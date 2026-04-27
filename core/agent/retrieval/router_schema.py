@@ -33,8 +33,16 @@ QUESTION_KEYWORDS: Dict[str, List[str]] = {
     "relationship": ["relationship", "between", "feel about", "opinion about", "interact", "connection"],
     "chronology": ["before", "after", "timeline", "first", "second", "eventually", "later", "earlier", "year", "age", "how long"],
     "section_localization": ["which section", "which scene", "which chapter", "where in the story", "section"],
-    "attitude_or_state": ["feel", "attitude", "emotion", "state of mind", "why does", "why is", "calm", "afraid", "angry", "believe"],
-    "implication_or_inference": ["imply", "implied", "suggest", "significance", "most likely", "warning", "dilemma", "motive", "motivation", "why"],
+    "attitude_or_state": ["feel", "attitude", "emotion", "state of mind", "calm", "afraid", "angry", "believe"],
+    "implication_or_inference": [
+        "imply",
+        "implied",
+        "suggest",
+        "significance",
+        "most likely",
+        "warning",
+        "dilemma",
+    ],
     "exact_fact": ["who", "what", "which", "where", "when", "name", "title"],
 }
 

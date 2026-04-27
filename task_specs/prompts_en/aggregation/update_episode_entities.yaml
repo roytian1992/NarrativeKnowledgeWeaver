@@ -65,13 +65,18 @@ template: |
 
   Rules:
   {episode_construction_constraints_text}
+  - Granularity target: keep the final result compact. For a normal scene/scene part, prefer 1-3 richer Episodes; use 4 only for unusually dense turning-point scenes.
   - Each Event id must appear in exactly one Episode across the final output.
   - You may perform these actions:
      - Add new events from the new scene part into an existing Episode if they share the same immediate goal/narrative unit.
      - Create new Episodes for events that start a new goal-driven unit.
+     - Merge adjacent or highly overlapping Episodes when the new text shows that they are really one continuous dramatic beat.
      - (Optional) Rename Episodes if the updated membership changes the best action-oriented summary.
   - Be conservative: do not change existing Episode structure unless the new text provides strong evidence that it is needed.
-     In particular, do NOT split or merge existing Episodes.
+  - Prefer merging or extending an existing Episode over creating a thin new Episode when the same Occasion, participants, and local action progression continue.
+  - Do not split a conversation just because the speaker changes; split it only when the topic, leverage, objective, or immediate situation changes.
+  - Do not split an action sequence just because the physical action changes; split it only when the local objective or outcome changes.
+  - Split Episodes only when the new text introduces a clear local turn, such as a new conflict, a new objective, or an evident change of situation.
   - Do not invent events or details not supported by the text.
 
   Episode Output Fields:
@@ -79,6 +84,9 @@ template: |
 
   Episode Writing Constraints:
   {episode_writing_constraints_text}
+  - Updated descriptions should remain coherent and sufficiently informative after merging newly added Events.
+  - Favor fuller local narrative descriptions over short summaries of isolated micro-actions.
+  - Prefer one 2-4 sentence description for a rich Episode over several one-sentence micro-Episodes.
 
   Sample Episode object:
   {episode_sample_json_text}

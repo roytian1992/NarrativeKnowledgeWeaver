@@ -1,7 +1,7 @@
 {
   "vdb_search_docs": {
     "name": "vdb_search_docs",
-    "description": "使用文档级检索器从向量数据库中获取粗粒度的相关文档内容。",
+    "description": "使用文档级检索器从向量数据库中获取粗粒度的相关文档内容。需要更强的本地证据召回时，优先使用 hybrid_evidence_search 或 vdb_search_sentences。",
     "parameters": [
       {
         "name": "query",
@@ -26,24 +26,6 @@
         "type": "array",
         "description": "待获取的 document_id/source_documents 列表",
         "required": true
-      }
-    ]
-  },
-  "vdb_search_hierdocs": {
-    "name": "vdb_search_hierdocs",
-    "description": "使用父子文档检索器（Parent-Child Retriever）从向量数据库中获取与查询相关的内容（句子级召回，聚合到父段落/文档后重排）。",
-    "parameters": [
-      {
-        "name": "query",
-        "type": "string",
-        "description": "检索的查询文本",
-        "required": true
-      },
-      {
-        "name": "limit",
-        "type": "integer",
-        "description": "返回条数，默认 20",
-        "required": false
       }
     ]
   },

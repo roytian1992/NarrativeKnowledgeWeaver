@@ -67,7 +67,7 @@
   },
   "narrative_hierarchical_search": {
     "name": "narrative_hierarchical_search",
-    "description": "Search evidence through the narrative hierarchy Storyline -> Episode -> Event -> source documents. Use for plot progression, storyline stage, cross-section causality, and key event connections. If no Storyline nodes exist, it falls back to Episode -> Event -> source documents.",
+    "description": "Search evidence through a multi-path narrative tree: Storyline -> Episode -> Event -> source documents. It keeps multiple storyline starting points and expands each path separately before merging evidence. Use for plot progression, storyline stage, cross-section causality, and key event connections. It is better for narrative structure and multi-step progression than for the first immediate next action inside one local scene. If no Storyline nodes exist, it falls back to Episode -> Event -> source documents.",
     "parameters": [
       {
         "name": "query",
@@ -115,7 +115,7 @@
   },
   "section_evidence_search": {
     "name": "section_evidence_search",
-    "description": "Fallback section-level evidence search. It first locates the most relevant scenes or sections, then extracts answerable evidence from the original text. Use it for scene localization, dialogue, objects, actions, appearance details, short factual checks, and direct grounding when other retrieval paths do not yield a clear answer.",
+    "description": "Section-level grounded evidence search. It first localizes the most relevant scene or section, then extracts answerable evidence from the original text. Strong for local chronology, immediate before/after questions, first responses after an anchor event, help/proposal/intervention moments, scene localization, dialogue, actions, objects, appearance details, and other cases where you need the exact nearby span instead of a broad summary or a loosely similar sentence.",
     "parameters": [
       {
         "name": "query",
@@ -157,6 +157,54 @@
         "name": "related_entity_limit",
         "type": "integer",
         "description": "Maximum number of related entities to show per entity type for each matched section. Default 3.",
+        "required": false
+      }
+    ]
+  },
+  "hybrid_evidence_search": {
+    "name": "hybrid_evidence_search",
+    "description": "Hybrid local evidence search that combines BM25, section evidence, sentence vectors, document vectors, and raw document expansion into one evidence panel. Use when lexical and semantic recall should be combined before answering, especially when a single retrieval mode may miss or overfocus the relevant passage. It can support direct facts, local actions, motivations, causal triggers, preceding events, responses, and near-miss comparison, but it is selected as a general evidence tool rather than by keyword triggers.",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Natural-language question or evidence query.",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "integer",
+        "description": "How many hits to keep from each retrieval route. Default 5.",
+        "required": false
+      },
+      {
+        "name": "max_candidates",
+        "type": "integer",
+        "description": "Maximum number of evidence candidates to return. Default 20.",
+        "required": false
+      },
+      {
+        "name": "max_candidate_chars",
+        "type": "integer",
+        "description": "Maximum characters per candidate evidence span. Default 1800.",
+        "required": false
+      },
+      {
+        "name": "use_llm_plan",
+        "type": "bool",
+        "description": "Whether to generate a compact retrieval plan before recall. Default true.",
+        "required": false
+      },
+      {
+        "name": "use_llm_judge",
+        "type": "bool",
+        "description": "Whether to ask the tool to rerank and summarize candidates internally. Default false.",
+        "required": false
+      },
+      {
+        "name": "use_related_content",
+        "type": "bool",
+        "description": "Whether to extract extra related content from recalled documents. Default false.",
         "required": false
       }
     ]

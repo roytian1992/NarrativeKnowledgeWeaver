@@ -77,8 +77,14 @@ template: |
   Grouping Rules
   ====================
   {episode_construction_constraints_text}
+  - Granularity target: normally produce 1-3 Episodes for one scene/scene part, and use 4 only for unusually dense turning-point scenes.
+  - An Episode should usually contain multiple tightly connected Events when they form one local dramatic beat.
   - Prefer grouping Events that are grounded in the same textual segment, situated within the same Occasion,
     or tightly coupled by short-range temporal or explicitly stated causal relations.
+  - Prefer one richer Episode for one coherent dramatic beat over several thin Episodes with only slight wording differences.
+  - Keep a continuous exchange, pursuit, confrontation, or action run together unless the local situation clearly shifts.
+  - Do not split a conversation just because the speaker changes; split it only when the topic, leverage, objective, or immediate situation changes.
+  - Do not split an action sequence just because the physical action changes; split it only when the local objective or outcome changes.
   - Create a singleton Episode only if an Event cannot be meaningfully grouped.
   - Episode names should be concise, action-oriented phrases reflecting the main characters and actions.
   - Do not invent Events, motivations, causal links, intentions, or psychological states.
@@ -102,6 +108,9 @@ template: |
   - Write the Episode description as plain narrative prose.
   - Include only concrete characters, actions, and observable outcomes.
   - The description should read like a paragraph that could appear directly in a novel or screenplay.
+  - When the text allows it, make the description substantial enough to cover the setup, the key interaction or progression, and the immediate local outcome.
+  - Avoid descriptions that merely restate a single micro-action if several tightly connected Events can be described together.
+  - Prefer one 2-4 sentence description for a rich Episode over several one-sentence micro-Episodes.
 
   ====================
   STRICT JSON OUTPUT RULES (MANDATORY)

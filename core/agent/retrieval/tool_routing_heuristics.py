@@ -83,7 +83,6 @@ def _is_exact_fact_query(query: str) -> bool:
             "where ",
             "when ",
             "how often",
-            "what caused",
             "what did ",
             "what were ",
             "which word",
@@ -157,7 +156,7 @@ def _is_broad_semantic_query(query: str) -> bool:
 def tool_stage(tool_name: str) -> str:
     name = str(tool_name or "").strip()
     core = {
-        "vdb_search_hierdocs",
+        "hybrid_evidence_search",
         "vdb_search_sentences",
         "bm25_search_docs",
         "section_evidence_search",
@@ -170,21 +169,22 @@ def tool_stage(tool_name: str) -> str:
         "retrieve_entity_by_id",
         "search_related_entities",
         "get_relations_between_entities",
+        "hybrid_evidence_search",
         "narrative_hierarchical_search",
+        "narrative_causal_trace_search",
         "entity_event_trace_search",
-        "fact_timeline_resolution_search",
         "community_graphrag_search",
         "search_communities",
         "search_related_content",
         "vdb_search_docs",
         "lookup_titles_by_document_ids",
         "lookup_document_ids_by_title",
+        "top_k_by_centrality",
     }
     exploratory = {
         "get_common_neighbors",
         "find_paths_between_nodes",
         "get_k_hop_subgraph",
-        "top_k_by_centrality",
         "get_co_section_entities",
         "retrieve_triple_facts",
     }
@@ -214,9 +214,9 @@ def heuristic_tool_boosts(query: str) -> Dict[str, float]:
         add(["lookup_titles_by_document_ids", "vdb_get_docs_by_document_ids"], 2.0)
 
     if any(x in q for x in ["场次", "章节", "scene", "chapter", "片段", "证据", "原文", "哪一场", "哪几场"]):
-        add(["search_sections", "section_evidence_search", "vdb_search_hierdocs", "lookup_titles_by_document_ids"], 2.6)
+        add(["search_sections", "section_evidence_search", "hybrid_evidence_search", "lookup_titles_by_document_ids"], 2.6)
     if any(x in q for x in ["几岁", "年龄", "几年", "年份", "何时", "时间", "when", "age", "year", "timeline"]):
-        add(["fact_timeline_resolution_search", "vdb_search_sentences", "section_evidence_search", "search_sections", "bm25_search_docs", "get_entity_sections"], 2.8)
+        add(["vdb_search_sentences", "section_evidence_search", "search_sections", "bm25_search_docs", "get_entity_sections"], 2.8)
     if any(x in q for x in ["全称", "简称", "缩写", "formal name", "full name", "型号", "机型", "代号"]):
         add(["bm25_search_docs", "section_evidence_search", "retrieve_entity_by_name"], 2.8)
     if _is_relationship_query(query):
@@ -232,7 +232,6 @@ def heuristic_tool_boosts(query: str) -> Dict[str, float]:
             3.0,
         )
         add(["vdb_get_docs_by_document_ids"], 1.8)
-        add(["fact_timeline_resolution_search"], 1.6)
         add(["entity_event_trace_search"], 1.1)
     if _is_subject_sensitive_reasoning_query(query):
         add(
@@ -248,26 +247,25 @@ def heuristic_tool_boosts(query: str) -> Dict[str, float]:
         )
         add(["entity_event_trace_search"], 1.2)
     elif any(x in q for x in ["伤疤", "伤痕", "受伤", "创伤", "原因", "导致", "车祸", "事故", "cause"]):
-        add(["vdb_search_sentences", "vdb_search_hierdocs", "bm25_search_docs", "section_evidence_search", "retrieve_entity_by_name"], 2.9)
+        add(["hybrid_evidence_search", "narrative_causal_trace_search", "vdb_search_sentences", "bm25_search_docs", "section_evidence_search", "retrieve_entity_by_name"], 2.9)
     if any(x in q for x in ["经常", "总是", "常常", "动作", "互动", "frequent", "often"]):
-        add(["vdb_search_hierdocs", "vdb_search_sentences", "bm25_search_docs", "section_evidence_search", "retrieve_entity_by_name", "get_entity_sections"], 2.7)
+        add(["hybrid_evidence_search", "vdb_search_sentences", "bm25_search_docs", "section_evidence_search", "retrieve_entity_by_name", "get_entity_sections"], 2.7)
     if any(x in q for x in ["西装", "制服", "穿着", "着装", "外观", "appearance", "wearing"]):
         add(["section_evidence_search", "vdb_search_sentences", "bm25_search_docs", "retrieve_entity_by_name"], 2.6)
     if any(x in q for x in ["坏了", "损坏", "变化", "开始", "持续多久", "持续了多久", "state change", "duration"]):
-        add(["vdb_search_hierdocs", "bm25_search_docs", "section_evidence_search", "retrieve_entity_by_name", "get_entity_sections"], 2.8)
+        add(["hybrid_evidence_search", "bm25_search_docs", "section_evidence_search", "retrieve_entity_by_name", "get_entity_sections"], 2.8)
     if _is_exact_fact_query(query):
         add(["bm25_search_docs", "section_evidence_search", "search_sections", "vdb_search_sentences"], 3.0)
-        add(["fact_timeline_resolution_search"], 1.8)
     if any(x in q for x in ["how many", "how long", "how much", "difference between", "first and second", "years since", "times did", "what happened", "who is ", "role of "]):
-        add(["fact_timeline_resolution_search", "section_evidence_search", "vdb_search_sentences", "bm25_search_docs"], 3.1)
+        add(["section_evidence_search", "vdb_search_sentences", "bm25_search_docs"], 3.1)
     if any(x in q for x in ["warning", "unspoken", "dream", "likely true", "what happened", "happened to", "significant", "significance", "what does this mean", "implied", "implies"]):
-        add(["entity_event_trace_search", "section_evidence_search", "vdb_search_sentences", "bm25_search_docs"], 3.0)
+        add(["narrative_causal_trace_search", "entity_event_trace_search", "section_evidence_search", "vdb_search_sentences", "bm25_search_docs"], 3.0)
     if any(x in q for x in ["系列", "型号", "版本", "哪几个型号", "哪些型号", "model", "series"]):
         add(["bm25_search_docs", "retrieve_entity_by_name", "get_entity_sections", "lookup_titles_by_document_ids"], 2.7)
     if any(x in q for x in ["剧情", "主线", "episode", "storyline", "因果", "推进", "阶段"]):
-        add(["narrative_hierarchical_search", "entity_event_trace_search", "vdb_search_hierdocs"], 2.2)
+        add(["narrative_causal_trace_search", "narrative_hierarchical_search", "entity_event_trace_search", "hybrid_evidence_search"], 2.2)
     if any(x in q for x in ["significance", "important for", "warning", "reveal", "actually true", "真正", "其实", "暗示", "意味着", "重要", "作用"]):
-        add(["entity_event_trace_search", "narrative_hierarchical_search", "section_evidence_search"], 2.9)
+        add(["narrative_causal_trace_search", "entity_event_trace_search", "narrative_hierarchical_search", "section_evidence_search"], 2.9)
     if any(x in q for x in ["社区", "community", "摘要"]):
         add(["search_communities", "community_graphrag_search"], 2.1)
     if any(x in q for x in ["对话", "台词", "dialogue", "说了什么"]):
@@ -277,7 +275,7 @@ def heuristic_tool_boosts(query: str) -> Dict[str, float]:
     if any(x in q for x in ["谁", "人物", "角色", "实体", "entity", "关系"]):
         add(["retrieve_entity_by_name", "search_related_entities"], 1.4)
     if _is_broad_semantic_query(query):
-        add(["vdb_search_hierdocs", "vdb_search_sentences", "section_evidence_search"], 3.0)
+        add(["hybrid_evidence_search", "vdb_search_sentences", "section_evidence_search"], 3.0)
     return boosts
 
 
@@ -289,7 +287,7 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
     if any(x in q for x in ["系列", "型号", "机型", "版本", "代号", "model", "series"]):
         return [
             "bm25_search_docs",
-            "vdb_search_hierdocs",
+            "hybrid_evidence_search",
             "retrieve_entity_by_name",
             "get_entity_sections",
             "lookup_titles_by_document_ids",
@@ -298,7 +296,7 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
         ]
     if any(x in q for x in ["经常", "总是", "常常", "动作", "互动", "frequent", "often"]):
         return [
-            "vdb_search_hierdocs",
+            "hybrid_evidence_search",
             "vdb_search_sentences",
             "bm25_search_docs",
             "section_evidence_search",
@@ -316,9 +314,8 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
             "vdb_get_docs_by_document_ids",
             "retrieve_entity_by_name",
             "get_entity_sections",
-            "fact_timeline_resolution_search",
             "entity_event_trace_search",
-            "vdb_search_hierdocs",
+            "hybrid_evidence_search",
         ]
     if _is_exact_fact_query(query):
         return [
@@ -329,8 +326,7 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
             "vdb_get_docs_by_document_ids",
             "retrieve_entity_by_name",
             "get_entity_sections",
-            "fact_timeline_resolution_search",
-            "vdb_search_hierdocs",
+            "hybrid_evidence_search",
         ]
     if _is_subject_sensitive_reasoning_query(query):
         return [
@@ -342,12 +338,11 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
             "retrieve_entity_by_name",
             "get_entity_sections",
             "entity_event_trace_search",
-            "vdb_search_hierdocs",
+            "hybrid_evidence_search",
         ]
     if any(x in q for x in ["坏了", "损坏", "变化", "开始", "持续多久", "持续了多久", "state change", "duration"]):
         return [
-            "fact_timeline_resolution_search",
-            "vdb_search_hierdocs",
+            "hybrid_evidence_search",
             "bm25_search_docs",
             "section_evidence_search",
             "retrieve_entity_by_name",
@@ -366,9 +361,8 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
             "retrieve_entity_by_name",
             "vdb_get_docs_by_document_ids",
             "get_entity_sections",
-            "fact_timeline_resolution_search",
             "entity_event_trace_search",
-            "vdb_search_hierdocs",
+            "hybrid_evidence_search",
         ]
     if _is_broad_semantic_query(query):
         return [
@@ -377,8 +371,7 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
             "vdb_search_sentences",
             "search_sections",
             "vdb_get_docs_by_document_ids",
-            "vdb_search_hierdocs",
-            "fact_timeline_resolution_search",
+            "hybrid_evidence_search",
             "entity_event_trace_search",
         ]
     if problem_type in {"content_span_lookup", "section_localization"} or any(
@@ -397,7 +390,7 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
         return [
             "search_sections",
             "section_evidence_search",
-            "vdb_search_hierdocs",
+            "hybrid_evidence_search",
             "lookup_titles_by_document_ids",
             "bm25_search_docs",
             "retrieve_entity_by_name",
@@ -410,8 +403,7 @@ def preferred_core_tools(*, query: str, query_pattern: Dict[str, Any]) -> List[s
         "search_sections",
         "vdb_get_docs_by_document_ids",
         "retrieve_entity_by_name",
-        "vdb_search_hierdocs",
-        "fact_timeline_resolution_search",
+        "hybrid_evidence_search",
     ]
 
 
@@ -427,7 +419,7 @@ def build_query_routing_hint(query: str) -> str:
         return (
             "Routing Hint:\n"
             "- Start with `bm25_search_docs`, `section_evidence_search`, or `search_sections`.\n"
-            "- Use `fact_timeline_resolution_search` only when the answer depends on chronology, ordering, or time comparison."
+            "- Use direct passages plus section/document evidence for chronology, ordering, or time comparison."
         )
     if _is_broad_semantic_query(query):
         return (

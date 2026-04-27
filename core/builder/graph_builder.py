@@ -333,8 +333,19 @@ class KnowledgeGraphBuilder:
         os.makedirs(base, exist_ok=True)
         return base
 
+    def _workspace_root_dir(self) -> str:
+        base = self._base_dir()
+        root = os.path.dirname(base.rstrip(os.sep)) or "."
+        os.makedirs(root, exist_ok=True)
+        return root
+
     def _interaction_base_dir(self) -> str:
-        base = "data/narrative_interactions"
+        base = os.path.join(self._workspace_root_dir(), "interactions")
+        os.makedirs(base, exist_ok=True)
+        return base
+
+    def _sql_base_dir(self) -> str:
+        base = os.path.join(self._workspace_root_dir(), "sql")
         os.makedirs(base, exist_ok=True)
         return base
 
@@ -660,7 +671,13 @@ class KnowledgeGraphBuilder:
         ).strip("_") or "document"
         section_id_key = f"{section_prefix}_id"
 
-        def _build_base_key(md0: Dict[str, Any], doc_index: int, doc_segment_id: str) -> str:
+        def _build_base_key(md0: Dict[str, Any], doc_index: int, doc_segment_id: str, raw_doc_id: str = "") -> str:
+            # raw_doc_id is the canonical source id from script.json. Prefer it for
+            # document ids so source_documents resolve to the same scene numbers as QA.
+            raw_id = _sanitize_id_component(raw_doc_id)
+            if raw_id:
+                return f"{section_prefix}_{raw_id}"
+
             # Prefer doc-type specific section id key, e.g. scene_id/chapter_id/document_id.
             section_id_val = md0.get(section_id_key, None)
             # Backward compatibility for older screenplay metadata.
@@ -764,7 +781,7 @@ class KnowledgeGraphBuilder:
                 md["source_title"] = title
                 cd["metadata"] = md
 
-            base_key_raw = _build_base_key(md0, i, doc_segment_id)
+            base_key_raw = _build_base_key(md0, i, doc_segment_id, raw_doc_id)
             base_key = _ensure_unique_base_key(base_key_raw, used_base_keys)
 
             parts = _split_chunks_into_parts(chunk_dicts)
@@ -977,6 +994,24 @@ class KnowledgeGraphBuilder:
                 merged["id"] = f"{safe_str(document_id)}__pack_{pack_index:04d}"
                 merged["content"] = "\n\n".join(text_parts).strip()
                 merged["source_chunk_ids"] = source_chunk_ids
+                merged_md = dict(first.get("metadata") or {})
+                for list_key in ["keywords", "characters", "locations", "objects", "concepts", "ner_entities"]:
+                    values: List[Any] = []
+                    seen_values = set()
+                    for item in current_group:
+                        md = item.get("metadata") or {}
+                        raw_values = md.get(list_key) or []
+                        if not isinstance(raw_values, list):
+                            continue
+                        for value in raw_values:
+                            key = json.dumps(value, ensure_ascii=False, sort_keys=True) if isinstance(value, dict) else safe_str(value)
+                            if not key or key in seen_values:
+                                continue
+                            seen_values.add(key)
+                            values.append(value)
+                    if values:
+                        merged_md[list_key] = values
+                merged["metadata"] = merged_md
                 packed.append(merged)
                 pack_index += 1
 
@@ -1488,7 +1523,6 @@ class KnowledgeGraphBuilder:
                 aliases = [a.strip() for a in aliases if isinstance(a, str) and a.strip()]
 
                 force_local = _is_induced_primary(t_primary) and (not merge_induced_across_documents)
-
                 if scope == "local" or force_local:
                     bkey = ("local", base_document, t_primary, raw_name)
                     out_scope = "local"
@@ -1526,10 +1560,7 @@ class KnowledgeGraphBuilder:
 
             if kind == "local":
                 _, base_document, t_primary, raw_name = bkey
-                # Keep local entity display name unchanged; uniqueness is handled by id + scope.
                 final_name = raw_name
-                # Legacy behavior (kept for reference):
-                # final_name = f"{raw_name} ({base_document})"
                 ent_id = _stable_id(f"{raw_name}||{t_primary}||{base_document}||local", "ent_")
                 src_docs = sorted(bucket_source_documents[bkey])
 
@@ -1922,11 +1953,12 @@ class KnowledgeGraphBuilder:
         output_entity_info_path: Optional[str] = None,
         verbose: bool = True,
         # selection
-        scope: str = "global",
+        scope: Optional[str] = "global",
         metric: str = "total_degree",
         threshold: float = 2.0,
         num_top: Optional[int] = None,
         node_type: Optional[str] = None,
+        exclude_node_types: Optional[Set[str]] = None,
         exclude_relation_types: Optional[Set[str]] = None,
         include_relation_types: Optional[Set[str]] = None,
         # chunking
@@ -2011,6 +2043,7 @@ class KnowledgeGraphBuilder:
             threshold=float(threshold),
             num_top=num_top,
             node_type=node_type,
+            exclude_node_types=set(exclude_node_types) if exclude_node_types else None,
             exclude_relation_types=set(exclude_relation_types) if exclude_relation_types else None,
             include_relation_types=set(include_relation_types) if include_relation_types else None,
             chunk_size=int(chunk_size),
@@ -2379,7 +2412,8 @@ class KnowledgeGraphBuilder:
         if interaction_list_json_path is None:
             interaction_list_json_path = os.path.join(base, "interaction_records_list.json")
         if sql_db_path is None:
-            store = SQLStore(self.config)
+            sql_db_path = os.path.join(self._sql_base_dir(), "Interaction.db")
+            store = SQLStore(self.config, db_path=sql_db_path)
         else:
             store = SQLStore(self.config, db_path=sql_db_path)
 

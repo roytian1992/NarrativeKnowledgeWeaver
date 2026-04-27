@@ -817,6 +817,8 @@ class NarrativeHierarchicalSearch(BaseTool):
             selected_document_ids = list(result.get("documents") or [])
             document_rows = list(result.get("document_rows") or [])
             evidences = list(result.get("evidence") or [])
+            tree_paths = list(result.get("tree_paths") or [])
+            search_mode = str(result.get("search_mode") or "").strip()
         else:
             storyline_rows = search_episode_storyline_candidates(
                 self.graph_query_utils,
@@ -890,13 +892,29 @@ class NarrativeHierarchicalSearch(BaseTool):
                 query=query,
                 max_evidence_length=max_evidence_length,
             ) if selected_document_ids else []
+            tree_paths = []
+            search_mode = ""
 
         lines: List[str] = ["[Hierarchical Narrative Search]"]
+        if search_mode:
+            lines.append(f"mode: {search_mode}")
         if fallback_mode:
             lines.append("mode: no storyline found; downgraded to episode-level retrieval")
         lines.extend(_format_ranked_rows("Storylines", storyline_rows, include_docs=False))
         lines.extend(_format_ranked_rows("Episodes", episode_rows))
         lines.extend(_format_ranked_rows("Events", event_rows, include_docs=False))
+        if tree_paths:
+            lines.append("[Tree Paths]")
+            for idx, path in enumerate(tree_paths[: max(1, min(8, document_top_k * 2))], 1):
+                storyline = str(path.get("storyline_name") or path.get("storyline_id") or "").strip()
+                episode = str(path.get("episode_name") or path.get("episode_id") or "").strip()
+                event = str(path.get("event_name") or path.get("event_id") or "").strip()
+                path_score = float(path.get("path_score", 0.0) or 0.0)
+                docs = _dedup_strings(path.get("document_ids") or [])
+                path_bits = [bit for bit in [storyline, episode, event] if bit]
+                lines.append(f"{idx}. {' > '.join(path_bits) if path_bits else '(path)'} score={path_score:.4f}")
+                if docs:
+                    lines.append(f"   source_documents: {', '.join(docs[:6])}")
         lines.append("[Documents]")
         if document_rows:
             for idx, row in enumerate(document_rows, 1):
@@ -920,6 +938,787 @@ class NarrativeHierarchicalSearch(BaseTool):
                 lines.append(f"{idx}. {document_id}: {text}")
         else:
             lines.append("None")
+        return "\n".join(lines)
+
+
+@register_tool("narrative_causal_trace_search")
+class NarrativeCausalTraceSearch(NarrativeHierarchicalSearch):
+    name = "narrative_causal_trace_search"
+    description = (
+        "因果链专用检索：先定位相关 Episode/Event，再显式拉取 EPISODE_CAUSAL_LINK 的一跳上下游，"
+        "回到原文证据，并用一次 LLM 调用压缩出候选原因、触发点、结果和证据。"
+        "适合 why/how/what caused/what led to/动机/因果/策略变化/心理转变类开放问答；"
+        "不适合只查一句事实或简单场景定位。"
+    )
+    parameters = [
+        {"name": "query", "type": "string", "description": "需要追踪因果链的问题。", "required": True},
+        {"name": "episode_top_k", "type": "integer", "description": "最多保留多少个相关 Episode，默认 8。", "required": False},
+        {"name": "event_top_k", "type": "integer", "description": "最多展示多少个相关 Event，默认 8。", "required": False},
+        {"name": "causal_link_top_k", "type": "integer", "description": "最多展示多少条候选因果 Episode 边，默认 8。", "required": False},
+        {"name": "document_top_k", "type": "integer", "description": "最多抽取多少个 document_id 的证据，默认 6。", "required": False},
+        {"name": "max_evidence_length", "type": "integer", "description": "每个文档证据片段的最大长度，默认 280。", "required": False},
+        {"name": "use_llm_distill", "type": "bool", "description": "是否用 LLM 对因果证据做结构化压缩，默认 true。", "required": False},
+    ]
+
+    def __init__(
+        self,
+        graph_query_utils,
+        document_vector_store,
+        document_parser,
+        *,
+        sentence_vector_store=None,
+        embedding_config=None,
+        max_workers: int = 4,
+        narrative_retriever=None,
+        llm=None,
+    ):
+        super().__init__(
+            graph_query_utils,
+            document_vector_store,
+            document_parser,
+            sentence_vector_store=sentence_vector_store,
+            embedding_config=embedding_config,
+            max_workers=max_workers,
+            narrative_retriever=narrative_retriever,
+        )
+        self.llm = llm or (getattr(document_parser, "llm", None) if document_parser is not None else None)
+
+    def _fetch_causal_edges(self, seed_episode_ids: List[str], *, query: str, limit: int) -> List[Dict[str, Any]]:
+        seed_set = {str(x or "").strip() for x in seed_episode_ids if str(x or "").strip()}
+        query_terms = _tokenize_grounding_text(query)
+        edge_rows: List[Dict[str, Any]] = []
+        iter_edges = getattr(self.graph_query_utils, "_iter_edges", None)
+        if iter_edges is None:
+            return []
+
+        for src, dst, key, data in iter_edges():
+            pred = str((data or {}).get("predicate") or (data or {}).get("relation_type") or "").strip()
+            if pred != "EPISODE_CAUSAL_LINK":
+                continue
+            src_id = str((data or {}).get("subject_id") or src or "").strip()
+            dst_id = str((data or {}).get("object_id") or dst or "").strip()
+            if seed_set and src_id not in seed_set and dst_id not in seed_set:
+                continue
+            src_ent = self.graph_query_utils.get_entity_by_id(src_id)
+            dst_ent = self.graph_query_utils.get_entity_by_id(dst_id)
+            src_name = str(getattr(src_ent, "name", "") or src_id)
+            dst_name = str(getattr(dst_ent, "name", "") or dst_id)
+            src_desc = str(getattr(src_ent, "description", "") or "")
+            dst_desc = str(getattr(dst_ent, "description", "") or "")
+            desc = str((data or {}).get("description") or "")
+            props = _as_props_dict((data or {}).get("properties", {}) or {})
+            relation_type = str(props.get("relation_type") or (data or {}).get("relation_type") or pred)
+            overlap_text = " ".join([src_name, dst_name, src_desc, dst_desc, desc, relation_type])
+            overlap = _token_overlap_ratio(query_terms, overlap_text)
+            seed_bonus = 0.0
+            if src_id in seed_set:
+                seed_bonus += 0.35
+            if dst_id in seed_set:
+                seed_bonus += 0.35
+            try:
+                confidence = float((data or {}).get("confidence", 1.0) or 1.0)
+            except Exception:
+                confidence = 1.0
+            score = min(1.0, seed_bonus + 0.45 * overlap + 0.20 * max(0.0, min(1.0, confidence)))
+            edge_rows.append(
+                {
+                    "id": str((data or {}).get("id") or key or ""),
+                    "source_id": src_id,
+                    "target_id": dst_id,
+                    "source_name": src_name,
+                    "target_name": dst_name,
+                    "relation_type": relation_type,
+                    "description": desc,
+                    "confidence": confidence,
+                    "score": score,
+                    "source_documents": _dedup_strings((data or {}).get("source_documents") or props.get("source_documents") or []),
+                }
+            )
+
+        edge_rows.sort(key=lambda row: (float(row.get("score", 0.0) or 0.0), float(row.get("confidence", 0.0) or 0.0)), reverse=True)
+        return edge_rows[: max(1, int(limit or 8))]
+
+    def _distill_causal_trace(
+        self,
+        *,
+        query: str,
+        episode_rows: List[Dict[str, Any]],
+        causal_edges: List[Dict[str, Any]],
+        evidences: List[Tuple[str, str]],
+    ) -> List[Dict[str, Any]]:
+        if self.llm is None or not (causal_edges or evidences or episode_rows):
+            return []
+
+        episode_block = "\n".join(
+            f"- {row.get('name') or row.get('id')} [{row.get('id')}]: {_clip_text(row.get('description', ''), 240)}"
+            for row in episode_rows[:8]
+        )
+        edge_block = "\n".join(
+            (
+                f"- {row.get('source_name')} -> {row.get('target_name')} "
+                f"type={row.get('relation_type')} confidence={float(row.get('confidence', 0.0) or 0.0):.2f}; "
+                f"{_clip_text(row.get('description', ''), 260)}"
+            )
+            for row in causal_edges[:10]
+        )
+        evidence_block = "\n".join(
+            f"- {document_id}: {_clip_text(text, 420)}"
+            for document_id, text in evidences[:8]
+        )
+        prompt = (
+            "You are a screenplay QA retrieval tool. Distill causal evidence for the user question.\n"
+            "Prefer local triggers, explicit motivations, immediate consequences, and later revelations that explain earlier behavior.\n"
+            "Do not invent facts beyond the supplied episodes, causal links, and source evidence.\n\n"
+            f"Question:\n{query}\n\n"
+            f"Candidate episodes:\n{episode_block or '(none)'}\n\n"
+            f"Episode causal links:\n{edge_block or '(none)'}\n\n"
+            f"Source evidence:\n{evidence_block or '(none)'}\n\n"
+            "Return strict JSON only:\n"
+            "{\n"
+            '  "causal_traces": [\n'
+            "    {\n"
+            '      "candidate_cause": "brief cause or motivation",\n'
+            '      "anchor_or_effect": "effect, decision, behavior, or reveal being explained",\n'
+            '      "causal_relation_type": "cause|motivation|trigger|consequence|reveal|contrast|unknown",\n'
+            '      "source_document_id": "document id if known",\n'
+            '      "local_quote": "short evidence quote or paraphrase",\n'
+            '      "why_relevant": "why this helps answer the question"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+        )
+        try:
+            responses = self.llm.run([{"role": "user", "content": prompt}])
+            raw = ""
+            if isinstance(responses, list) and responses:
+                raw = str((responses[-1] or {}).get("content", "") or "").strip()
+            parsed = json.loads(correct_json_format(raw))
+        except Exception:
+            return []
+        traces = parsed.get("causal_traces", [])
+        return traces if isinstance(traces, list) else []
+
+    def call(self, params: str, **kwargs) -> str:
+        logger.info("🔎 调用 narrative_causal_trace_search")
+        try:
+            data = json.loads(params) if isinstance(params, str) else dict(params or {})
+        except Exception as e:
+            return f"参数解析失败: {e}"
+
+        query = str(data.get("query", "") or "").strip()
+        if not query:
+            return "query 不能为空。"
+
+        episode_top_k = max(1, int(data.get("episode_top_k", 8) or 8))
+        event_top_k = max(1, int(data.get("event_top_k", 8) or 8))
+        causal_link_top_k = max(1, int(data.get("causal_link_top_k", 8) or 8))
+        document_top_k = max(1, int(data.get("document_top_k", 6) or 6))
+        max_evidence_length = max(100, int(data.get("max_evidence_length", 280) or 280))
+        use_llm_distill = _to_bool(data.get("use_llm_distill"), True)
+
+        if self.narrative_retriever is not None:
+            result = self.narrative_retriever.search(
+                query,
+                storyline_top_k=2,
+                episode_top_k=episode_top_k,
+                event_top_k=event_top_k,
+                document_top_k=document_top_k,
+                llm_filter_threshold=0.25,
+                max_evidence_length=max_evidence_length,
+            )
+            episode_rows = list(result.get("episodes") or [])
+            event_rows = list(result.get("events") or [])
+            selected_document_ids = _dedup_strings(result.get("documents") or [])
+            evidences = list(result.get("evidence") or [])
+        else:
+            episode_rows = search_episode_storyline_candidates(
+                self.graph_query_utils,
+                label="Episode",
+                query=query,
+                top_k=episode_top_k,
+                vector_top_k=max(episode_top_k, 10),
+                keyword_top_k=max(6, min(12, episode_top_k * 2)),
+                use_llm_filter=True,
+                llm_filter_top_k=max(12, episode_top_k * 2),
+                llm_filter_threshold=0.25,
+                document_parser=self.document_parser,
+                max_workers=self.max_workers,
+            )
+            event_rows = self._collect_event_rows(
+                episode_rows,
+                limit_per_episode=max(event_top_k, 6),
+                final_top_k=event_top_k,
+            ) if episode_rows else []
+            selected_document_ids = []
+            evidences = []
+
+        seed_episode_ids = [str(row.get("id") or "").strip() for row in episode_rows if str(row.get("id") or "").strip()]
+        causal_edges = self._fetch_causal_edges(seed_episode_ids, query=query, limit=causal_link_top_k)
+
+        doc_ids = []
+        for row in episode_rows:
+            doc_ids.extend(_dedup_strings(row.get("source_documents") or []))
+        for row in causal_edges:
+            doc_ids.extend(_dedup_strings(row.get("source_documents") or []))
+        doc_ids.extend(selected_document_ids)
+        doc_ids = _dedup_strings(doc_ids)[:document_top_k]
+
+        if doc_ids:
+            focused_query = (
+                f"{query}\n"
+                "Find the concrete cause, motivation, trigger, consequence, and local evidence relevant to this question."
+            )
+            evidences = self._extract_document_evidence(
+                document_ids=doc_ids,
+                query=focused_query,
+                max_evidence_length=max_evidence_length,
+            ) or evidences
+
+        traces = self._distill_causal_trace(
+            query=query,
+            episode_rows=episode_rows,
+            causal_edges=causal_edges,
+            evidences=evidences,
+        ) if use_llm_distill else []
+
+        lines: List[str] = ["[Narrative Causal Trace Search]"]
+        lines.extend(_format_ranked_rows("Candidate Episodes", episode_rows[:episode_top_k]))
+        lines.extend(_format_ranked_rows("Candidate Events", event_rows[:event_top_k], include_docs=False))
+        lines.append("[Episode Causal Links]")
+        if causal_edges:
+            for idx, row in enumerate(causal_edges, 1):
+                lines.append(
+                    f"{idx}. {row.get('source_name')} [{row.get('source_id')}] -> "
+                    f"{row.get('target_name')} [{row.get('target_id')}] "
+                    f"type={row.get('relation_type')} score={float(row.get('score', 0.0) or 0.0):.4f}"
+                )
+                desc = str(row.get("description") or "").strip()
+                if desc:
+                    lines.append(f"   description: {desc}")
+                docs = _dedup_strings(row.get("source_documents") or [])
+                if docs:
+                    lines.append(f"   source_documents: {', '.join(docs)}")
+        else:
+            lines.append("None")
+
+        lines.append("[Documents]")
+        if doc_ids:
+            for idx, document_id in enumerate(doc_ids, 1):
+                lines.append(f"{idx}. {document_id}")
+        else:
+            lines.append("None")
+
+        lines.append("[Evidence]")
+        if evidences:
+            for idx, (document_id, text) in enumerate(evidences, 1):
+                lines.append(f"{idx}. {document_id}: {text}")
+        else:
+            lines.append("None")
+
+        lines.append("[LLM Causal Distillation]")
+        if traces:
+            for idx, item in enumerate(traces[:6], 1):
+                if not isinstance(item, dict):
+                    continue
+                lines.append(f"{idx}. cause: {str(item.get('candidate_cause') or '').strip()}")
+                lines.append(f"   effect: {str(item.get('anchor_or_effect') or '').strip()}")
+                lines.append(f"   type: {str(item.get('causal_relation_type') or '').strip()}")
+                source_document_id = str(item.get("source_document_id") or "").strip()
+                if source_document_id:
+                    lines.append(f"   source_document_id: {source_document_id}")
+                quote = str(item.get("local_quote") or "").strip()
+                if quote:
+                    lines.append(f"   evidence: {quote}")
+                why_relevant = str(item.get("why_relevant") or "").strip()
+                if why_relevant:
+                    lines.append(f"   why_relevant: {why_relevant}")
+        else:
+            lines.append("None")
+        return "\n".join(lines)
+
+
+@register_tool("hybrid_evidence_search")
+class HybridEvidenceSearch(BaseTool):
+    name = "hybrid_evidence_search"
+    description = (
+        "Hybrid evidence search: combines BM25, section evidence, sentence vectors, document vectors, "
+        "and raw parent document expansion into one local evidence panel. Use it for direct passage "
+        "grounding when lexical and semantic recall should be combined before answering."
+    )
+    parameters = [
+        {"name": "query", "type": "string", "description": "需要检索证据的问题或查询。", "required": True},
+        {"name": "top_k", "type": "integer", "description": "每路检索保留多少条候选，默认 5。", "required": False},
+        {"name": "max_candidates", "type": "integer", "description": "进入最终 LLM 判别的候选片段数，默认 20。", "required": False},
+        {"name": "max_candidate_chars", "type": "integer", "description": "每个候选片段最大字符数，默认 1800。", "required": False},
+        {"name": "use_llm_plan", "type": "bool", "description": "是否先用 LLM 生成局部检索计划，默认 true。", "required": False},
+        {"name": "use_llm_judge", "type": "bool", "description": "是否让工具内部选择最终答案，默认 false。", "required": False},
+        {"name": "use_related_content", "type": "bool", "description": "是否额外用 LLM 从召回文档中摘取 related_content，默认 false。", "required": False},
+    ]
+
+    def __init__(
+        self,
+        graph_query_utils,
+        document_vector_store,
+        document_parser,
+        *,
+        sentence_vector_store=None,
+        doc_type: str = "general",
+        embedding_config=None,
+        max_workers: int = 4,
+        section_retriever=None,
+        bm25_tool=None,
+        llm=None,
+    ):
+        self.graph_query_utils = graph_query_utils
+        self.doc_vs = document_vector_store
+        self.sent_vs = sentence_vector_store
+        self.document_parser = document_parser
+        self.doc_type = str(doc_type or "general").strip().lower() or "general"
+        self.max_workers = max(1, int(max_workers or 4))
+        self.section_retriever = section_retriever
+        self.bm25_tool = bm25_tool
+        self.llm = llm or (getattr(document_parser, "llm", None) if document_parser is not None else None)
+        self.section_tool = SectionEvidenceSearch(
+            graph_query_utils,
+            document_vector_store,
+            document_parser,
+            sentence_vector_store=sentence_vector_store,
+            doc_type=doc_type,
+            embedding_config=embedding_config,
+            max_workers=max_workers,
+            section_retriever=section_retriever,
+        )
+        self.search_related_content_tool = SearchRelatedContentTool(
+            document_vector_store=document_vector_store,
+            document_parser=document_parser,
+            max_workers=max_workers,
+        )
+
+    @staticmethod
+    def _extract_capitalized_phrases(text: str, *, limit: int = 8) -> List[str]:
+        phrases: List[str] = []
+        for match in re.finditer(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\b", str(text or "")):
+            phrase = match.group(0).strip()
+            if phrase in {"What", "Why", "Who", "Where", "When", "How", "Which"}:
+                continue
+            if phrase not in phrases:
+                phrases.append(phrase)
+            if len(phrases) >= limit:
+                break
+        return phrases
+
+    def _build_query_plan(self, query: str, *, use_llm_plan: bool) -> Dict[str, Any]:
+        entities = self._extract_capitalized_phrases(query)
+        default_queries = _dedup_strings(
+            [
+                query,
+                f"{query} exact local dialogue action evidence",
+                f"{' '.join(entities)} evidence context".strip(),
+                f"{' '.join(entities)} conversation action response detail".strip(),
+            ]
+        )[:4]
+        plan = {
+            "information_need": query,
+            "must_keep_anchors": entities,
+            "reject_if": ["evidence describes a similar but different scene or later plot point"],
+            "retrieval_queries": default_queries,
+        }
+        if not use_llm_plan or self.llm is None:
+            return plan
+        prompt = (
+            "Create a hybrid local evidence retrieval plan for a screenplay QA tool.\n"
+            "The task is to find evidence that directly answers the question.\n"
+            "Depending on the question, useful evidence may be a direct fact, a scene-local action, "
+            "a stated motivation, a causal trigger, a preceding event, a response, or a contrastive near miss.\n"
+            "Do not guess the answer. Extract constraints that retrieved evidence must satisfy.\n"
+            "If the question names a person, conversation, place, or outcome, keep those as hard anchors.\n"
+            "Return strict JSON only:\n"
+            "{\n"
+            '  "information_need": "what information needs evidence",\n'
+            '  "must_keep_anchors": ["names, places, conversation anchors, or outcome words"],\n'
+            '  "reject_if": ["conditions that mean a candidate is a similar but wrong scene"],\n'
+            '  "retrieval_queries": ["3-5 short lexical/semantic searches"]\n'
+            "}\n\n"
+            f"Question:\n{query}\n"
+        )
+        try:
+            responses = self.llm.run([{"role": "user", "content": prompt}])
+            raw = ""
+            if isinstance(responses, list) and responses:
+                raw = str((responses[-1] or {}).get("content", "") or "").strip()
+            parsed = json.loads(correct_json_format(raw))
+            if isinstance(parsed, dict):
+                queries = _dedup_strings(parsed.get("retrieval_queries") or [])
+                if queries:
+                    parsed["retrieval_queries"] = _dedup_strings([query, *queries])[:3]
+                    return {**plan, **parsed}
+        except Exception:
+            return plan
+        return plan
+
+    def _augment_retrieval_queries(self, query: str, queries: List[str]) -> List[str]:
+        return _dedup_strings([query, *queries])[:6]
+
+    @staticmethod
+    def _doc_to_candidate(doc: Any, *, source: str, query: str = "") -> Dict[str, Any]:
+        metadata = getattr(doc, "metadata", {}) or {}
+        content = str(getattr(doc, "content", "") or getattr(doc, "page_content", "") or "").strip()
+        document_id = str(metadata.get("document_id") or metadata.get("chunk_id") or getattr(doc, "id", "") or "").strip()
+        try:
+            score = float(metadata.get("similarity_score", 0.0) or 0.0)
+        except Exception:
+            score = 0.0
+        if query:
+            score += 0.35 * _token_overlap_ratio(_tokenize_grounding_text(query), content)
+        return {
+            "source": source,
+            "document_id": document_id,
+            "content": content,
+            "score": score,
+            "metadata": metadata,
+        }
+
+    @staticmethod
+    def _parse_bm25_output(raw: str) -> List[Dict[str, Any]]:
+        text = str(raw or "").strip()
+        if not text or text == "No results.":
+            return []
+        blocks = re.split(r"\n---\n", text)
+        out: List[Dict[str, Any]] = []
+        for block in blocks:
+            cleaned = block.strip()
+            if not cleaned:
+                continue
+            document_id = ""
+            m = re.search(r"^\s*(?:-\s*)?document_id:\s*(\S+)\s*$", cleaned, flags=re.MULTILINE)
+            if m:
+                document_id = m.group(1).strip()
+            out.append(
+                {
+                    "source": "bm25",
+                    "document_id": document_id,
+                    "content": cleaned,
+                    "score": 0.85,
+                    "metadata": {},
+                }
+            )
+        return out
+
+    @staticmethod
+    def _parse_section_output(raw: str) -> List[Dict[str, Any]]:
+        text = str(raw or "").strip()
+        if not text:
+            return []
+        out: List[Dict[str, Any]] = []
+        evidence_idx = text.find("[Evidence]")
+        if evidence_idx >= 0:
+            for line in text[evidence_idx:].splitlines():
+                m = re.match(r"\s*\d+\.\s*([^:]+):\s*(.+)$", line)
+                if not m:
+                    continue
+                out.append(
+                    {
+                        "source": "section_evidence",
+                        "document_id": m.group(1).strip(),
+                        "content": m.group(2).strip(),
+                        "score": 0.75,
+                        "metadata": {},
+                    }
+                )
+        doc_ids: List[str] = []
+        for line in text.splitlines():
+            if "source_documents:" not in line:
+                continue
+            _, _, rest = line.partition("source_documents:")
+            doc_ids.extend(_dedup_strings([x.strip() for x in rest.split(",")]))
+        for document_id in doc_ids[:8]:
+            out.append(
+                {
+                    "source": "section_document",
+                    "document_id": document_id,
+                    "content": "",
+                    "score": 0.45,
+                    "metadata": {},
+                }
+            )
+        return out
+
+    def _collect_candidates(self, *, query: str, queries: List[str], top_k: int, use_related_content: bool) -> List[Dict[str, Any]]:
+        candidates: List[Dict[str, Any]] = []
+
+        def run_one(search_query: str, *, use_section: bool) -> List[Dict[str, Any]]:
+            rows: List[Dict[str, Any]] = []
+            if self.bm25_tool is not None:
+                try:
+                    raw = self.bm25_tool.call(json.dumps({"query": search_query, "k": top_k}, ensure_ascii=False))
+                    rows.extend(self._parse_bm25_output(raw))
+                except Exception:
+                    pass
+            if use_section:
+                try:
+                    raw = self.section_tool.call(
+                        json.dumps(
+                            {
+                                "query": search_query,
+                                "section_top_k": max(3, min(8, top_k)),
+                                "llm_filter_top_k": max(8, top_k * 2),
+                                "max_length": 420,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    rows.extend(self._parse_section_output(raw))
+                except Exception:
+                    pass
+            if self.sent_vs is not None:
+                try:
+                    rows.extend(
+                        self._doc_to_candidate(doc, source="sentence_vector", query=search_query)
+                        for doc in (self.sent_vs.search(query=search_query, limit=top_k) or [])
+                    )
+                except Exception:
+                    pass
+            if self.doc_vs is not None:
+                try:
+                    rows.extend(
+                        self._doc_to_candidate(doc, source="document_vector", query=search_query)
+                        for doc in (self.doc_vs.search(query=search_query, limit=max(2, min(4, top_k))) or [])
+                    )
+                except Exception:
+                    pass
+            return rows
+
+        worker_count = max(1, min(self.max_workers, len(queries)))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [executor.submit(run_one, q, use_section=(idx == 0)) for idx, q in enumerate(queries)]
+            for future in as_completed(futures):
+                candidates.extend(future.result())
+
+        doc_ids = _dedup_strings([row.get("document_id") for row in candidates if row.get("document_id")])
+        if doc_ids:
+            try:
+                for doc in self.doc_vs.search_by_document_ids(doc_ids[:24], limit_per_document=2) or []:
+                    row = self._doc_to_candidate(doc, source="raw_document", query=query)
+                    if row.get("content"):
+                        row["score"] = float(row.get("score", 0.0) or 0.0) + 1.75
+                        candidates.append(row)
+            except Exception:
+                pass
+            if use_related_content:
+                try:
+                    raw = self.search_related_content_tool.call(
+                        json.dumps(
+                            {
+                                "document_ids": doc_ids[:12],
+                                "query": query,
+                                "max_length": 520,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    for did, content in SectionEvidenceSearch._parse_search_related_content_output(raw):
+                        candidates.append(
+                            {
+                                "source": "related_content",
+                                "document_id": did,
+                                "content": content,
+                                "score": 0.80,
+                                "metadata": {},
+                            }
+                        )
+                except Exception:
+                    pass
+        elif use_related_content:
+            try:
+                raw = self.search_related_content_tool.call(
+                    json.dumps(
+                        {
+                            "document_ids": doc_ids[:12],
+                            "query": query,
+                            "max_length": 520,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                for did, content in SectionEvidenceSearch._parse_search_related_content_output(raw):
+                    candidates.append(
+                        {
+                            "source": "related_content",
+                            "document_id": did,
+                            "content": content,
+                            "score": 0.80,
+                            "metadata": {},
+                        }
+                    )
+            except Exception:
+                pass
+
+        merged: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        query_terms = _tokenize_grounding_text(query)
+        for row in candidates:
+            content = str(row.get("content") or "").strip()
+            document_id = str(row.get("document_id") or "").strip()
+            if not content and document_id:
+                continue
+            if not content:
+                continue
+            key = (document_id, content[:180])
+            score = float(row.get("score", 0.0) or 0.0) + _token_overlap_ratio(query_terms, content)
+            if key not in merged or score > float(merged[key].get("score", 0.0) or 0.0):
+                row["score"] = score
+                merged[key] = row
+        rows = list(merged.values())
+        rows.sort(key=lambda x: float(x.get("score", 0.0) or 0.0), reverse=True)
+        return rows
+
+    def _judge_candidates(
+        self,
+        *,
+        query: str,
+        plan: Dict[str, Any],
+        candidates: List[Dict[str, Any]],
+        max_candidate_chars: int,
+    ) -> Dict[str, Any]:
+        if self.llm is None:
+            return {}
+        blocks: List[str] = []
+        for idx, row in enumerate(candidates, 1):
+            blocks.append(
+                "\n".join(
+                    [
+                        f"[{idx}] source={row.get('source')} document_id={row.get('document_id')}",
+                        _clip_text(row.get("content", ""), max_candidate_chars),
+                    ]
+                )
+            )
+        prompt = (
+            "You are a strict hybrid evidence judge for screenplay QA.\n"
+            "Answer only from the candidate evidence below.\n"
+            "Choose evidence that satisfies ALL hard anchors in the question. Reject similar but different scenes.\n"
+            "Prefer raw_document or bm25 candidates when they contain concrete dialogue/action; related_content and section_evidence may be summaries.\n"
+            "Prefer evidence that directly answers the user's query over broad summaries or adjacent-but-different scenes.\n"
+            "For explanatory questions, the best evidence may be a concrete cause, trigger, motivation, immediately preceding event, or response; infer this from the question as a whole, not from keyword matching.\n"
+            "If multiple candidates are plausible, report the strongest direct support and the most important near misses.\n\n"
+            f"Question:\n{query}\n\n"
+            f"Information need:\n{plan.get('information_need') or plan.get('target_effect')}\n"
+            f"Hard anchors:\n{json.dumps(plan.get('must_keep_anchors') or [], ensure_ascii=False)}\n"
+            f"Reject if:\n{json.dumps(plan.get('reject_if') or [], ensure_ascii=False)}\n\n"
+            "Candidate evidence:\n"
+            + "\n\n".join(blocks)
+            + "\n\nReturn strict JSON only:\n"
+            "{\n"
+            '  "answer_candidate": "short direct answer",\n'
+            '  "confidence": 0.0,\n'
+            '  "source_document_ids": ["..."],\n'
+            '  "supporting_evidence": [{"candidate_index": 1, "quote": "short quote/paraphrase"}],\n'
+            '  "plausible_answers": [{"candidate_index": 1, "answer": "alternative answer candidate", "why_plausible": "brief"}],\n'
+            '  "why_this_matches": "why it satisfies the question anchors",\n'
+            '  "rejected_near_misses": [{"candidate_index": 2, "reason": "why similar but wrong"}]\n'
+            "}\n"
+        )
+        try:
+            responses = self.llm.run([{"role": "user", "content": prompt}])
+            raw = ""
+            if isinstance(responses, list) and responses:
+                raw = str((responses[-1] or {}).get("content", "") or "").strip()
+            parsed = json.loads(correct_json_format(raw))
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
+    def call(self, params: str, **kwargs) -> str:
+        logger.info("🔎 调用 hybrid_evidence_search")
+        try:
+            data = json.loads(params) if isinstance(params, str) else dict(params or {})
+        except Exception as e:
+            return f"参数解析失败: {e}"
+
+        query = str(data.get("query", "") or "").strip()
+        if not query:
+            return "query 不能为空。"
+        top_k = max(2, int(data.get("top_k", 5) or 5))
+        max_candidates = max(4, int(data.get("max_candidates", 20) or 20))
+        max_candidate_chars = max(240, int(data.get("max_candidate_chars", 1800) or 1800))
+        use_llm_plan = _to_bool(data.get("use_llm_plan"), True)
+        use_llm_judge = _to_bool(data.get("use_llm_judge"), False)
+        use_related_content = _to_bool(data.get("use_related_content"), False)
+
+        plan = self._build_query_plan(query, use_llm_plan=use_llm_plan)
+        queries = self._augment_retrieval_queries(query, _dedup_strings(plan.get("retrieval_queries") or [query]))
+        candidates = self._collect_candidates(
+            query=query,
+            queries=queries,
+            top_k=top_k,
+            use_related_content=use_related_content,
+        )
+        selected = candidates[:max_candidates]
+        judged = self._judge_candidates(
+            query=query,
+            plan=plan,
+            candidates=selected,
+            max_candidate_chars=max_candidate_chars,
+        ) if selected and use_llm_judge else {}
+
+        lines: List[str] = ["[Hybrid Evidence Search]"]
+        lines.append(f"information_need: {plan.get('information_need') or plan.get('target_effect') or query}")
+        anchors = _dedup_strings(plan.get("must_keep_anchors") or [])
+        if anchors:
+            lines.append(f"hard_anchors: {', '.join(anchors)}")
+        reject_if = _dedup_strings(plan.get("reject_if") or [])
+        if reject_if:
+            lines.append("reject_if: " + " | ".join(reject_if))
+        lines.append("[Retrieval Queries]")
+        for idx, q in enumerate(queries, 1):
+            lines.append(f"{idx}. {q}")
+        lines.append("[Candidate Evidence]")
+        if selected:
+            for idx, row in enumerate(selected, 1):
+                lines.append(
+                    f"{idx}. source={row.get('source')} document_id={row.get('document_id')} "
+                    f"score={float(row.get('score', 0.0) or 0.0):.4f}"
+                )
+                lines.append(f"   {_clip_text(row.get('content', ''), max_candidate_chars)}")
+        else:
+            lines.append("None")
+        lines.append("[Hybrid Evidence Judgment]")
+        if judged:
+            lines.append(f"answer_candidate: {str(judged.get('answer_candidate') or '').strip()}")
+            lines.append(f"confidence: {float(judged.get('confidence', 0.0) or 0.0):.3f}")
+            doc_ids = _dedup_strings(judged.get("source_document_ids") or [])
+            if doc_ids:
+                lines.append(f"source_document_ids: {', '.join(doc_ids)}")
+            support = judged.get("supporting_evidence") or []
+            if isinstance(support, list) and support:
+                lines.append("supporting_evidence:")
+                for item in support[:4]:
+                    if not isinstance(item, dict):
+                        continue
+                    lines.append(
+                        f"  - candidate={item.get('candidate_index')} quote={str(item.get('quote') or '').strip()}"
+                    )
+            plausible = judged.get("plausible_answers") or judged.get("plausible_causes") or []
+            if isinstance(plausible, list) and plausible:
+                lines.append("plausible_answers:")
+                for item in plausible[:5]:
+                    if not isinstance(item, dict):
+                        continue
+                    lines.append(
+                        f"  - candidate={item.get('candidate_index')} answer={str(item.get('answer') or item.get('cause') or '').strip()} why={str(item.get('why_plausible') or '').strip()}"
+                    )
+            why = str(judged.get("why_this_matches") or "").strip()
+            if why:
+                lines.append(f"why_this_matches: {why}")
+            rejected = judged.get("rejected_near_misses") or []
+            if isinstance(rejected, list) and rejected:
+                lines.append("rejected_near_misses:")
+                for item in rejected[:4]:
+                    if not isinstance(item, dict):
+                        continue
+                    lines.append(
+                        f"  - candidate={item.get('candidate_index')} reason={str(item.get('reason') or '').strip()}"
+                    )
+        else:
+            lines.append("disabled; use the candidate evidence panel above and answer with the closest local trigger.")
         return "\n".join(lines)
 
 
@@ -1915,276 +2714,6 @@ class EntityEventTraceSearch(BaseTool):
                 if selected_reason:
                     lines.append(f"reason: {selected_reason}")
 
-        return "\n".join(lines)
-
-
-@register_tool("fact_timeline_resolution_search")
-class FactTimelineResolutionSearch(BaseTool):
-    name = "fact_timeline_resolution_search"
-    description = (
-        "面向精确事实、多阶段比较、次数/年份统计、角色身份和“发生了什么”的解析工具。"
-        "它会先汇总 question-level 的 section / sentence / event / document 证据，再基于整组证据做精确判别。"
-        "适合 how many / how long / years since / difference between / who is / role of / what happened 这类问题。"
-    )
-    parameters = [
-        {"name": "query", "type": "string", "description": "问题文本；可以直接带 Choices/Options。", "required": True},
-        {"name": "section_top_k", "type": "integer", "description": "最多保留多少个章节候选，默认 5。", "required": False},
-        {"name": "sentence_top_k", "type": "integer", "description": "最多保留多少条句子证据，默认 6。", "required": False},
-        {"name": "document_top_k", "type": "integer", "description": "最多保留多少个 document_id，默认 6。", "required": False},
-        {"name": "event_top_k", "type": "integer", "description": "最多保留多少个 event 候选，默认 5。", "required": False},
-        {"name": "max_length", "type": "integer", "description": "每条证据片段最大长度，默认 220。", "required": False},
-        {"name": "use_llm_choice_judge", "type": "bool", "description": "多选题时是否做最终选项判别；默认 true。", "required": False},
-    ]
-
-    def __init__(
-        self,
-        graph_query_utils,
-        document_vector_store,
-        document_parser,
-        *,
-        sentence_vector_store=None,
-        section_retriever=None,
-        narrative_retriever=None,
-        max_workers: int = 4,
-    ):
-        self.graph_query_utils = graph_query_utils
-        self.doc_vs = document_vector_store
-        self.sent_vs = sentence_vector_store
-        self.document_parser = document_parser
-        self.section_retriever = section_retriever
-        self.narrative_retriever = narrative_retriever
-        self.max_workers = max(1, int(max_workers or 4))
-        self.search_related_content_tool = SearchRelatedContentTool(
-            document_vector_store=self.doc_vs,
-            document_parser=self.document_parser,
-            max_workers=self.max_workers,
-        )
-
-    @staticmethod
-    def _collect_sentence_rows(raw_docs: List[Any], *, limit: int) -> List[Dict[str, Any]]:
-        rows: List[Dict[str, Any]] = []
-        for doc in raw_docs[: max(1, int(limit or 6))]:
-            text = str(getattr(doc, "content", "") or "").strip()
-            if not text:
-                continue
-            md = getattr(doc, "metadata", {}) or {}
-            rows.append(
-                {
-                    "text": text,
-                    "score": float(md.get("similarity_score", 0.0) or 0.0),
-                    "document_id": str(md.get("document_id", "") or "").strip(),
-                }
-            )
-        return rows
-
-    def _judge_choice(
-        self,
-        *,
-        question_stem: str,
-        options: List[Dict[str, str]],
-        evidence_text: str,
-    ) -> Dict[str, Any]:
-        llm = getattr(self.document_parser, "llm", None) if self.document_parser is not None else None
-        if llm is None or not options:
-            return {}
-        option_block = "\n".join([f"{opt['label']}. {opt['text']}" for opt in options])
-        prompt = (
-            "You are solving a multiple-choice exact-fact QA problem from retrieved evidence.\n"
-            "Use only explicit evidence from the retrieval results.\n"
-            "Prefer precise factual support over broad thematic plausibility.\n"
-            "For count/time questions, count explicit mentions carefully.\n"
-            "For first-vs-second or difference questions, align the evidence to each stage before comparing.\n"
-            "For role/identity questions, prefer direct titles, affiliations, or role statements.\n"
-            "For 'what happened' questions, choose the least embellished event that is directly stated.\n"
-            "If later evidence says an earlier attack, injury, or accusation was staged, fake, harmless, or did not truly occur, prefer the final truthful interpretation.\n"
-            "If evidence says a name or label is a generic term for a whole population or category, prefer that over a narrower occupation unless the narrower role is explicitly singled out.\n"
-            "Reject options that add extra claims not explicitly supported.\n\n"
-            f"Question:\n{question_stem}\n\n"
-            f"Choices:\n{option_block}\n\n"
-            f"Evidence:\n{_clip_text(evidence_text, 5200)}\n\n"
-            "Return strict JSON only:\n"
-            "{\n"
-            '  "selected_label": "A",\n'
-            '  "confidence": 0.0,\n'
-            '  "resolved_facts": ["fact 1", "fact 2"],\n'
-            '  "reason": "brief explanation"\n'
-            "}\n"
-        )
-        try:
-            responses = llm.run([{"role": "user", "content": prompt}])
-            raw = ""
-            if isinstance(responses, list) and responses:
-                raw = str((responses[-1] or {}).get("content", "") or "").strip()
-            parsed = json.loads(correct_json_format(raw))
-        except Exception:
-            return {}
-        label = str(parsed.get("selected_label", "") or "").strip().upper()
-        facts = parsed.get("resolved_facts")
-        if not label:
-            return {}
-        return {
-            "selected_label": label,
-            "confidence": _clamp01(parsed.get("confidence", 0.0)),
-            "resolved_facts": [str(x or "").strip() for x in (facts if isinstance(facts, list) else []) if str(x or "").strip()],
-            "reason": str(parsed.get("reason", "") or "").strip(),
-        }
-
-    def call(self, params: str, **kwargs) -> str:
-        logger.info("🔎 调用 fact_timeline_resolution_search")
-        try:
-            data = json.loads(params) if isinstance(params, str) else dict(params or {})
-        except Exception as e:
-            return f"参数解析失败: {e}"
-
-        query = str(data.get("query", "") or "").strip()
-        if not query:
-            return "query 不能为空。"
-
-        section_top_k = max(1, int(data.get("section_top_k", 5) or 5))
-        sentence_top_k = max(1, int(data.get("sentence_top_k", 6) or 6))
-        document_top_k = max(1, int(data.get("document_top_k", 6) or 6))
-        event_top_k = max(1, int(data.get("event_top_k", 5) or 5))
-        max_length = max(80, int(data.get("max_length", 220) or 220))
-        use_llm_choice_judge = _to_bool(data.get("use_llm_choice_judge"), True)
-
-        question_stem, options = _parse_mcq_query(query)
-        base_query = question_stem or query
-        retrieval_query = query if options else base_query
-
-        section_rows: Dict[str, Any] = {}
-        if self.section_retriever is not None:
-            try:
-                section_rows = self.section_retriever.search(
-                    retrieval_query,
-                    section_top_k=section_top_k,
-                    llm_filter_top_k=max(8, section_top_k * 2),
-                    llm_filter_threshold=0.32,
-                    max_length=max_length,
-                ) or {}
-            except Exception:
-                section_rows = {}
-
-        narrative_rows: Dict[str, Any] = {}
-        if self.narrative_retriever is not None:
-            try:
-                narrative_rows = self.narrative_retriever.search(
-                    retrieval_query,
-                    storyline_top_k=2,
-                    episode_top_k=3,
-                    event_top_k=event_top_k,
-                    document_top_k=document_top_k,
-                    llm_filter_threshold=0.32,
-                    max_evidence_length=max_length,
-                ) or {}
-            except Exception:
-                narrative_rows = {}
-
-        sentence_rows: List[Dict[str, Any]] = []
-        if self.sent_vs is not None:
-            try:
-                sentence_hits = self.sent_vs.search(query=retrieval_query, limit=max(1, int(sentence_top_k or 6)))
-                sentence_rows = self._collect_sentence_rows(sentence_hits, limit=sentence_top_k)
-            except Exception:
-                sentence_rows = []
-
-        sections = list(section_rows.get("sections") or [])
-        section_documents = list(section_rows.get("documents") or [])
-        section_evidence = list(section_rows.get("evidence") or [])
-        episodes = list(narrative_rows.get("episodes") or [])
-        events = list(narrative_rows.get("events") or [])
-        narrative_documents = list(narrative_rows.get("document_rows") or [])
-        narrative_evidence = list(narrative_rows.get("evidence") or [])
-
-        document_ids = EntityEventTraceSearch._collect_document_ids(
-            section_documents,
-            narrative_documents,
-            section_evidence,
-            narrative_evidence,
-            sections,
-            events,
-            sentence_rows,
-            limit=document_top_k,
-        )
-
-        related_rows: List[Tuple[str, str]] = []
-        if document_ids:
-            try:
-                raw = self.search_related_content_tool.call(
-                    json.dumps(
-                        {
-                            "document_ids": document_ids,
-                            "query": retrieval_query,
-                            "max_length": max_length,
-                        },
-                        ensure_ascii=False,
-                    )
-                )
-                related_rows = SectionEvidenceSearch._parse_search_related_content_output(raw)
-            except Exception:
-                related_rows = []
-
-        evidence_blocks: List[str] = []
-        for idx, row in enumerate(sections[:section_top_k], 1):
-            name = str(row.get("name", "") or "").strip()
-            desc = str(row.get("description", "") or "").strip()
-            score = float(row.get("score", 0.0) or 0.0)
-            if name or desc:
-                evidence_blocks.append(f"[Section {idx}] {name} score={score:.4f}\n{_clip_text(desc, 260)}")
-        for idx, row in enumerate(events[:event_top_k], 1):
-            name = str(row.get("name", "") or "").strip()
-            desc = str(row.get("description", "") or "").strip()
-            score = float(row.get("score", 0.0) or 0.0)
-            if name or desc:
-                evidence_blocks.append(f"[Event {idx}] {name} score={score:.4f}\n{_clip_text(desc, 260)}")
-        for idx, row in enumerate(sentence_rows[:sentence_top_k], 1):
-            text = str(row.get("text", "") or "").strip()
-            score = float(row.get("score", 0.0) or 0.0)
-            if text:
-                evidence_blocks.append(f"[Sentence {idx}] score={score:.4f}\n{_clip_text(text, 260)}")
-        for idx, (document_id, content) in enumerate(related_rows[: max(3, document_top_k)], 1):
-            if content:
-                evidence_blocks.append(f"[Doc Evidence {idx}] {document_id}\n{_clip_text(content, 320)}")
-
-        lines: List[str] = ["[Fact Timeline Resolution Search]"]
-        lines.append(f"question: {base_query}")
-        if sections:
-            lines.extend(_format_ranked_rows("Sections", sections[:section_top_k]))
-        if episodes:
-            lines.extend(_format_ranked_rows("Episodes", episodes[:3]))
-        if events:
-            lines.extend(_format_ranked_rows("Events", events[:event_top_k], include_docs=False))
-        lines.append("[Tracked Documents]")
-        if document_ids:
-            for idx, document_id in enumerate(document_ids, 1):
-                lines.append(f"{idx}. {document_id}")
-        else:
-            lines.append("None")
-        lines.append("[Evidence]")
-        if evidence_blocks:
-            lines.extend(evidence_blocks)
-        else:
-            lines.append("None")
-
-        if options and use_llm_choice_judge and evidence_blocks:
-            judge = self._judge_choice(
-                question_stem=base_query,
-                options=options,
-                evidence_text="\n\n".join(evidence_blocks),
-            )
-            selected_label = str(judge.get("selected_label", "") or "").strip().upper()
-            if selected_label:
-                lines.append("[Resolved Facts]")
-                facts = judge.get("resolved_facts") or []
-                if facts:
-                    for idx, fact in enumerate(facts[:6], 1):
-                        lines.append(f"{idx}. {fact}")
-                else:
-                    lines.append("None")
-                lines.append("[Suggested Choice]")
-                lines.append(f"{selected_label} confidence={float(judge.get('confidence', 0.0) or 0.0):.4f}")
-                reason = str(judge.get("reason", "") or "").strip()
-                if reason:
-                    lines.append(f"reason: {reason}")
         return "\n".join(lines)
 
 

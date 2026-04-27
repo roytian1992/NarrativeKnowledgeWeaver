@@ -1,0 +1,77 @@
+id: event_occasion_frame_extraction
+category: knowledge_extraction
+name: Event Occasion Frame Extraction
+description: >
+  Extract atomic Event frames and Occasion frames, together with attached participant, time, location, and related entity mentions.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+  - name: memory_context
+    type: string
+    required: false
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: extraction_rules_block
+    type: string
+    required: false
+  - name: output_schema_block
+    type: string
+    required: true
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  You are performing Event / Occasion frame extraction.
+
+  Task:
+  {task_name}
+
+  Goal:
+  {task_goal}
+
+  Global constraints:
+  {global_constraints}
+
+  Additional extraction rules:
+  {extraction_rules_block}
+
+  Output schema:
+  {output_schema_block}
+
+  Key requirements:
+  - Extract only the two induced entity classes: Event and Occasion.
+  - Keep each Event as atomic as possible.
+  - An Occasion is an organized activity or social container that may contain multiple Events.
+  - Preserve surface forms and original language whenever possible; if the input text is English, do not translate entity / event / occasion names into another language.
+  - While extracting Event / Occasion frames, also include clearly linked people, times, locations, and other related entities whenever supported.
+  - Keep attached entities open-form for now; do not assign schema types.
+  - Keep `related_entities` only when they are genuinely worth becoming standalone nodes; do not include propositional items such as "a piece of news", "a claim", or "the content of one utterance".
+  - If an entity is only a background example or a passing mention without local narrative function, do not attach it to the frame.
+  - Each attached entity object must use:
+    {{
+      "name": "...",
+      "description": "..."
+    }}
+  - If a field is not clearly supported, return an empty array.
+  - Output JSON only. Do not include explanations.
+
+  Examples:
+  {few_shot_samples}
+
+  Input text:
+  {text}
+
+  Optional memory:
+  {memory_context}

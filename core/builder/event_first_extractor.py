@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import time
+from collections import Counter
 from typing import Any, Dict, List, Tuple
 
 from core.agent.knowledge_extraction_agent import (
@@ -15,6 +17,7 @@ from core.functions.regular_functions.entity_schema_grounding import EntitySchem
 from core.functions.regular_functions.event_occasion_frame_extraction import EventOccasionFrameExtractor
 from core.functions.regular_functions.external_entity_candidates import ExternalEntityCandidateExtractor
 from core.functions.regular_functions.open_entity_extraction import OpenEntityExtractor
+from core.utils.general_utils import word_len
 from core.utils.prompt_loader import YAMLPromptLoader
 
 
@@ -51,13 +54,77 @@ def _dedup_typed_entities(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         key = (name.lower(), etype)
         cur = merged.get(key)
         if cur is None or len(desc) > len(str(cur.get("description", ""))):
-            merged[key] = {
+            row = dict(item)
+            row["name"] = name
+            row["type"] = etype
+            row["description"] = desc
+            row["scope"] = str(item.get("scope", "")).strip() or "local"
+            merged[key] = row
+    return list(merged.values())
+
+
+def _typed_entities_from_metadata_ner(
+    metadata: Dict[str, Any] | None,
+    *,
+    known_names: set[str],
+    scope_rules: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    allowed = {"Character", "Location", "Object", "Concept"}
+    out: List[Dict[str, Any]] = []
+    md = metadata if isinstance(metadata, dict) else {}
+    raw_items = md.get("ner_entities") or []
+    if not isinstance(raw_items, list):
+        raw_items = []
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        etype = str(item.get("type", "")).strip()
+        if not name or etype not in allowed:
+            continue
+        if _norm_name(name) in known_names:
+            continue
+        if etype == "Character" and _is_generic_character_name(name):
+            continue
+        description = str(item.get("description", "")).strip() or f"Detected by metadata NER as {etype}."
+        try:
+            confidence = float(item.get("confidence", 0.0) or 0.0)
+        except Exception:
+            confidence = 0.0
+        out.append(
+            {
                 "name": name,
                 "type": etype,
-                "description": desc,
-                "scope": str(item.get("scope", "")).strip() or "local",
+                "description": description,
+                "scope": scope_rules.get(etype, "local"),
+                "source_kind": "metadata_ner",
+                "confidence": round(confidence, 4),
             }
-    return list(merged.values())
+        )
+    return _dedup_typed_entities(out)
+
+
+def _typed_entities_to_open_candidates(items: List[Dict[str, Any]], *, source_hint: str = "") -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        etype = str(item.get("type", "")).strip()
+        desc = str(item.get("description", "")).strip()
+        if not name:
+            continue
+        if desc:
+            candidate_desc = desc
+        elif etype:
+            candidate_desc = f"Candidate {etype} entity from {source_hint or 'NER'}."
+        else:
+            candidate_desc = f"Candidate entity from {source_hint or 'NER'}."
+        if etype:
+            candidate_desc = f"[NER candidate type: {etype}] {candidate_desc}"
+        out.append({"name": name, "description": candidate_desc})
+    return _dedup_open_entities(out)
 
 
 def _is_low_value_related_entity(name: str, description: str) -> bool:
@@ -228,8 +295,10 @@ def _dedup_grounded_entities(items: List[Dict[str, Any]]) -> List[Dict[str, Any]
             continue
         key = (name.lower(), etype)
         cur = merged.get(key)
-        if cur is None or len(str(item.get("description", ""))) > len(str(cur.get("description", ""))):
-            merged[key] = item
+        if cur is None:
+            merged[key] = dict(item)
+            continue
+        merged[key] = _merge_entity_records(cur, item)
     return list(merged.values())
 
 
@@ -247,13 +316,23 @@ def _merge_entities(base: List[Dict[str, Any]], new_items: List[Dict[str, Any]])
         if cur is None:
             merged[key] = dict(item)
             continue
-        if len(str(item.get("description", ""))) > len(str(cur.get("description", ""))):
-            merged[key] = dict(item)
+        merged[key] = _merge_entity_records(cur, item)
     return list(merged.values())
 
 
 def _entity_index(entities: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    return {str(e.get("name", "")).strip(): e for e in entities if isinstance(e, dict) and str(e.get("name", "")).strip()}
+    out: Dict[str, Dict[str, Any]] = {}
+    for e in entities if isinstance(entities, list) else []:
+        if not isinstance(e, dict):
+            continue
+        name = str(e.get("name", "")).strip()
+        if name:
+            out[name] = e
+        for alias in e.get("aliases") or []:
+            alias_text = str(alias or "").strip()
+            if alias_text and alias_text not in out:
+                out[alias_text] = e
+    return out
 
 
 def _make_relation(rid: str, subject: str, object_: str, relation_type: str, relation_name: str, description: str) -> Dict[str, Any]:
@@ -266,6 +345,36 @@ def _make_relation(rid: str, subject: str, object_: str, relation_type: str, rel
         "description": description,
         "conf": 0.8,
     }
+
+
+def _is_auto_relation_rid(rid: Any) -> bool:
+    text = str(rid or "").strip()
+    return text.startswith("auto#") or ":auto#" in text
+
+
+def _grounding_mode_counts(relations: List[Dict[str, Any]]) -> Dict[str, int]:
+    counter: Counter[str] = Counter()
+    for rel in relations or []:
+        if not isinstance(rel, dict):
+            continue
+        props = rel.get("properties") or {}
+        if not isinstance(props, dict):
+            continue
+        mode = str(props.get("grounding_mode", "") or "").strip()
+        if mode:
+            counter[mode] += 1
+    return dict(counter)
+
+
+def _merge_count_maps(base: Dict[str, int], incoming: Dict[str, int]) -> Dict[str, int]:
+    merged: Counter[str] = Counter()
+    for mapping in [base or {}, incoming or {}]:
+        for key, value in mapping.items():
+            key_text = str(key or "").strip()
+            if not key_text:
+                continue
+            merged[key_text] += int(value or 0)
+    return dict(merged)
 
 
 def _json_load_list(payload: str) -> List[Dict[str, Any]]:
@@ -315,6 +424,273 @@ def _collect_relation_brought_entity_candidates(
                 continue
             out.append({"name": name, "description": description})
     return _dedup_open_entities(out)
+
+
+def _should_ground_relation_brought_candidate(name: str, description: str) -> bool:
+    raw_name = _normalize_space(name)
+    raw_desc = _normalize_space(description)
+    if not raw_name:
+        return False
+    if _looks_named_character(raw_name):
+        return True
+    if _is_generic_character_name(raw_name):
+        return False
+    if _has_non_ascii(raw_name):
+        if len(raw_name) >= 3 and not any(marker in raw_name for marker in ["消息", "东西", "东西们"]):
+            return True
+    else:
+        words = raw_name.split()
+        if len(words) >= 2 and any(word[:1].isupper() for word in words):
+            return True
+    combined = _norm_name(f"{raw_name} {raw_desc}")
+    high_value_markers = [
+        "family",
+        "committee",
+        "newspaper",
+        "estate",
+        "play",
+        "marriage",
+        "divorce",
+        "alimony",
+        "organization",
+        "club",
+        "company",
+        "office",
+        "household",
+        "报社",
+        "委员会",
+        "家族",
+        "婚姻",
+        "离婚",
+        "财产",
+        "庄园",
+        "剧本",
+    ]
+    if any(marker in combined for marker in high_value_markers):
+        return True
+    return False
+
+
+def _filter_relation_brought_grounding_candidates(
+    candidates: List[Dict[str, str]],
+) -> List[Dict[str, str]]:
+    return [
+        item
+        for item in _dedup_open_entities(candidates)
+        if isinstance(item, dict)
+        and _should_ground_relation_brought_candidate(
+            str(item.get("name", "")).strip(),
+            str(item.get("description", "")).strip(),
+        )
+    ]
+
+
+def _infer_relation_brought_rule_entities(
+    candidates: List[Dict[str, str]],
+    *,
+    scope_rules: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    """
+    Fast-path replacement for a second LLM grounding pass.
+    Only promote relation-mentioned entities when their type is conservative.
+    """
+    out: List[Dict[str, Any]] = []
+    concept_markers = {
+        "family",
+        "committee",
+        "organization",
+        "organisation",
+        "club",
+        "company",
+        "office",
+        "agency",
+        "government",
+        "project",
+        "plan",
+        "program",
+        "marriage",
+        "divorce",
+        "estate",
+        "newspaper",
+        "newspaper office",
+        "家族",
+        "家庭",
+        "委员会",
+        "组织",
+        "机构",
+        "公司",
+        "政府",
+        "计划",
+        "工程",
+        "项目",
+        "婚姻",
+        "离婚",
+        "报社",
+    }
+    object_markers = {
+        "letter",
+        "document",
+        "contract",
+        "money",
+        "newspaper",
+        "paper",
+        "phone",
+        "car",
+        "ship",
+        "weapon",
+        "信",
+        "文件",
+        "合同",
+        "钱",
+        "报纸",
+        "电话",
+        "车",
+        "武器",
+    }
+
+    for item in _dedup_open_entities(candidates):
+        name = _normalize_space(item.get("name", ""))
+        desc = _normalize_space(item.get("description", ""))
+        if not name:
+            continue
+        combined = _norm_name(f"{name} {desc}")
+        if any(marker in combined for marker in ["news of", "消息", "传闻", "rumor"]):
+            continue
+        etype = ""
+        if any(marker in combined for marker in concept_markers):
+            etype = "Concept"
+        elif _looks_named_character(name):
+            etype = "Character"
+        elif any(marker in combined for marker in object_markers) and not _is_low_value_object_name(name):
+            etype = "Object"
+        if not etype:
+            continue
+        out.append(
+            {
+                "name": name,
+                "description": desc,
+                "type": etype,
+                "scope": scope_rules.get(etype, "local"),
+                "source_kind": "relation_brought_rule",
+            }
+        )
+    return _dedup_typed_entities(out)
+
+
+def _character_alias_score(
+    entity: Dict[str, Any],
+    target: Dict[str, Any],
+    *,
+    global_characters: List[Dict[str, Any]],
+) -> int:
+    source_name = str(entity.get("name", "")).strip()
+    target_name = str(target.get("name", "")).strip()
+    if not source_name or not target_name or _norm_name(source_name) == _norm_name(target_name):
+        return 0
+    if str(target.get("scope", "")).strip() != "global":
+        return 0
+
+    source_desc = str(entity.get("description", "")).strip()
+    target_text = f"{target_name} {str(target.get('description', '')).strip()} {' '.join(target.get('aliases') or [])}"
+    source_tokens = [tok for tok in _character_tokens(source_name) if tok not in _CHARACTER_TITLE_WORDS]
+    target_tokens = [tok for tok in _character_tokens(target_name) if tok not in _CHARACTER_TITLE_WORDS]
+    if not source_tokens or not target_tokens:
+        return 0
+
+    score = 0
+    if _looks_named_character(source_name):
+        if not _looks_named_character(target_name):
+            return 0
+        src_first = source_tokens[0]
+        tgt_first = target_tokens[0]
+        if src_first == tgt_first:
+            score += 10
+        elif len(src_first) >= 4 and tgt_first.startswith(src_first):
+            score += 8
+        elif len(tgt_first) >= 4 and src_first.startswith(tgt_first):
+            score += 6
+
+        if len(source_tokens) > 1 and set(source_tokens).issubset(set(target_tokens)):
+            score += 6
+        elif len(source_tokens) == 1 and src_first in set(target_tokens[1:]):
+            score -= 4
+    else:
+        role_terms = _character_role_terms(source_name)
+        if not role_terms:
+            return 0
+        target_text_norm = _norm_name(target_text)
+        for role in role_terms:
+            if role in target_text_norm:
+                score += 3
+        anchors = _character_anchor_names(source_desc, candidates=global_characters)
+        if anchors and any(anchor in target_text_norm for anchor in anchors):
+            score += 4
+        if _looks_named_character(target_name):
+            score += 2
+
+    return score
+
+
+def _normalize_character_entities(
+    entities: List[Dict[str, Any]],
+    *,
+    mention_counts: Counter[str] | None = None,
+) -> List[Dict[str, Any]]:
+    mention_counts = mention_counts or Counter()
+    normalized = [dict(item) for item in (entities or []) if isinstance(item, dict)]
+    global_characters = [
+        item
+        for item in normalized
+        if str(item.get("type", "")).strip() == "Character"
+        and str(item.get("scope", "")).strip() == "global"
+        and _looks_named_character(str(item.get("name", "")).strip())
+    ]
+
+    for item in normalized:
+        if str(item.get("type", "")).strip() != "Character":
+            continue
+        original_name = str(item.get("name", "")).strip()
+        if not original_name:
+            continue
+
+        best_target = None
+        best_score = 0
+        second_score = 0
+        for target in global_characters:
+            score = _character_alias_score(item, target, global_characters=global_characters)
+            if score > best_score:
+                second_score = best_score
+                best_score = score
+                best_target = target
+            elif score > second_score:
+                second_score = score
+
+        if best_target is not None and best_score >= 8 and best_score >= second_score + 2:
+            target_name = str(best_target.get("name", "")).strip()
+            if target_name and _norm_name(target_name) != _norm_name(original_name):
+                existing_aliases = item.get("aliases") or []
+                item["aliases"] = _sanitize_entity_aliases(
+                    target_name,
+                    "Character",
+                    _merge_unique_strings(existing_aliases, [original_name]),
+                )
+                item["name"] = target_name
+                item["scope"] = "global"
+                item["alias_of"] = target_name
+                continue
+
+        if not _looks_named_character(original_name):
+            item["scope"] = "local"
+            continue
+
+        if (
+            str(item.get("scope", "")).strip() != "global"
+            and _looks_named_character(original_name)
+            and int(mention_counts.get(_norm_name(original_name), 0)) >= 2
+        ):
+            item["scope"] = "global"
+
+    return _dedup_grounded_entities(normalized)
 
 
 def _canonicalize_open_relation_proposals(
@@ -381,6 +757,78 @@ _GENERIC_CHARACTER_PHRASES = {
     "reporters",
     "people",
 }
+_CHARACTER_PRONOUN_PREFIXES = (
+    "his ",
+    "her ",
+    "their ",
+    "my ",
+    "our ",
+    "your ",
+    "this ",
+    "that ",
+    "these ",
+    "those ",
+    "another ",
+    "some ",
+    "a ",
+    "an ",
+    "the ",
+)
+_CHARACTER_ROLE_WORDS = {
+    "husband",
+    "wife",
+    "lawyer",
+    "friend",
+    "butler",
+    "reporter",
+    "reporters",
+    "mother",
+    "father",
+    "daughter",
+    "son",
+    "brother",
+    "sister",
+    "guest",
+    "guests",
+    "valet",
+    "chauffeur",
+    "doctor",
+    "nurse",
+    "captain",
+    "driver",
+    "bartender",
+    "maid",
+    "servant",
+    "footman",
+    "host",
+    "hostess",
+    "girl",
+    "boy",
+    "man",
+    "woman",
+    "lady",
+    "丈夫",
+    "妻子",
+    "律师",
+    "朋友",
+    "管家",
+    "记者",
+    "母亲",
+    "父亲",
+    "女儿",
+    "儿子",
+    "兄弟",
+    "姐妹",
+}
+_CHARACTER_TITLE_WORDS = {"mr", "mrs", "miss", "ms", "dr", "sir", "lady", "captain", "capt", "prof", "professor"}
+_SOURCE_KIND_PRIORITY = {
+    "frame_slot": 4,
+    "external_typed": 3,
+    "open_grounded": 2,
+    "relation_brought_grounded": 1,
+    "relation_brought_rule": 1,
+    "": 0,
+}
 _GENERIC_OBJECT_TERMS = {"book", "box", "bag", "coat", "cups", "cup", "cars", "car", "desk", "door", "echo", "cigarette"}
 _GENERIC_TIME_TERMS = {"day", "night", "morning", "afternoon", "evening", "later", "now", "then", "soon"}
 
@@ -399,11 +847,183 @@ def _is_generic_character_name(name: str) -> bool:
         return True
     if norm in _GENERIC_CHARACTER_PHRASES:
         return True
+    if norm in _CHARACTER_ROLE_WORDS:
+        return True
+    if norm.startswith(_CHARACTER_PRONOUN_PREFIXES):
+        return True
     if any(marker in norm for marker in ["a lady", "a man", "a woman", "young man", "young woman", "in the group"]):
         return True
     if any(ch.isdigit() for ch in norm) and any(token in norm for token in ["men", "women", "男女", "人"]):
         return True
     return False
+
+
+def _clean_character_token(token: str) -> str:
+    return re.sub(r"^[^A-Za-z\u4e00-\u9fff]+|[^A-Za-z\u4e00-\u9fff]+$", "", str(token or "").strip()).lower()
+
+
+def _character_tokens(name: str) -> List[str]:
+    return [tok for tok in (_clean_character_token(x) for x in str(name or "").split()) if tok]
+
+
+def _character_anchor_names(text: str, *, candidates: List[Dict[str, Any]]) -> set[str]:
+    norm_text = _norm_name(text)
+    anchors: set[str] = set()
+    if not norm_text:
+        return anchors
+    for item in candidates or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        if _norm_name(name) in norm_text:
+            anchors.add(_norm_name(name))
+        for alias in item.get("aliases") or []:
+            alias_norm = _norm_name(alias)
+            if alias_norm and alias_norm in norm_text:
+                anchors.add(alias_norm)
+    return anchors
+
+
+def _character_role_terms(name: str) -> set[str]:
+    tokens = set(_character_tokens(name))
+    roles = {tok for tok in tokens if tok in _CHARACTER_ROLE_WORDS}
+    norm = _norm_name(name)
+    if "lawyer friend" in norm:
+        roles.update({"lawyer", "friend"})
+    return roles
+
+
+def _looks_named_character(name: str) -> bool:
+    raw = _normalize_space(name)
+    if not raw or _is_generic_character_name(raw):
+        return False
+    if _has_non_ascii(raw):
+        return not any(marker in raw for marker in ["某", "一个", "一些", "他的", "她的", "他们的"])
+    words = raw.split()
+    if not words:
+        return False
+    if raw.lower().startswith(_CHARACTER_PRONOUN_PREFIXES):
+        return False
+    sig_tokens = [tok for tok in _character_tokens(raw) if tok not in _CHARACTER_TITLE_WORDS]
+    if not sig_tokens:
+        return False
+    if len(sig_tokens) == 1 and sig_tokens[0] in _CHARACTER_ROLE_WORDS:
+        return False
+    non_title_words = [w for w in words if _clean_character_token(w) not in _CHARACTER_TITLE_WORDS]
+    if not non_title_words:
+        return False
+    if len(non_title_words) == 1:
+        word = non_title_words[0]
+        return bool(word[:1].isupper() or word.isupper())
+    return any(word[:1].isupper() or word.isupper() for word in non_title_words)
+
+
+def _merge_unique_strings(*groups: Any) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for group in groups:
+        if isinstance(group, str):
+            group = [group]
+        if not isinstance(group, list):
+            continue
+        for item in group:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(text)
+    return out
+
+
+def _is_explicit_character_alias(alias: str, canonical_name: str) -> bool:
+    alias_text = _normalize_space(alias)
+    canonical_text = _normalize_space(canonical_name)
+    if not alias_text or not canonical_text:
+        return False
+    if _norm_name(alias_text) == _norm_name(canonical_text):
+        return False
+    if not _looks_named_character(alias_text) or not _looks_named_character(canonical_text):
+        return False
+
+    alias_tokens = [tok for tok in _character_tokens(alias_text) if tok not in _CHARACTER_TITLE_WORDS and tok != "s"]
+    canonical_tokens = [tok for tok in _character_tokens(canonical_text) if tok not in _CHARACTER_TITLE_WORDS and tok != "s"]
+    if not alias_tokens or not canonical_tokens:
+        return False
+    if any(tok in _CHARACTER_ROLE_WORDS for tok in alias_tokens):
+        return False
+
+    alias_set = set(alias_tokens)
+    canonical_set = set(canonical_tokens)
+    if alias_set.issubset(canonical_set) or canonical_set.issubset(alias_set):
+        return True
+
+    alias_head = alias_tokens[0]
+    canonical_head = canonical_tokens[0]
+    if alias_head == canonical_head:
+        return True
+    if len(alias_head) >= 4 and canonical_head.startswith(alias_head):
+        return True
+    if len(canonical_head) >= 4 and alias_head.startswith(canonical_head):
+        return True
+    return False
+
+
+def _sanitize_entity_aliases(name: str, etype: str, aliases: Any) -> List[str]:
+    merged = _merge_unique_strings(aliases or [])
+    if str(etype).strip() != "Character":
+        return merged
+    return [alias for alias in merged if _is_explicit_character_alias(alias, name)]
+
+
+def _merge_entity_records(current: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    cur = dict(current or {})
+    new = dict(incoming or {})
+    cur_scope = str(cur.get("scope", "")).strip()
+    new_scope = str(new.get("scope", "")).strip()
+    cur_desc = str(cur.get("description", "")).strip()
+    new_desc = str(new.get("description", "")).strip()
+    cur_kind = str(cur.get("source_kind", "")).strip()
+    new_kind = str(new.get("source_kind", "")).strip()
+
+    take_new = False
+    if cur_scope != "global" and new_scope == "global":
+        take_new = True
+    elif _SOURCE_KIND_PRIORITY.get(new_kind, 0) > _SOURCE_KIND_PRIORITY.get(cur_kind, 0):
+        take_new = True
+    elif len(new_desc) > len(cur_desc):
+        take_new = True
+
+    base = dict(new if take_new else cur)
+    other = cur if take_new else new
+
+    base["description"] = new_desc if len(new_desc) >= len(cur_desc) else cur_desc
+    base["aliases"] = _sanitize_entity_aliases(
+        str(base.get("name", "")).strip(),
+        str(base.get("type", "")).strip(),
+        _merge_unique_strings(base.get("aliases") or [], other.get("aliases") or []),
+    )
+    alias_of = str(base.get("alias_of") or "").strip() or str(other.get("alias_of") or "").strip()
+    if alias_of:
+        base["alias_of"] = alias_of
+    source_kinds = _merge_unique_strings(
+        base.get("source_kinds") or [],
+        other.get("source_kinds") or [],
+        base.get("source_kind") or "",
+        other.get("source_kind") or "",
+    )
+    if source_kinds:
+        base["source_kinds"] = source_kinds
+    best_kind = cur_kind
+    if _SOURCE_KIND_PRIORITY.get(new_kind, 0) > _SOURCE_KIND_PRIORITY.get(cur_kind, 0):
+        best_kind = new_kind
+    if best_kind:
+        base["source_kind"] = best_kind
+    return base
 
 
 def _is_low_value_timepoint(name: str) -> bool:
@@ -652,6 +1272,7 @@ def _auto_relations_from_frames(
     grounded_entities: List[Dict[str, Any]],
     event_nodes: List[Dict[str, Any]],
     occasion_nodes: List[Dict[str, Any]],
+    rid_prefix: str = "auto",
 ) -> Dict[str, Dict[str, Any]]:
     idx = _entity_index(grounded_entities + event_nodes + occasion_nodes)
     rid_i = 1
@@ -664,7 +1285,7 @@ def _auto_relations_from_frames(
         if subject not in idx or object_ not in idx or subject == object_ or triple in seen_triples:
             return
         seen_triples.add(triple)
-        key = f"auto#{rid_i}"
+        key = f"{rid_prefix}#{rid_i}" if rid_prefix else f"auto#{rid_i}"
         rid_i += 1
         out[key] = _make_relation(key, subject, object_, relation_type, relation_name, description)
 
@@ -782,6 +1403,126 @@ class EventFirstExtractor:
                 self.agent.extractor.schema_relation_grounding.max_retries = 1
                 self.agent.extractor.schema_relation_grounding.max_candidates_word_len = 260
 
+    def _ground_open_candidates(
+        self,
+        *,
+        text: str,
+        candidates: List[Dict[str, str]],
+        source_kind: str,
+    ) -> List[Dict[str, Any]]:
+        grounded_items: List[Dict[str, Any]] = []
+        deduped = _dedup_open_entities(candidates)
+        if not text or not deduped:
+            return grounded_items
+        grounded_items = _json_load_list(
+            self.entity_grounder.call(
+                json.dumps(
+                    {
+                        "text": text,
+                        "open_entities": deduped,
+                        "memory_context": "",
+                    }
+                )
+            )
+        )
+        for item in grounded_items:
+            item["source_kind"] = source_kind
+        return grounded_items
+
+    def _relation_window_limits(self) -> Tuple[int, int]:
+        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
+        target_words = int(getattr(kg_cfg, "fast_relation_window_target_words", 850) or 850)
+        max_words = int(getattr(kg_cfg, "fast_relation_window_max_words", 1000) or 1000)
+        max_words = max(300, max_words)
+        target_words = max(200, min(target_words, max_words))
+        return target_words, max_words
+
+    def _split_relation_text(self, text: str, *, max_words: int) -> List[str]:
+        raw = str(text or "").strip()
+        if not raw:
+            return []
+        if word_len(raw, lang="auto") <= max_words:
+            return [raw]
+
+        sentence_parts = [
+            part.strip()
+            for part in re.split(r"(?<=[。！？!?；;])\s+|(?<=[.!?;])\s+|\n+", raw)
+            if str(part or "").strip()
+        ]
+        if not sentence_parts:
+            sentence_parts = [raw]
+
+        out: List[str] = []
+        current: List[str] = []
+        current_words = 0
+
+        def flush() -> None:
+            nonlocal current, current_words
+            if current:
+                out.append(" ".join(current).strip())
+            current = []
+            current_words = 0
+
+        for part in sentence_parts:
+            part_words = word_len(part, lang="auto")
+            if part_words <= 0:
+                continue
+            if part_words > max_words:
+                flush()
+                tokens = part.split()
+                if len(tokens) > 1:
+                    for start in range(0, len(tokens), max_words):
+                        out.append(" ".join(tokens[start : start + max_words]).strip())
+                else:
+                    out.append(part)
+                continue
+            if current and current_words + part_words > max_words:
+                flush()
+            current.append(part)
+            current_words += part_words
+        flush()
+        return [part for part in out if part]
+
+    def _build_relation_windows(self, chunk_states: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        target_words, max_words = self._relation_window_limits()
+        windows: List[Dict[str, Any]] = []
+        current_texts: List[str] = []
+        current_indices: List[int] = []
+        current_words = 0
+
+        def flush() -> None:
+            nonlocal current_texts, current_indices, current_words
+            if current_texts:
+                windows.append(
+                    {
+                        "text": "\n\n".join(current_texts).strip(),
+                        "chunk_indices": list(current_indices),
+                    }
+                )
+            current_texts = []
+            current_indices = []
+            current_words = 0
+
+        for idx, state in enumerate(chunk_states or []):
+            text = str((state or {}).get("cleaned_text", "") or "").strip()
+            if not text:
+                continue
+            text_words = word_len(text, lang="auto")
+            if text_words > max_words:
+                flush()
+                for part in self._split_relation_text(text, max_words=max_words):
+                    windows.append({"text": part, "chunk_indices": [idx]})
+                continue
+            if current_texts and current_words + text_words > max_words:
+                flush()
+            current_texts.append(text)
+            current_indices.append(idx)
+            current_words += text_words
+            if current_words >= target_words:
+                flush()
+        flush()
+        return windows
+
     def run_document(
         self,
         *,
@@ -797,6 +1538,7 @@ class EventFirstExtractor:
             "auto_relation_count": 0,
             "open_relation_proposal_count": 0,
             "open_relation_count_after_fix": 0,
+            "relation_grounding_mode_counts": {},
             "initial_grounded_entity_count": 0,
             "relation_brought_entity_candidate_count": 0,
             "relation_brought_grounded_entity_count": 0,
@@ -806,6 +1548,8 @@ class EventFirstExtractor:
             "external_entity_raw_count": 0,
             "external_entity_typed_count": 0,
             "external_entity_open_candidate_count": 0,
+            "metadata_ner_typed_count": 0,
+            "ner_auxiliary_candidate_count": 0,
             "open_entity_llm_skipped_chunks": 0,
             "frame_extraction_sec": 0.0,
             "external_entity_sec": 0.0,
@@ -833,7 +1577,11 @@ class EventFirstExtractor:
                 stats["skipped_chunks"] += 1
                 continue
 
-            out = self.run_chunk(cleaned_text=cleaned, rid_namespace=f"{document_rid_namespace}.chunk{i}")
+            out = self.run_chunk(
+                cleaned_text=cleaned,
+                rid_namespace=f"{document_rid_namespace}.chunk{i}",
+                metadata=ch.get("metadata") or {},
+            )
             chunk_entities = out["entities"]
             chunk_relations = out["relations"]
             entities_all = _merge_entities(entities_all, chunk_entities)
@@ -867,6 +1615,7 @@ class EventFirstExtractor:
             "auto_relation_count": 0,
             "open_relation_proposal_count": 0,
             "open_relation_count_after_fix": 0,
+            "relation_grounding_mode_counts": {},
             "initial_grounded_entity_count": 0,
             "relation_brought_entity_candidate_count": 0,
             "relation_brought_grounded_entity_count": 0,
@@ -876,6 +1625,8 @@ class EventFirstExtractor:
             "external_entity_raw_count": 0,
             "external_entity_typed_count": 0,
             "external_entity_open_candidate_count": 0,
+            "metadata_ner_typed_count": 0,
+            "ner_auxiliary_candidate_count": 0,
             "open_entity_llm_skipped_chunks": 0,
             "frame_extraction_sec": 0.0,
             "external_entity_sec": 0.0,
@@ -908,11 +1659,12 @@ class EventFirstExtractor:
                 stats["skipped_chunks"] += 1
                 continue
 
-            pass1 = self._collect_chunk_pass1(cleaned_text=cleaned)
+            pass1 = self._collect_chunk_pass1(cleaned_text=cleaned, metadata=ch.get("metadata") or {})
             pass1["rid_namespace"] = f"{document_rid_namespace}.chunk{i}"
             chunk_states.append(pass1)
             doc_cleaned_parts.append(cleaned)
             doc_typed_entities.extend(pass1["typed_frame_entities"])
+            doc_typed_entities.extend(pass1["metadata_typed_entities"])
             doc_typed_entities.extend(pass1["external_typed_entities"])
             doc_open_candidates.extend(pass1["grounding_candidates"])
             stats["processed_chunks"] += 1
@@ -929,30 +1681,29 @@ class EventFirstExtractor:
         doc_grounding_candidates = _dedup_open_entities(doc_open_candidates)
         entity_grounding_start = time.perf_counter()
         if document_text and doc_grounding_candidates:
-            grounded_open_entities = _json_load_list(
-                self.entity_grounder.call(
-                    json.dumps(
-                        {
-                            "text": document_text,
-                            "open_entities": doc_grounding_candidates,
-                            "memory_context": "",
-                        }
-                    )
-                )
+            grounded_open_entities = self._ground_open_candidates(
+                text=document_text,
+                candidates=doc_grounding_candidates,
+                source_kind="open_grounded",
             )
-        for item in grounded_open_entities:
-            item["source_kind"] = "open_grounded"
         stats["entity_grounding_sec"] += time.perf_counter() - entity_grounding_start
 
-        doc_grounded_entities = _dedup_grounded_entities(doc_typed_entities + grounded_open_entities)
+        character_mentions = Counter(
+            _norm_name(item.get("name", ""))
+            for item in (doc_typed_entities + grounded_open_entities)
+            if isinstance(item, dict) and str(item.get("type", "")).strip() == "Character" and str(item.get("name", "")).strip()
+        )
+        doc_grounded_entities = _normalize_character_entities(
+            _dedup_grounded_entities(doc_typed_entities + grounded_open_entities),
+            mention_counts=character_mentions,
+        )
         stats["initial_grounded_entity_count"] = len(doc_grounded_entities)
-
-        relation_pass: List[Dict[str, Any]] = []
-        relation_brought_candidates_all: List[Dict[str, str]] = []
 
         self.agent.config.knowledge_graph_builder.relation_extraction_mode = "open_then_ground"
 
-        for chunk_state in chunk_states:
+        auto_relations_by_chunk: Dict[int, Dict[str, Dict[str, Any]]] = {}
+        auto_relations_all: Dict[str, Dict[str, Any]] = {}
+        for chunk_idx, chunk_state in enumerate(chunk_states):
             chunk_entities = self._select_relevant_doc_entities(
                 cleaned_text=chunk_state["cleaned_text"],
                 doc_grounded_entities=doc_grounded_entities,
@@ -964,16 +1715,36 @@ class EventFirstExtractor:
                 grounded_entities=chunk_entities,
                 event_nodes=chunk_state["event_nodes"],
                 occasion_nodes=chunk_state["occasion_nodes"],
+                rid_prefix=f"{chunk_state['rid_namespace']}:auto",
             )
             stats["auto_relation_build_sec"] += time.perf_counter() - auto_relation_start
+            auto_relations_by_chunk[chunk_idx] = auto_relations
+            auto_relations_all.update(auto_relations)
 
+        relation_windows = self._build_relation_windows(chunk_states)
+        relation_brought_candidates_all: List[Dict[str, str]] = []
+        relation_brought_rule_entity_total = 0
+        open_relations_all: Dict[str, Dict[str, Any]] = {}
+        resolved_doc_entities = list(doc_grounded_entities)
+
+        for window_idx, window in enumerate(relation_windows, start=1):
+            window_text = str(window.get("text", "") or "").strip()
+            chunk_indices = [int(x) for x in (window.get("chunk_indices") or []) if isinstance(x, int) or str(x).isdigit()]
+            if not window_text or not chunk_indices:
+                continue
+            window_entities = self._select_relevant_window_entities(
+                cleaned_text=window_text,
+                doc_grounded_entities=resolved_doc_entities,
+                chunk_states=chunk_states,
+                chunk_indices=chunk_indices,
+            )
             open_relation_extract_start = time.perf_counter()
             open_relation_proposals: List[Dict[str, Any]] = []
-            if _has_fast_open_relation_candidates(agent=self.agent, entities=chunk_entities):
-                relation_hints = _build_fast_open_relation_hints(self.agent, entities=chunk_entities)
+            if _has_fast_open_relation_candidates(agent=self.agent, entities=window_entities):
+                relation_hints = _build_fast_open_relation_hints(self.agent, entities=window_entities)
                 raw_open_relations = self.agent.extractor.extract_open_relations(
-                    text=chunk_state["cleaned_text"],
-                    extracted_entities=self.agent._entities_text_for_extractor(chunk_entities),
+                    text=window_text,
+                    extracted_entities=self.agent._entities_text_for_extractor(window_entities),
                     previous_results=None,
                     feedbacks=None,
                     memory_context="",
@@ -986,71 +1757,56 @@ class EventFirstExtractor:
 
             relation_brought_candidates = _collect_relation_brought_entity_candidates(
                 open_relation_proposals,
-                known_entity_names={_norm_name(item.get("name", "")) for item in doc_grounded_entities},
+                known_entity_names={_norm_name(item.get("name", "")) for item in resolved_doc_entities},
             )
             relation_brought_candidates_all.extend(relation_brought_candidates)
-            relation_pass.append(
-                {
-                    "chunk_state": chunk_state,
-                    "chunk_entities": chunk_entities,
-                    "auto_relations": auto_relations,
-                    "open_relation_proposals": open_relation_proposals,
-                }
+            rule_entities = _infer_relation_brought_rule_entities(
+                relation_brought_candidates,
+                scope_rules=getattr(self.agent, "scope_rules", {}) or {},
             )
-
-        relation_brought_candidates_all = _dedup_open_entities(relation_brought_candidates_all)
-        stats["relation_brought_entity_candidate_count"] = len(relation_brought_candidates_all)
-
-        relation_brought_grounding_start = time.perf_counter()
-        relation_brought_grounded_entities: List[Dict[str, Any]] = []
-        if document_text and relation_brought_candidates_all:
-            relation_brought_grounded_entities = _json_load_list(
-                self.entity_grounder.call(
-                    json.dumps(
-                        {
-                            "text": document_text,
-                            "open_entities": relation_brought_candidates_all,
-                            "memory_context": "",
-                        }
-                    )
+            relation_brought_rule_entity_total += len(rule_entities)
+            if rule_entities:
+                character_mentions.update(
+                    _norm_name(item.get("name", ""))
+                    for item in rule_entities
+                    if isinstance(item, dict)
+                    and str(item.get("type", "")).strip() == "Character"
+                    and str(item.get("name", "")).strip()
                 )
-            )
-        for item in relation_brought_grounded_entities:
-            item["source_kind"] = "relation_brought_grounded"
-        stats["relation_brought_entity_grounding_sec"] += time.perf_counter() - relation_brought_grounding_start
-        stats["relation_brought_grounded_entity_count"] = len(relation_brought_grounded_entities)
+                resolved_doc_entities = _normalize_character_entities(
+                    _dedup_grounded_entities(resolved_doc_entities + rule_entities),
+                    mention_counts=character_mentions,
+                )
 
-        final_doc_grounded_entities = _dedup_grounded_entities(doc_grounded_entities + relation_brought_grounded_entities)
-
-        for item in relation_pass:
-            chunk_state = item["chunk_state"]
-            proposal_names = self._proposal_entity_names(item["open_relation_proposals"])
-            chunk_entities = self._select_relevant_doc_entities(
-                cleaned_text=chunk_state["cleaned_text"],
-                doc_grounded_entities=final_doc_grounded_entities,
-                chunk_state=chunk_state,
+            proposal_names = self._proposal_entity_names(open_relation_proposals)
+            proposal_names.update(_norm_name(item.get("name", "")) for item in rule_entities if isinstance(item, dict))
+            window_entities = self._select_relevant_window_entities(
+                cleaned_text=window_text,
+                doc_grounded_entities=resolved_doc_entities,
+                chunk_states=chunk_states,
+                chunk_indices=chunk_indices,
                 extra_names=proposal_names,
             )
 
             relation_grounding_start = time.perf_counter()
             open_relation_proposals = _canonicalize_open_relation_proposals(
-                item["open_relation_proposals"],
-                entities=chunk_entities,
+                open_relation_proposals,
+                entities=window_entities,
             )
             open_relation_proposals = _filter_fast_open_relation_proposals(
                 open_relation_proposals,
                 agent=self.agent,
-                entities=chunk_entities,
+                entities=window_entities,
             )
             seeded_relations = self.agent._prepare_grounded_open_relation_seeds(
-                cleaned_text=chunk_state["cleaned_text"],
+                cleaned_text=window_text,
                 proposals=copy.deepcopy(open_relation_proposals),
-                entities=copy.deepcopy(chunk_entities),
-                rid_prefix=f"{chunk_state['rid_namespace']}:event_first.open_rel",
+                entities=copy.deepcopy(window_entities),
+                rid_prefix=f"{document_rid_namespace}.window{window_idx}:event_first.open_rel",
                 memory_context="",
             )
-            seeded_relations = apply_canonicalization_to_relations(seeded_relations, build_name_canonicalizer(chunk_entities))
-            seeded_relations = self.agent._filter_illegal_is_a_relations(seeded_relations, entities=chunk_entities)
+            seeded_relations = apply_canonicalization_to_relations(seeded_relations, build_name_canonicalizer(window_entities))
+            seeded_relations = self.agent._filter_illegal_is_a_relations(seeded_relations, entities=window_entities)
 
             open_rel_map: Dict[str, Dict[str, Any]] = {}
             open_feedbacks: Dict[str, List[Dict[str, Any]]] = {}
@@ -1058,7 +1814,7 @@ class EventFirstExtractor:
                 rid = str(rel.get("rid", "")).strip()
                 if not rid:
                     continue
-                rel2, feedback = self.agent._revalidate_one_relation_global(rel, entities=chunk_entities)
+                rel2, feedback = self.agent._revalidate_one_relation_global(rel, entities=window_entities)
                 open_rel_map[rid] = rel2
                 if feedback is not None:
                     self.agent._append_relation_feedback(
@@ -1071,60 +1827,110 @@ class EventFirstExtractor:
                         relation_type=str(feedback.get("relation_type", "")).strip() or str(rel2.get("relation_type", "")).strip(),
                         relation_name=str(feedback.get("relation_name", "")).strip() or str(rel2.get("relation_name", "")).strip(),
                     )
+            stats["relation_grounding_mode_counts"] = _merge_count_maps(
+                stats.get("relation_grounding_mode_counts") or {},
+                _grounding_mode_counts(list(open_rel_map.values())),
+            )
             stats["relation_grounding_sec"] += time.perf_counter() - relation_grounding_start
 
             resolve_errors_start = time.perf_counter()
             resolved_entities, fixed_open_rel_map = self.agent._resolve_errors(
-                entities=copy.deepcopy(chunk_entities),
+                entities=copy.deepcopy(window_entities),
                 all_relations=copy.deepcopy(open_rel_map),
                 all_feedbacks=copy.deepcopy(open_feedbacks),
-                content=chunk_state["cleaned_text"],
+                content=window_text,
             )
             stats["resolve_errors_sec"] += time.perf_counter() - resolve_errors_start
-            resolved_entities = _dedup_grounded_entities(resolved_entities)
+            resolved_entities = _normalize_character_entities(
+                _dedup_grounded_entities(resolved_entities),
+                mention_counts=character_mentions,
+            )
+            resolved_doc_entities = _normalize_character_entities(
+                _dedup_grounded_entities(resolved_doc_entities + resolved_entities),
+                mention_counts=character_mentions,
+            )
 
             coverage_repair_triggered = 0
-            coverage_probe_rel_map = dict(item["auto_relations"])
+            coverage_probe_rel_map: Dict[str, Dict[str, Any]] = {}
+            for idx in chunk_indices:
+                coverage_probe_rel_map.update(auto_relations_by_chunk.get(idx, {}))
             coverage_probe_rel_map.update(fixed_open_rel_map)
             if _should_run_fast_coverage_repair(
-                frames=chunk_state["frames"],
+                frames={},
                 grounded_entities=resolved_entities,
                 current_relations=coverage_probe_rel_map,
             ):
                 coverage_repair_triggered = 1
             coverage_repair_start = time.perf_counter()
             if coverage_repair_triggered:
-                fixed_open_rel_map = self.agent._repair_relation_coverage(
-                    cleaned_text=chunk_state["cleaned_text"],
+                repair_scope = {
+                    str(ent.get("name", "")).strip()
+                    for ent in resolved_entities
+                    if isinstance(ent, dict)
+                    and str(ent.get("name", "")).strip()
+                    and str(ent.get("type", "")).strip() in {"Character", "Concept"}
+                }
+                fixed_open_rel_map = self.agent._repair_relation_coverage_by_rules(
+                    cleaned_text=window_text,
                     entities=copy.deepcopy(resolved_entities),
                     all_relations={
                         rid: rel for rid, rel in copy.deepcopy(fixed_open_rel_map).items()
                         if str(rel.get("relation_type", "")).strip() in _FAST_OPEN_GROUNDED_RELATION_TYPES
                     },
-                    rid_namespace=f"{chunk_state['rid_namespace']}:event_first.coverage",
-                    memory_context="",
+                    rid_namespace=f"{document_rid_namespace}.window{window_idx}:event_first.coverage",
+                    focus_entity_names=repair_scope,
                 )
+                coverage_probe_after_rules = dict(coverage_probe_rel_map)
+                coverage_probe_after_rules.update(fixed_open_rel_map)
+                if _should_run_fast_coverage_repair(
+                    frames={},
+                    grounded_entities=resolved_entities,
+                    current_relations=coverage_probe_after_rules,
+                ):
+                    fixed_open_rel_map = self.agent._repair_relation_coverage(
+                        cleaned_text=window_text,
+                        entities=copy.deepcopy(resolved_entities),
+                        all_relations={
+                            rid: rel for rid, rel in copy.deepcopy(fixed_open_rel_map).items()
+                            if str(rel.get("relation_type", "")).strip() in _FAST_OPEN_GROUNDED_RELATION_TYPES
+                        },
+                        rid_namespace=f"{document_rid_namespace}.window{window_idx}:event_first.coverage",
+                        memory_context="",
+                    )
             stats["coverage_repair_sec"] += time.perf_counter() - coverage_repair_start
-
-            combined_rel_map = dict(item["auto_relations"])
-            combined_rel_map.update(fixed_open_rel_map)
-            pruned_entities, pruned_rel_map, dropped_counts = _prune_low_value_entities_and_relations(
-                entities=chunk_state["event_nodes"] + chunk_state["occasion_nodes"] + resolved_entities,
-                relations=combined_rel_map,
-            )
-            entities_all = _merge_entities(entities_all, pruned_entities)
-            for rid, rel in pruned_rel_map.items():
-                all_relations[rid] = rel
-
+            open_relations_all.update(fixed_open_rel_map)
             stats["coverage_repair_triggered_chunks"] += coverage_repair_triggered
-            stats["resolved_entity_count"] += sum(
-                1 for ent in pruned_entities if str(ent.get("type", "")).strip() not in {"Event", "Occasion"}
-            )
-            stats["pruned_low_value_entity_count"] += sum(dropped_counts.values())
-            stats["open_relation_count_after_fix"] += sum(
-                1 for rid in pruned_rel_map if ":event_first.open_rel" in rid or ":coverage#" in rid
-            )
-            stats["auto_relation_count"] += sum(1 for rid in pruned_rel_map if rid.startswith("auto#"))
+
+        relation_brought_candidates_all = _dedup_open_entities(relation_brought_candidates_all)
+        stats["relation_brought_entity_candidate_count"] = len(relation_brought_candidates_all)
+        stats["relation_brought_grounded_entity_count"] = relation_brought_rule_entity_total
+
+        all_event_nodes: List[Dict[str, Any]] = []
+        all_occasion_nodes: List[Dict[str, Any]] = []
+        for chunk_state in chunk_states:
+            all_event_nodes.extend(chunk_state.get("event_nodes") or [])
+            all_occasion_nodes.extend(chunk_state.get("occasion_nodes") or [])
+
+        combined_rel_map = dict(auto_relations_all)
+        combined_rel_map.update(open_relations_all)
+        pruned_entities, pruned_rel_map, dropped_counts = _prune_low_value_entities_and_relations(
+            entities=all_event_nodes + all_occasion_nodes + resolved_doc_entities,
+            relations=combined_rel_map,
+        )
+        entities_all = _merge_entities(entities_all, pruned_entities)
+        for rid, rel in pruned_rel_map.items():
+            all_relations[rid] = rel
+
+        stats["resolved_entity_count"] += sum(
+            1 for ent in pruned_entities if str(ent.get("type", "")).strip() not in {"Event", "Occasion"}
+        )
+        stats["pruned_low_value_entity_count"] += sum(dropped_counts.values())
+        stats["open_relation_count_after_fix"] += sum(
+            1
+            for rid in pruned_rel_map
+            if ":event_first.open_rel" in rid or ":event_first.coverage" in rid or ":coverage#" in rid
+        )
+        stats["auto_relation_count"] += sum(1 for rid in pruned_rel_map if _is_auto_relation_rid(rid))
 
         return {"entities": entities_all, "relations": list(all_relations.values()), "stats": stats}
 
@@ -1171,12 +1977,58 @@ class EventFirstExtractor:
             name = str(entity.get("name", "")).strip()
             if not name:
                 continue
-            norm = _norm_name(name)
-            if norm in seed_names or norm in text_lower:
+            candidate_names = {_norm_name(name)}
+            candidate_names.update(
+                _norm_name(alias)
+                for alias in (entity.get("aliases") or [])
+                if str(alias or "").strip()
+            )
+            if any(norm in seed_names or norm in text_lower for norm in candidate_names if norm):
                 selected.append(entity)
         return _dedup_grounded_entities(selected)
 
-    def _collect_chunk_pass1(self, *, cleaned_text: str) -> Dict[str, Any]:
+    def _select_relevant_window_entities(
+        self,
+        *,
+        cleaned_text: str,
+        doc_grounded_entities: List[Dict[str, Any]],
+        chunk_states: List[Dict[str, Any]],
+        chunk_indices: List[int],
+        extra_names: set[str] | None = None,
+    ) -> List[Dict[str, Any]]:
+        text_lower = cleaned_text.lower()
+        seed_names = set(extra_names or set())
+        for idx in chunk_indices or []:
+            if not (0 <= int(idx) < len(chunk_states)):
+                continue
+            chunk_state = chunk_states[int(idx)] or {}
+            seed_names.update(
+                _collect_names(
+                    chunk_state.get("typed_frame_entities") or [],
+                    chunk_state.get("external_typed_entities") or [],
+                    chunk_state.get("related_entity_candidates") or [],
+                    chunk_state.get("open_entities") or [],
+                    chunk_state.get("grounding_candidates") or [],
+                )
+            )
+        selected: List[Dict[str, Any]] = []
+        for entity in doc_grounded_entities or []:
+            if not isinstance(entity, dict):
+                continue
+            name = str(entity.get("name", "")).strip()
+            if not name:
+                continue
+            candidate_names = {_norm_name(name)}
+            candidate_names.update(
+                _norm_name(alias)
+                for alias in (entity.get("aliases") or [])
+                if str(alias or "").strip()
+            )
+            if any(norm in seed_names or norm in text_lower for norm in candidate_names if norm):
+                selected.append(entity)
+        return _dedup_grounded_entities(selected)
+
+    def _collect_chunk_pass1(self, *, cleaned_text: str, metadata: Dict[str, Any] | None = None) -> Dict[str, Any]:
         frame_start = time.perf_counter()
         frames = json.loads(self.frame_extractor.call(json.dumps({"text": cleaned_text, "memory_context": ""})))
         frame_extraction_sec = time.perf_counter() - frame_start
@@ -1188,28 +2040,62 @@ class EventFirstExtractor:
             frame_node_names=frame_node_names,
             scope_rules=getattr(self.agent, "scope_rules", {}) or {},
         )
-        related_entity_candidates = _collect_related_entity_candidates(frames, frame_node_names=frame_node_names)
-
-        external_entity_start = time.perf_counter()
-        external_entity_payload = self.external_entity_extractor.extract(
-            text=cleaned_text,
-            known_names=[item.get("name", "") for item in (event_nodes + occasion_nodes + typed_frame_entities)],
+        metadata_typed_entities = _typed_entities_from_metadata_ner(
+            metadata,
+            known_names={_norm_name(item.get("name", "")) for item in (event_nodes + occasion_nodes + typed_frame_entities)},
             scope_rules=getattr(self.agent, "scope_rules", {}) or {},
         )
+        related_entity_candidates = _collect_related_entity_candidates(frames, frame_node_names=frame_node_names)
+
+        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
+        doc_cfg = getattr(self.config, "document_processing", None)
+        entity_mode = str(getattr(kg_cfg, "entity_extraction_mode", "llm") or "llm").strip().lower()
+        metadata_entity_mode = str(getattr(doc_cfg, "metadata_entity_mode", "llm") or "llm").strip().lower()
+        reuse_metadata_ner = entity_mode == "ner" and metadata_entity_mode == "ner"
+        ner_auxiliary_only = bool(getattr(kg_cfg, "ner_auxiliary_only", True))
+        ner_skip_open_entity_llm = bool(getattr(kg_cfg, "ner_skip_open_entity_llm", False))
+
+        external_entity_start = time.perf_counter()
+        if reuse_metadata_ner:
+            external_entity_payload = {
+                "typed_entities": [],
+                "open_candidates": [],
+                "stats": {
+                    "backend": "metadata_reuse",
+                    "raw_count": 0,
+                    "typed_count": 0,
+                    "open_count": 0,
+                },
+            }
+        else:
+            external_entity_payload = self.external_entity_extractor.extract(
+                text=cleaned_text,
+                known_names=[item.get("name", "") for item in (event_nodes + occasion_nodes + typed_frame_entities + metadata_typed_entities)],
+                scope_rules=getattr(self.agent, "scope_rules", {}) or {},
+            )
         external_entity_sec = time.perf_counter() - external_entity_start
         external_typed_entities = _dedup_typed_entities(external_entity_payload.get("typed_entities") or [])
         external_open_candidates = _dedup_open_entities(external_entity_payload.get("open_candidates") or [])
         external_stats = external_entity_payload.get("stats") or {}
+        ner_auxiliary_candidates: List[Dict[str, str]] = []
+        if entity_mode == "ner" and ner_auxiliary_only:
+            ner_auxiliary_candidates = _dedup_open_entities(
+                _typed_entities_to_open_candidates(metadata_typed_entities, source_hint="metadata NER")
+                + _typed_entities_to_open_candidates(external_typed_entities, source_hint="external NER")
+            )
+            metadata_typed_entities = []
+            external_typed_entities = []
 
-        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
-        skip_llm_min_typed = int(getattr(kg_cfg, "fast_external_entity_skip_llm_min_typed", 3) or 3)
+        skip_llm_min_typed = int(getattr(kg_cfg, "ner_skip_llm_min_typed", 3) or 3)
         open_entity_llm_skipped = 0
         open_entity_start = time.perf_counter()
         open_entities: List[Dict[str, Any]] = []
-        external_backend = str(external_stats.get("backend", "")).strip().lower()
         should_skip_open_entity_llm = (
-            (external_backend == "qwen" and (len(external_typed_entities) + len(external_open_candidates)) > 0)
-            or len(external_typed_entities) >= skip_llm_min_typed
+            ner_skip_open_entity_llm
+            and (
+                reuse_metadata_ner
+                or (len(metadata_typed_entities) + len(external_typed_entities)) >= skip_llm_min_typed
+            )
         )
         if should_skip_open_entity_llm:
             open_entity_llm_skipped = 1
@@ -1222,8 +2108,12 @@ class EventFirstExtractor:
                             "known_entities": _known_entities_text(
                                 event_nodes,
                                 occasion_nodes,
-                                typed_frame_entities + external_typed_entities,
-                                _merge_open_entity_candidates(related_entity_candidates, external_open_candidates),
+                                typed_frame_entities + metadata_typed_entities + external_typed_entities,
+                                _merge_open_entity_candidates(
+                                    related_entity_candidates,
+                                    external_open_candidates,
+                                    ner_auxiliary_candidates,
+                                ),
                             ),
                             "memory_context": "",
                         }
@@ -1235,6 +2125,7 @@ class EventFirstExtractor:
         grounding_candidates = _merge_open_entity_candidates(
             related_entity_candidates,
             external_open_candidates,
+            ner_auxiliary_candidates,
             open_entities or [],
         )
 
@@ -1244,6 +2135,7 @@ class EventFirstExtractor:
             "event_nodes": event_nodes,
             "occasion_nodes": occasion_nodes,
             "typed_frame_entities": typed_frame_entities,
+            "metadata_typed_entities": metadata_typed_entities,
             "related_entity_candidates": related_entity_candidates,
             "external_typed_entities": external_typed_entities,
             "external_open_candidates": external_open_candidates,
@@ -1256,11 +2148,13 @@ class EventFirstExtractor:
                 "external_entity_raw_count": int(external_stats.get("raw_count", 0) or 0),
                 "external_entity_typed_count": len(external_typed_entities),
                 "external_entity_open_candidate_count": len(external_open_candidates),
+                "metadata_ner_typed_count": len(metadata_typed_entities),
+                "ner_auxiliary_candidate_count": len(ner_auxiliary_candidates),
                 "open_entity_llm_skipped_chunks": open_entity_llm_skipped,
             },
         }
 
-    def run_chunk(self, *, cleaned_text: str, rid_namespace: str) -> Dict[str, Any]:
+    def run_chunk(self, *, cleaned_text: str, rid_namespace: str, metadata: Dict[str, Any] | None = None) -> Dict[str, Any]:
         chunk_start = time.perf_counter()
 
         frame_start = time.perf_counter()
@@ -1274,28 +2168,62 @@ class EventFirstExtractor:
             frame_node_names=frame_node_names,
             scope_rules=getattr(self.agent, "scope_rules", {}) or {},
         )
-        related_entity_candidates = _collect_related_entity_candidates(frames, frame_node_names=frame_node_names)
-
-        external_entity_start = time.perf_counter()
-        external_entity_payload = self.external_entity_extractor.extract(
-            text=cleaned_text,
-            known_names=[item.get("name", "") for item in (event_nodes + occasion_nodes + typed_frame_entities)],
+        metadata_typed_entities = _typed_entities_from_metadata_ner(
+            metadata,
+            known_names={_norm_name(item.get("name", "")) for item in (event_nodes + occasion_nodes + typed_frame_entities)},
             scope_rules=getattr(self.agent, "scope_rules", {}) or {},
         )
+        related_entity_candidates = _collect_related_entity_candidates(frames, frame_node_names=frame_node_names)
+
+        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
+        doc_cfg = getattr(self.config, "document_processing", None)
+        entity_mode = str(getattr(kg_cfg, "entity_extraction_mode", "llm") or "llm").strip().lower()
+        metadata_entity_mode = str(getattr(doc_cfg, "metadata_entity_mode", "llm") or "llm").strip().lower()
+        reuse_metadata_ner = entity_mode == "ner" and metadata_entity_mode == "ner"
+        ner_auxiliary_only = bool(getattr(kg_cfg, "ner_auxiliary_only", True))
+        ner_skip_open_entity_llm = bool(getattr(kg_cfg, "ner_skip_open_entity_llm", False))
+
+        external_entity_start = time.perf_counter()
+        if reuse_metadata_ner:
+            external_entity_payload = {
+                "typed_entities": [],
+                "open_candidates": [],
+                "stats": {
+                    "backend": "metadata_reuse",
+                    "raw_count": 0,
+                    "typed_count": 0,
+                    "open_count": 0,
+                },
+            }
+        else:
+            external_entity_payload = self.external_entity_extractor.extract(
+                text=cleaned_text,
+                known_names=[item.get("name", "") for item in (event_nodes + occasion_nodes + typed_frame_entities + metadata_typed_entities)],
+                scope_rules=getattr(self.agent, "scope_rules", {}) or {},
+            )
         external_entity_sec = time.perf_counter() - external_entity_start
         external_typed_entities = _dedup_typed_entities(external_entity_payload.get("typed_entities") or [])
         external_open_candidates = _dedup_open_entities(external_entity_payload.get("open_candidates") or [])
         external_stats = external_entity_payload.get("stats") or {}
+        ner_auxiliary_candidates: List[Dict[str, str]] = []
+        if entity_mode == "ner" and ner_auxiliary_only:
+            ner_auxiliary_candidates = _dedup_open_entities(
+                _typed_entities_to_open_candidates(metadata_typed_entities, source_hint="metadata NER")
+                + _typed_entities_to_open_candidates(external_typed_entities, source_hint="external NER")
+            )
+            metadata_typed_entities = []
+            external_typed_entities = []
 
-        kg_cfg = getattr(self.config, "knowledge_graph_builder", None)
-        skip_llm_min_typed = int(getattr(kg_cfg, "fast_external_entity_skip_llm_min_typed", 3) or 3)
+        skip_llm_min_typed = int(getattr(kg_cfg, "ner_skip_llm_min_typed", 3) or 3)
         open_entity_llm_skipped = 0
         open_entity_start = time.perf_counter()
         open_entities: List[Dict[str, Any]] = []
-        external_backend = str(external_stats.get("backend", "")).strip().lower()
         should_skip_open_entity_llm = (
-            (external_backend == "qwen" and (len(external_typed_entities) + len(external_open_candidates)) > 0)
-            or len(external_typed_entities) >= skip_llm_min_typed
+            ner_skip_open_entity_llm
+            and (
+                reuse_metadata_ner
+                or (len(metadata_typed_entities) + len(external_typed_entities)) >= skip_llm_min_typed
+            )
         )
         if should_skip_open_entity_llm:
             open_entity_llm_skipped = 1
@@ -1308,8 +2236,12 @@ class EventFirstExtractor:
                             "known_entities": _known_entities_text(
                                 event_nodes,
                                 occasion_nodes,
-                                typed_frame_entities + external_typed_entities,
-                                _merge_open_entity_candidates(related_entity_candidates, external_open_candidates),
+                                typed_frame_entities + metadata_typed_entities + external_typed_entities,
+                                _merge_open_entity_candidates(
+                                    related_entity_candidates,
+                                    external_open_candidates,
+                                    ner_auxiliary_candidates,
+                                ),
                             ),
                             "memory_context": "",
                         }
@@ -1321,25 +2253,26 @@ class EventFirstExtractor:
         grounding_candidates = _merge_open_entity_candidates(
             related_entity_candidates,
             external_open_candidates,
+            ner_auxiliary_candidates,
             open_entities or [],
         )
         entity_grounding_start = time.perf_counter()
-        grounded_open_entities = _json_load_list(
-            self.entity_grounder.call(
-                json.dumps(
-                    {
-                        "text": cleaned_text,
-                        "open_entities": grounding_candidates,
-                        "memory_context": "",
-                    }
-                )
-            )
+        grounded_open_entities = self._ground_open_candidates(
+            text=cleaned_text,
+            candidates=grounding_candidates,
+            source_kind="open_grounded",
         )
-        for item in grounded_open_entities:
-            item["source_kind"] = "open_grounded"
         entity_grounding_sec = time.perf_counter() - entity_grounding_start
 
-        grounded_entities = _dedup_grounded_entities(typed_frame_entities + external_typed_entities + grounded_open_entities)
+        character_mentions = Counter(
+            _norm_name(item.get("name", ""))
+            for item in (typed_frame_entities + metadata_typed_entities + external_typed_entities + grounded_open_entities)
+            if isinstance(item, dict) and str(item.get("type", "")).strip() == "Character" and str(item.get("name", "")).strip()
+        )
+        grounded_entities = _normalize_character_entities(
+            _dedup_grounded_entities(typed_frame_entities + metadata_typed_entities + external_typed_entities + grounded_open_entities),
+            mention_counts=character_mentions,
+        )
         initial_grounded_entity_count = len(grounded_entities)
 
         auto_relation_start = time.perf_counter()
@@ -1348,6 +2281,7 @@ class EventFirstExtractor:
             grounded_entities=grounded_entities,
             event_nodes=event_nodes,
             occasion_nodes=occasion_nodes,
+            rid_prefix=f"{rid_namespace}:auto",
         )
         auto_relation_build_sec = time.perf_counter() - auto_relation_start
 
@@ -1374,24 +2308,27 @@ class EventFirstExtractor:
             known_entity_names={_norm_name(item.get("name", "")) for item in grounded_entities},
         )
         relation_brought_entity_candidate_count = len(relation_brought_candidates)
+        relation_brought_candidates_for_grounding = _filter_relation_brought_grounding_candidates(
+            relation_brought_candidates
+        )
 
         relation_brought_entity_grounding_start = time.perf_counter()
         relation_brought_grounded_entities: List[Dict[str, Any]] = []
-        if relation_brought_candidates:
-            relation_brought_grounded_entities = _json_load_list(
-                self.entity_grounder.call(
-                    json.dumps(
-                        {
-                            "text": cleaned_text,
-                            "open_entities": relation_brought_candidates,
-                            "memory_context": "",
-                        }
-                    )
-                )
+        if relation_brought_candidates_for_grounding:
+            relation_brought_grounded_entities = self._ground_open_candidates(
+                text=cleaned_text,
+                candidates=relation_brought_candidates_for_grounding,
+                source_kind="relation_brought_grounded",
             )
-            for item in relation_brought_grounded_entities:
-                item["source_kind"] = "relation_brought_grounded"
-            grounded_entities = _dedup_grounded_entities(grounded_entities + relation_brought_grounded_entities)
+            character_mentions.update(
+                _norm_name(item.get("name", ""))
+                for item in relation_brought_grounded_entities
+                if isinstance(item, dict) and str(item.get("type", "")).strip() == "Character" and str(item.get("name", "")).strip()
+            )
+            grounded_entities = _normalize_character_entities(
+                _dedup_grounded_entities(grounded_entities + relation_brought_grounded_entities),
+                mention_counts=character_mentions,
+            )
         relation_brought_entity_grounding_sec = time.perf_counter() - relation_brought_entity_grounding_start
 
         relation_grounding_start = time.perf_counter()
@@ -1434,6 +2371,7 @@ class EventFirstExtractor:
                     relation_name=str(feedback.get("relation_name", "")).strip() or str(rel2.get("relation_name", "")).strip(),
                 )
         relation_grounding_sec = time.perf_counter() - relation_grounding_start
+        relation_grounding_mode_counts = _grounding_mode_counts(list(open_rel_map.values()))
 
         resolve_errors_start = time.perf_counter()
         resolved_entities, fixed_open_rel_map = self.agent._resolve_errors(
@@ -1443,7 +2381,10 @@ class EventFirstExtractor:
             content=cleaned_text,
         )
         resolve_errors_sec = time.perf_counter() - resolve_errors_start
-        resolved_entities = _dedup_grounded_entities(resolved_entities)
+        resolved_entities = _normalize_character_entities(
+            _dedup_grounded_entities(resolved_entities),
+            mention_counts=character_mentions,
+        )
 
         coverage_repair_triggered = 0
         coverage_probe_rel_map = dict(auto_relations)
@@ -1480,9 +2421,14 @@ class EventFirstExtractor:
             "entities": pruned_entities,
             "relations": pruned_rel_map,
             "stats": {
-                "auto_relation_count": sum(1 for rid in pruned_rel_map if rid.startswith("auto#")),
+                "auto_relation_count": sum(1 for rid in pruned_rel_map if _is_auto_relation_rid(rid)),
                 "open_relation_proposal_count": len(open_relation_proposals),
-                "open_relation_count_after_fix": sum(1 for rid in pruned_rel_map if ":event_first.open_rel" in rid or ":coverage#" in rid),
+                "open_relation_count_after_fix": sum(
+                    1
+                    for rid in pruned_rel_map
+                    if ":event_first.open_rel" in rid or ":event_first.coverage" in rid or ":coverage#" in rid
+                ),
+                "relation_grounding_mode_counts": relation_grounding_mode_counts,
                 "initial_grounded_entity_count": initial_grounded_entity_count,
                 "relation_brought_entity_candidate_count": relation_brought_entity_candidate_count,
                 "relation_brought_grounded_entity_count": len(relation_brought_grounded_entities),
@@ -1494,6 +2440,8 @@ class EventFirstExtractor:
                 "external_entity_raw_count": int(external_stats.get("raw_count", 0) or 0),
                 "external_entity_typed_count": len(external_typed_entities),
                 "external_entity_open_candidate_count": len(external_open_candidates),
+                "metadata_ner_typed_count": len(metadata_typed_entities),
+                "ner_auxiliary_candidate_count": len(ner_auxiliary_candidates),
                 "open_entity_llm_skipped_chunks": open_entity_llm_skipped,
                 "frame_extraction_sec": frame_extraction_sec,
                 "external_entity_sec": external_entity_sec,

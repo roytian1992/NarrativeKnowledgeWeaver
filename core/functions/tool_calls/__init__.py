@@ -1,7 +1,7 @@
 # functions/__init__.py
 """
 Expose tool classes so they can be imported directly via:
-    from functions import EntityRetrieverName, VDBHierdocsSearchTool, ...
+    from functions import EntityRetrieverName, VDBDocsSearchTool, ...
 """
 
 # Graph DB tools
@@ -27,7 +27,6 @@ from .graphdb_tools import (
 
 # Vector DB tools
 from .vectordb_tools import (
-    VDBHierdocsSearchTool,
     VDBDocsSearchTool,
     VDBGetDocsByDocumentIDsTool,
     VDBSentencesSearchTool,
@@ -42,10 +41,11 @@ from .sqldb_tools import (
 from .composite_tools import (
     CommunityGraphRAGSearch,
     NarrativeHierarchicalSearch,
+    NarrativeCausalTraceSearch,
+    HybridEvidenceSearch,
     SectionEvidenceSearch,
     ChoiceGroundedEvidenceSearch,
     EntityEventTraceSearch,
-    FactTimelineResolutionSearch,
 )
 
 from .native_tools import (
@@ -75,7 +75,6 @@ __all__ = [
     'GetCoSectionEntities',
     'GetKHopSubgraph',
     # vectordb_tools
-    "VDBHierdocsSearchTool",
     "VDBDocsSearchTool",
     "VDBGetDocsByDocumentIDsTool",
     "VDBSentencesSearchTool",
@@ -85,10 +84,11 @@ __all__ = [
     "SQLGetInteractionsByDocumentIDs",
     "CommunityGraphRAGSearch",
     "NarrativeHierarchicalSearch",
+    "NarrativeCausalTraceSearch",
+    "HybridEvidenceSearch",
     "SectionEvidenceSearch",
     "ChoiceGroundedEvidenceSearch",
     "EntityEventTraceSearch",
-    "FactTimelineResolutionSearch",
     # keyword search tools
     "BM25SearchDocsTool",
     "LookupTitlesByDocumentIDsTool",

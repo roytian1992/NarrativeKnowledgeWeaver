@@ -24,14 +24,14 @@
       {
         "name": "resolve_source_documents",
         "type": "bool",
-        "description": "Whether to resolve source_documents into readable section or chapter titles. Default false.",
+        "description": "Whether to resolve source_documents into readable section or chapter titles. Default true.",
         "required": false
       }
     ]
   },
   "retrieve_entity_by_name": {
     "name": "retrieve_entity_by_name",
-    "description": "Retrieve and rank entities of a specified type by combining fuzzy matching on names or aliases with semantic similarity, then deduplicate the results. Use it to identify or disambiguate entities from partial, ambiguous, or descriptive queries, and optionally inspect source documents.",
+    "description": "Retrieve and rank entities of a specified type by combining fuzzy matching on names or aliases with semantic similarity, then deduplicate the results. Use it to identify or disambiguate entities from partial, ambiguous, or descriptive queries. By default it resolves source_documents into readable scene or section titles.",
     "parameters": [
       {
         "name": "query",
@@ -54,7 +54,7 @@
       {
         "name": "resolve_source_documents",
         "type": "bool",
-        "description": "Whether to show readable section or chapter titles derived from source_documents. Default false.",
+        "description": "Whether to show readable section or chapter titles derived from source_documents. Default true.",
         "required": false
       }
     ]
@@ -217,12 +217,12 @@
   },
   "top_k_by_centrality": {
     "name": "top_k_by_centrality",
-    "description": "Return the most central nodes by a stored centrality metric such as pagerank, degree, or betweenness. Use for global graph analysis or importance inspection. It is especially suitable for questions about which characters or entities are the most important, central, prominent, or narratively key.",
+    "description": "Deterministically rank graph nodes by stored centrality metrics. Use this instead of retrieve_entity_by_name for questions asking who/which characters or entities are the most central, main, important, prominent, influential, or narratively key. For 'Who are the 3 most central characters?', call metric='pagerank' or metric='degree', top_k=3, node_labels=['Character'], then answer from the returned ranked list.",
     "parameters": [
       {
         "name": "metric",
         "type": "string",
-        "description": "Centrality metric: pagerank, degree, or betweenness.",
+        "description": "Centrality metric: pagerank, degree, or betweenness. Prefer pagerank for overall narrative centrality; use degree for direct graph connectivity.",
         "required": true
       },
       {
@@ -234,7 +234,7 @@
       {
         "name": "node_labels",
         "type": "array",
-        "description": "Optional list of node labels to restrict the ranking to.",
+        "description": "Optional node-label filter. Use ['Character'] for central-character questions.",
         "required": false
       }
     ]

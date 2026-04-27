@@ -32,14 +32,17 @@
       "只有 Event 类型的实体可以出现在 related_events 中。",
       "每个 Event 在一次抽取结果中必须恰好属于一个 Episode。",
       "Occasion 可以为多个 Episode 提供上下文，但不能出现在 related_events 中。",
-      "每个 Episode 应尽可能包含 2 到 6 个 Events；只有无法有意义地分组时才创建单事件 Episode。",
+      "每个 Episode 应尽可能包含 3 到 8 个 Events；只有无法有意义地分组时才创建单事件 Episode。",
+      "优先将属于同一戏剧性动作段、连续互动或短程连续行动链的 Events 分到同一个 Episode，尤其是在它们共享同一 Occasion 或核心参与者时。",
+      "不要把一段连续对话或连续行动轻易拆成多个 Episode；只有在出现明确的局部转折，如新的冲突、新的目标或可观察的情境变化时，才拆分。",
       "不要臆造新的 Event、Occasion、动机、因果链或心理状态。"
     ],
     "writing_constraints": [
       "description 必须是中性的叙事 prose，不要解释分组理由。",
       "不要写“这个 Episode 展示了”“这一段围绕着”等元叙事表述。",
       "不要写主题分析、目的分析或结构分析。",
-      "Episode 名称应概括主要动作推进，而不是抽象主题。"
+      "Episode 名称应概括主要动作推进，而不是抽象主题。",
+      "如果文本支持，description 应在一个连贯段落中覆盖局部起始情境、关键推进和直接结果。"
     ],
     "samples": [
       {

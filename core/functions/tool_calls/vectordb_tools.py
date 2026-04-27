@@ -2,7 +2,6 @@ from typing import Dict, Any
 import json
 from qwen_agent.tools.base import BaseTool, register_tool
 from qwen_agent.utils.utils import logger
-from retriever.vectordb_retriever import ParentChildRetriever
 
 
 def _sort_by_similarity_desc(docs):
@@ -15,81 +14,6 @@ def _sort_by_similarity_desc(docs):
         reverse=True,
     )
     return rows
-
-
-@register_tool("vdb_search_hierdocs")
-class VDBHierdocsSearchTool(BaseTool):
-    """父子文档（Parent-Child）检索：句子召回 + 父级聚合 + 重排"""
-
-    name = "vdb_search_hierdocs"
-    description = "使用父子文档检索器（Parent-Child Retriever）从向量数据库中获取与查询相关的内容（句子级召回，聚合到父段落/文档后重排）。"
-    parameters = [
-        {
-            "name": "query",
-            "type": "string",
-            "description": "检索的查询文本",
-            "required": True
-        },
-        {
-            "name": "limit",
-            "type": "integer",
-            "description": "返回条数，默认 20",
-            "required": False
-        }
-    ]
-
-    def __init__(self, document_vector_store, sentence_vector_store, reranker):
-        self.doc_vs = document_vector_store
-        self.sent_vs = sentence_vector_store
-        self.reranker = reranker
-        self.retriever = ParentChildRetriever(
-            doc_vs=document_vector_store,
-            sent_vs=sentence_vector_store,
-            reranker=reranker
-        )
-
-    def call(self, params: str, **kwargs) -> str:
-        logger.info("🔍 调用父子文档检索器 vdb_search_hierdocs")
-        params_dict: Dict[str, Any] = json.loads(params)
-        query = params_dict.get("query", "")
-        limit = int(params_dict.get("limit", 20))
-
-        # Preferred path: parent-child + rerank.
-        # Fallback path: parent-child without rerank.
-        # Last fallback: plain doc-level RAG by similarity.
-        try:
-            hits = self.retriever.retrieve(
-                query=query,
-                ks=limit * 3,      # 子级候选数
-                kp=limit * 2,      # 父级候选数
-                window=1,          # 句窗拼接
-                topn=limit,        # 最终返回
-            )
-        except Exception as e:
-            logger.warning("vdb_search_hierdocs rerank path failed, fallback to no-rerank: %s", e)
-            try:
-                fallback_retriever = ParentChildRetriever(
-                    doc_vs=self.doc_vs,
-                    sent_vs=self.sent_vs,
-                    reranker=None,
-                )
-                hits = fallback_retriever.retrieve(
-                    query=query,
-                    ks=limit * 3,
-                    kp=limit * 2,
-                    window=1,
-                    topn=limit,
-                )
-            except Exception as e2:
-                logger.warning("vdb_search_hierdocs no-rerank path failed, fallback to plain RAG: %s", e2)
-                hits = self.doc_vs.search(query=query, limit=limit)
-
-        hits = _sort_by_similarity_desc(hits)
-        texts = [h.content for h in hits]
-        if not texts:
-            return "No results."
-        return "\n--\n".join(texts)
-
 
 @register_tool("vdb_search_docs")
 class VDBDocsSearchTool(BaseTool):

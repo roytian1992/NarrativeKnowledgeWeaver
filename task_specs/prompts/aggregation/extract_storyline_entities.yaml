@@ -53,6 +53,8 @@ template: |
   ====================
   给定 chain_information（由 EPISODE_CAUSAL_LINK 串联的 episode 描述序列），
   抽取一个 Storyline 卡片。
+  如果 chain_information 标记为 CHAIN COMMUNITY MODE，则说明输入包含多条高度重合的 chain 变体。
+  此时请将这些变体合并成唯一、更大粒度且具有区分度的 Storyline，不要分别复述每条变体。
 
   Storyline 输出字段：
   {storyline_output_fields_text}
@@ -62,6 +64,8 @@ template: |
   ====================
   {storyline_construction_constraints_text}
   - 避免纯主题抒情或心理揣测，聚焦叙事推进与因果结构。
+  - Storyline 必须有清晰的叙事线身份，不要输出同一事件簇的泛化变体。
+  - impact 必须表达具体的后续状态、约束、风险或关系变化，不要只写模糊的紧张或影响。
 
   ====================
   写作规范
@@ -90,6 +94,8 @@ template: |
   ====================
   - 不要引用 episode/scene/part 的编号。
   - 不要输出项目符号列表。
+  - 在 CHAIN COMMUNITY MODE 下，不要为每条变体隐式生成一条单独 Storyline。
+  - 除非线程级变化足够明确，不要使用只是在复述角色离开、反应或产生紧张关系的泛化名称。
   - 不要添加输入中不存在的事件、关系、人物或地点。
 
   ====================

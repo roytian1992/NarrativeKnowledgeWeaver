@@ -1,0 +1,50 @@
+{
+  "profile_name": "fiarytableqa_agent_default",
+  "description": "Default FiarytableQA agent retrieval profile and visible-tool policy.",
+  "rag_cfg": {
+    "assistant_runtime_variant": "s4",
+    "bypass_runtime_tool_router": true,
+    "max_tool_rounds_per_run": 3,
+    "first_round_max_tool_calls": 2,
+    "followup_round_max_tool_calls": 3,
+    "parallel_tool_workers": 4,
+    "s4_enable_llm_evidence_curation": false,
+    "s4_visible_tool_names": [
+      "bm25_search_docs",
+      "section_evidence_search",
+      "vdb_search_sentences",
+      "vdb_get_docs_by_document_ids",
+      "search_sections",
+      "search_dialogues",
+      "top_k_by_centrality",
+      "narrative_hierarchical_search",
+      "entity_event_trace_search",
+      "retrieve_entity_by_name",
+      "get_entity_sections",
+      "search_interactions",
+      "search_related_entities",
+      "lookup_titles_by_document_ids"
+    ],
+    "s4_first_round_visible_tool_names": [
+      "bm25_search_docs",
+      "vdb_search_sentences",
+      "section_evidence_search",
+      "top_k_by_centrality",
+      "retrieve_entity_by_name"
+    ]
+  },
+  "hidden_tool_names": [
+    "get_co_section_entities",
+    "get_k_hop_subgraph",
+    "get_common_neighbors",
+    "get_relations_between_entities",
+    "find_paths_between_nodes",
+    "vdb_search_docs",
+    "search_related_content",
+    "choice_grounded_evidence_search",
+    "community_graphrag_search",
+    "search_communities",
+    "implication_constrained_inference_search",
+    "lookup_document_ids_by_title"
+  ]
+}

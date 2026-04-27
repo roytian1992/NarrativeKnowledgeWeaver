@@ -32,7 +32,7 @@ def format_entity_results(
     results,
     *,
     graph_query_utils=None,
-    resolve_source_documents: bool = False,
+    resolve_source_documents: bool = True,
     include_document_ids_in_source_sections: bool = True,
 ):
     lines: List[str] = []
@@ -1082,13 +1082,13 @@ class EntityRetrieverName(BaseTool):
         "同时结合名称/别名模糊匹配与语义向量匹配，并对结果去重重排。"
         "当 entity_type 无效或未提供时回退为 'Entity'；"
         "当 query 为空字符串时返回该类型下的实体列表。"
-        "可选把 source_documents 去重映射成可读的场次/章节标题。"
+        "默认把 source_documents 去重映射成可读的场次/章节标题。"
     )
     parameters = [
         {"name": "query", "type": "string", "description": "实体名称、别名或自然语言描述；可为空以列出该类型实体。", "required": True},
         {"name": "entity_type", "type": "string", "description": "目标实体类型；若无效将安全回退为 'Entity'。", "required": False},
         {"name": "top_k", "type": "number", "description": "返回结果数量上限，默认 8。", "required": False},
-        {"name": "resolve_source_documents", "type": "bool", "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题，默认 False。", "required": False},
+        {"name": "resolve_source_documents", "type": "bool", "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题，默认 True。", "required": False},
     ]
 
     def __init__(self, graph_query_utils, embedding_config):
@@ -1101,7 +1101,7 @@ class EntityRetrieverName(BaseTool):
         query = params_dict.get("query", "")
         requested_entity_type = params_dict.get("entity_type", "Entity")
         top_k = max(1, int(params_dict.get("top_k", 8) or 8))
-        resolve_source_documents = _to_bool(params_dict.get("resolve_source_documents"), False)
+        resolve_source_documents = _to_bool(params_dict.get("resolve_source_documents"), True)
         available_entity_types = self.graph_query_utils.list_entity_types()
         entity_type, matched = _resolve_entity_type_name(requested_entity_type, available_entity_types)
         if not matched:
@@ -1138,7 +1138,7 @@ class EntityRetrieverID(BaseTool):
         {"name": "entity_id", "type": "string", "description": "实体唯一 ID。", "required": True},
         {"name": "contain_properties", "type": "bool", "description": "是否包含属性字段，默认 False。", "required": False},
         {"name": "contain_relations", "type": "bool", "description": "是否包含与其它实体的关系列表，默认 False。", "required": False},
-        {"name": "resolve_source_documents", "type": "bool", "description": "是否把 source_documents 去重映射成可读的场次/章节标题，默认 False。", "required": False},
+        {"name": "resolve_source_documents", "type": "bool", "description": "是否把 source_documents 去重映射成可读的场次/章节标题，默认 True。", "required": False},
     ]
 
     def __init__(self, graph_query_utils, embedding_config=None):
@@ -1152,7 +1152,7 @@ class EntityRetrieverID(BaseTool):
         entity_id = params_dict.get("entity_id")
         contain_properties = _to_bool(params_dict.get("contain_properties"), False)
         contain_relations = _to_bool(params_dict.get("contain_relations"), False)
-        resolve_source_documents = _to_bool(params_dict.get("resolve_source_documents"), False)
+        resolve_source_documents = _to_bool(params_dict.get("resolve_source_documents"), True)
         return self.graph_query_utils.get_entity_info(
             entity_id,
             contain_properties,
@@ -1423,16 +1423,17 @@ class FindPathsBetweenNodes(BaseTool):
 class TopKByCentrality(BaseTool):
     name = "top_k_by_centrality"
     description = (
-        "按中心度指标返回 Top-K 节点排名（已写回到节点属性的中心度）。"
-        "支持的指标：pagerank/pr、degree/deg、betweenness/btw。"
-        "可选按节点标签过滤（如 ['Plot','Event']）。"
-        "适合回答谁最重要、谁最核心、哪些角色最关键这类角色重要性问题。"
+        "Deterministically rank graph nodes by stored centrality metrics. "
+        "Use this instead of entity-name lookup for questions such as who are the most central, "
+        "main, important, prominent, or key characters/entities. "
+        "For 'top N central characters', call metric='pagerank' or 'degree', top_k=N, "
+        "node_labels=['Character']."
     )
     parameters = [
         {
             "name": "metric",
             "type": "string",
-            "description": "中心度指标：pagerank、degree、betweenness三选一。",
+            "description": "Centrality metric: pagerank, degree, or betweenness. Prefer pagerank for overall narrative centrality and degree for direct graph connectivity.",
             "required": True,
         },
         {
@@ -1444,7 +1445,7 @@ class TopKByCentrality(BaseTool):
         {
             "name": "node_labels",
             "type": "array",
-            "description": "可选的节点标签过滤（如 ['Episode', 'Scene']）；不传表示全图。",
+            "description": "Optional node-label filter. Use ['Character'] for central-character questions.",
             "required": False,
         },
     ]

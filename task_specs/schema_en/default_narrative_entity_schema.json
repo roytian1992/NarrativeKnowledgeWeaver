@@ -32,14 +32,17 @@
       "Only entities of type Event may appear in related_events.",
       "Each Event must belong to exactly one Episode within a single extraction result.",
       "Occasion may contextualize multiple Episodes but must never appear in related_events.",
-      "Each Episode should contain 2 to 6 Events whenever possible; create a singleton Episode only when meaningful grouping is not possible.",
+      "Each Episode should contain 3 to 8 Events whenever possible; create a singleton Episode only when meaningful grouping is not possible.",
+      "Prefer grouping Events that belong to the same dramatic beat, continuous interaction, or short contiguous action segment, especially when they share the same Occasion or core participants.",
+      "Do not split a continuous conversation or action run into multiple Episodes unless a clear local shift occurs, such as a new conflict, a new objective, or a visible change of situation.",
       "Do not invent new Events, Occasions, motivations, causal links, or psychological states."
     ],
     "writing_constraints": [
       "The description must be neutral narrative prose and must not explain the grouping rationale.",
       "Do not use meta-narrative phrases such as 'this episode shows' or 'this sequence centers on'.",
       "Do not include thematic analysis, purpose analysis, or structural commentary.",
-      "The Episode name should summarize the main action progression rather than an abstract theme."
+      "The Episode name should summarize the main action progression rather than an abstract theme.",
+      "The description should cover the local setup, the key progression, and the immediate outcome in one coherent paragraph when the text supports it."
     ],
     "samples": [
       {

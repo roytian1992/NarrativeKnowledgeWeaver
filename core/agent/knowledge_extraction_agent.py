@@ -98,6 +98,13 @@ def _normalize_relation_text(text: Any) -> str:
     return _WHITESPACE_RE.sub(" ", safe_str(text)).strip().lower()
 
 
+def _relation_text_tokens(text: Any) -> List[str]:
+    norm = _normalize_relation_text(text)
+    if not norm:
+        return []
+    return [tok for tok in re.split(r"[^a-z0-9]+", norm) if tok]
+
+
 def titlecase_global_name(name: str) -> str:
     return normalize_name_basic(name).title()
 
@@ -126,7 +133,14 @@ def build_name_canonicalizer(entities: Iterable[Dict[str, Any]]) -> Dict[str, st
     for ent in entities or []:
         raw = normalize_name_basic(ent.get("name", ""))
         scope = ent.get("scope", "local")
-        raw2canon[raw] = canonicalize_entity_name(raw, scope)
+        canon_name = canonicalize_entity_name(raw, scope)
+        raw2canon[raw] = canon_name
+        aliases = ent.get("aliases") or []
+        if isinstance(aliases, list):
+            for alias in aliases:
+                alias_norm = normalize_name_basic(alias)
+                if alias_norm:
+                    raw2canon[alias_norm] = canon_name
     return raw2canon
 
 
@@ -471,10 +485,79 @@ class InformationExtractionAgent:
         rules = payload.get("rules") or []
         return [item for item in rules if isinstance(item, dict)]
 
+    def _schema_relation_grounding_experience_bank(self) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        seen: Set[Tuple[str, str, str, str]] = set()
+        for group_items in (self.relation_schema or {}).values():
+            for item in group_items or []:
+                if not isinstance(item, dict):
+                    continue
+                relation_type = safe_str(item.get("type")).strip()
+                if not relation_type:
+                    continue
+                from_types = [safe_str(x).strip() for x in safe_list(item.get("from")) if safe_str(x).strip()]
+                to_types = [safe_str(x).strip() for x in safe_list(item.get("to")) if safe_str(x).strip()]
+                subject_type_candidates = from_types or [""]
+                object_type_candidates = to_types or [""]
+                for sample in safe_list(item.get("samples")):
+                    if not isinstance(sample, dict):
+                        continue
+                    phrase = safe_str(sample.get("relation_name")).strip()
+                    if not phrase:
+                        continue
+                    phrase_norm = _normalize_relation_text(phrase)
+                    if not phrase_norm:
+                        continue
+                    for subject_type in subject_type_candidates:
+                        for object_type in object_type_candidates:
+                            key = (relation_type, phrase_norm, subject_type, object_type)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            out.append(
+                                {
+                                    "phrase": phrase,
+                                    "relation_type": relation_type,
+                                    "subject_type": subject_type,
+                                    "object_type": object_type,
+                                    "source": "schema_sample",
+                                }
+                            )
+        return out
+
     def _relation_grounding_experience_bank(self, lang: str) -> List[Dict[str, Any]]:
         payload = safe_dict((self._relation_grounding_lexicon or {}).get(lang))
-        items = payload.get("experience_bank") or []
-        return [item for item in items if isinstance(item, dict)]
+        out: List[Dict[str, Any]] = []
+        seen: Set[Tuple[str, str, str, str]] = set()
+        for item in payload.get("experience_bank") or []:
+            if not isinstance(item, dict):
+                continue
+            relation_type = safe_str(item.get("relation_type")).strip()
+            phrase = safe_str(item.get("phrase")).strip()
+            subject_type = safe_str(item.get("subject_type")).strip()
+            object_type = safe_str(item.get("object_type")).strip()
+            phrase_norm = _normalize_relation_text(phrase)
+            if not relation_type or not phrase_norm:
+                continue
+            key = (relation_type, phrase_norm, subject_type, object_type)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+        for item in self._schema_relation_grounding_experience_bank():
+            relation_type = safe_str(item.get("relation_type")).strip()
+            phrase = safe_str(item.get("phrase")).strip()
+            subject_type = safe_str(item.get("subject_type")).strip()
+            object_type = safe_str(item.get("object_type")).strip()
+            phrase_norm = _normalize_relation_text(phrase)
+            if not relation_type or not phrase_norm:
+                continue
+            key = (relation_type, phrase_norm, subject_type, object_type)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+        return out
 
     def _score_relation_keyword_match(self, text: str, keyword: str) -> int:
         norm_text = _normalize_relation_text(text)
@@ -488,6 +571,206 @@ class InformationExtractionAgent:
         if re.search(rf"(?<![a-z0-9]){re.escape(norm_keyword)}(?![a-z0-9])", norm_text):
             return 3
         return 0
+
+    def _score_relation_phrase_similarity(self, text: str, phrase: str) -> int:
+        norm_text = _normalize_relation_text(text)
+        norm_phrase = _normalize_relation_text(phrase)
+        if not norm_text or not norm_phrase:
+            return 0
+        keyword_score = self._score_relation_keyword_match(norm_text, norm_phrase)
+        if keyword_score > 0:
+            return keyword_score + 1
+        if _contains_cjk(norm_text) or _contains_cjk(norm_phrase):
+            return 0
+        text_tokens = set(_relation_text_tokens(norm_text))
+        phrase_tokens = set(_relation_text_tokens(norm_phrase))
+        if not text_tokens or not phrase_tokens:
+            return 0
+        overlap = len(text_tokens & phrase_tokens)
+        if overlap == 0:
+            return 0
+        if overlap == len(phrase_tokens):
+            return 3
+        if overlap >= max(1, min(len(phrase_tokens), 2)):
+            return 2
+        return 0
+
+    def _experience_bank_ground_open_relation(
+        self,
+        *,
+        proposal_id: str,
+        proposal: Dict[str, Any],
+        candidate_specs: List[Dict[str, Any]],
+        lang: str,
+    ) -> Optional[Dict[str, Any]]:
+        bank = self._relation_grounding_experience_bank(lang)
+        if not bank:
+            return None
+
+        relation_phrase = safe_str(proposal.get("relation_phrase")).strip()
+        description = safe_str(proposal.get("description")).strip()
+        evidence = safe_str(proposal.get("evidence")).strip()
+
+        spec_by_type = {
+            safe_str(item.get("relation_type")).strip(): item
+            for item in candidate_specs
+            if isinstance(item, dict) and safe_str(item.get("relation_type")).strip()
+        }
+        if not spec_by_type:
+            return None
+
+        best: Optional[Tuple[int, str, str]] = None
+        for item in bank:
+            rtype = safe_str(item.get("relation_type")).strip()
+            phrase = safe_str(item.get("phrase")).strip()
+            if not rtype or not phrase or rtype not in spec_by_type:
+                continue
+
+            spec = spec_by_type[rtype]
+            bank_subject_type = safe_str(item.get("subject_type")).strip()
+            bank_object_type = safe_str(item.get("object_type")).strip()
+            spec_subject_type = safe_str(spec.get("subject_type")).strip()
+            spec_object_type = safe_str(spec.get("object_type")).strip()
+            if bank_subject_type and spec_subject_type and bank_subject_type != spec_subject_type:
+                continue
+            if bank_object_type and spec_object_type and bank_object_type != spec_object_type:
+                continue
+
+            phrase_score = self._score_relation_phrase_similarity(relation_phrase, phrase)
+            desc_score = max(self._score_relation_phrase_similarity(description, phrase) - 1, 0)
+            evidence_score = max(self._score_relation_phrase_similarity(evidence, phrase) - 1, 0)
+            total_score = max(phrase_score, desc_score, evidence_score)
+            if total_score <= 0:
+                continue
+            candidate = (total_score, rtype, phrase)
+            if best is None or candidate > best:
+                best = candidate
+
+        if best is None:
+            return None
+
+        top_score, top_rtype, top_phrase = best
+        competing_scores = []
+        for item in bank:
+            rtype = safe_str(item.get("relation_type")).strip()
+            phrase = safe_str(item.get("phrase")).strip()
+            if not rtype or not phrase or rtype == top_rtype or rtype not in spec_by_type:
+                continue
+            score = max(
+                self._score_relation_phrase_similarity(relation_phrase, phrase),
+                max(self._score_relation_phrase_similarity(description, phrase) - 1, 0),
+                max(self._score_relation_phrase_similarity(evidence, phrase) - 1, 0),
+            )
+            if score > 0:
+                competing_scores.append(score)
+
+        second_score = max(competing_scores) if competing_scores else 0
+        if top_score < 3 or top_score <= second_score:
+            return None
+
+        chosen_spec = spec_by_type.get(top_rtype)
+        if not isinstance(chosen_spec, dict):
+            return None
+
+        return {
+            "proposal_id": proposal_id,
+            "decision": "ground",
+            "relation_type": top_rtype,
+            "swap_subject_object": chosen_spec.get("endpoint_mapping") == "object_to_subject",
+            "relation_name": relation_phrase or top_phrase or top_rtype,
+            "description": description or evidence,
+            "grounding_mode": "experience_bank_shortcut",
+            "matched_keyword": top_phrase,
+            "matched_language": lang,
+            "matched_score": top_score,
+        }
+
+    def _exact_experience_bank_ground_open_relation(
+        self,
+        *,
+        proposal_id: str,
+        proposal: Dict[str, Any],
+        candidate_specs: List[Dict[str, Any]],
+        lang: str,
+    ) -> Optional[Dict[str, Any]]:
+        bank = self._relation_grounding_experience_bank(lang)
+        if not bank:
+            return None
+
+        relation_phrase = safe_str(proposal.get("relation_phrase")).strip()
+        relation_phrase_norm = _normalize_relation_text(relation_phrase)
+        description = safe_str(proposal.get("description")).strip()
+        evidence = safe_str(proposal.get("evidence")).strip()
+        if not relation_phrase_norm:
+            return None
+
+        spec_by_type = {
+            safe_str(item.get("relation_type")).strip(): item
+            for item in candidate_specs
+            if isinstance(item, dict) and safe_str(item.get("relation_type")).strip()
+        }
+        if not spec_by_type:
+            return None
+
+        matches: List[Dict[str, Any]] = []
+        for item in bank:
+            rtype = safe_str(item.get("relation_type")).strip()
+            phrase = safe_str(item.get("phrase")).strip()
+            if not rtype or not phrase or rtype not in spec_by_type:
+                continue
+            if _normalize_relation_text(phrase) != relation_phrase_norm:
+                continue
+
+            spec = spec_by_type[rtype]
+            bank_subject_type = safe_str(item.get("subject_type")).strip()
+            bank_object_type = safe_str(item.get("object_type")).strip()
+            spec_subject_type = safe_str(spec.get("subject_type")).strip()
+            spec_object_type = safe_str(spec.get("object_type")).strip()
+            if bank_subject_type and spec_subject_type and bank_subject_type != spec_subject_type:
+                continue
+            if bank_object_type and spec_object_type and bank_object_type != spec_object_type:
+                continue
+            matches.append(item)
+
+        matched_types = {safe_str(item.get("relation_type")).strip() for item in matches if safe_str(item.get("relation_type")).strip()}
+        if len(matched_types) != 1:
+            return None
+
+        chosen = next(
+            (
+                item
+                for item in matches
+                if safe_str(item.get("source")).strip() == "schema_sample"
+            ),
+            matches[0] if matches else None,
+        )
+        if not isinstance(chosen, dict):
+            return None
+
+        chosen_type = safe_str(chosen.get("relation_type")).strip()
+        chosen_spec = spec_by_type.get(chosen_type)
+        if not isinstance(chosen_spec, dict):
+            return None
+
+        source = safe_str(chosen.get("source")).strip() or "experience_bank"
+        if source == "schema_sample":
+            grounding_mode = "schema_sample_exact_shortcut"
+        else:
+            grounding_mode = "experience_bank_exact_shortcut"
+
+        return {
+            "proposal_id": proposal_id,
+            "decision": "ground",
+            "relation_type": chosen_type,
+            "swap_subject_object": chosen_spec.get("endpoint_mapping") == "object_to_subject",
+            "relation_name": relation_phrase or safe_str(chosen.get("phrase")).strip() or chosen_type,
+            "description": description or evidence,
+            "grounding_mode": grounding_mode,
+            "matched_keyword": safe_str(chosen.get("phrase")).strip(),
+            "matched_language": lang,
+            "matched_score": 5,
+            "matched_source": source,
+        }
 
     def _heuristic_ground_open_relation(
         self,
@@ -503,56 +786,63 @@ class InformationExtractionAgent:
         description = safe_str(proposal.get("description")).strip()
         evidence = safe_str(proposal.get("evidence")).strip()
         lang = self._relation_grounding_language(relation_phrase, description, evidence)
-        keyword_map = self._relation_grounding_keywords.get(lang, {})
-        if not keyword_map:
-            return None
-
-        scores: List[Tuple[int, str, str]] = []
-        for spec in candidate_specs:
-            rtype = safe_str(spec.get("relation_type")).strip()
-            if not rtype:
-                continue
-            best_score = 0
-            best_keyword = ""
-            for keyword in keyword_map.get(rtype, []):
-                phrase_score = self._score_relation_keyword_match(relation_phrase, keyword)
-                desc_score = self._score_relation_keyword_match(description, keyword)
-                evidence_score = self._score_relation_keyword_match(evidence, keyword)
-                score = max(phrase_score, max(desc_score - 1, 0), max(evidence_score - 1, 0))
-                if score > best_score:
-                    best_score = score
-                    best_keyword = keyword
-            if best_score > 0:
-                scores.append((best_score, rtype, best_keyword))
-
-        if not scores:
-            return None
-
-        scores.sort(key=lambda item: (-item[0], item[1]))
-        top_score, top_rtype, top_keyword = scores[0]
-        second_score = scores[1][0] if len(scores) > 1 else 0
-        if top_score < 3 or top_score <= second_score:
-            return None
-
-        chosen_spec = next(
-            (item for item in candidate_specs if safe_str(item.get("relation_type")).strip() == top_rtype),
-            None,
+        exact_grounded = self._exact_experience_bank_ground_open_relation(
+            proposal_id=proposal_id,
+            proposal=proposal,
+            candidate_specs=candidate_specs,
+            lang=lang,
         )
-        if not isinstance(chosen_spec, dict):
-            return None
+        if exact_grounded is not None:
+            return exact_grounded
+        keyword_map = self._relation_grounding_keywords.get(lang, {})
+        if keyword_map:
+            scores: List[Tuple[int, str, str]] = []
+            for spec in candidate_specs:
+                rtype = safe_str(spec.get("relation_type")).strip()
+                if not rtype:
+                    continue
+                best_score = 0
+                best_keyword = ""
+                for keyword in keyword_map.get(rtype, []):
+                    phrase_score = self._score_relation_keyword_match(relation_phrase, keyword)
+                    desc_score = self._score_relation_keyword_match(description, keyword)
+                    evidence_score = self._score_relation_keyword_match(evidence, keyword)
+                    score = max(phrase_score, max(desc_score - 1, 0), max(evidence_score - 1, 0))
+                    if score > best_score:
+                        best_score = score
+                        best_keyword = keyword
+                if best_score > 0:
+                    scores.append((best_score, rtype, best_keyword))
 
-        return {
-            "proposal_id": proposal_id,
-            "decision": "ground",
-            "relation_type": top_rtype,
-            "swap_subject_object": chosen_spec.get("endpoint_mapping") == "object_to_subject",
-            "relation_name": relation_phrase,
-            "description": description or evidence,
-            "grounding_mode": "keyword_shortcut",
-            "matched_keyword": top_keyword,
-            "matched_language": lang,
-            "matched_score": top_score,
-        }
+            if scores:
+                scores.sort(key=lambda item: (-item[0], item[1]))
+                top_score, top_rtype, top_keyword = scores[0]
+                second_score = scores[1][0] if len(scores) > 1 else 0
+                if top_score >= 3 and top_score > second_score:
+                    chosen_spec = next(
+                        (item for item in candidate_specs if safe_str(item.get("relation_type")).strip() == top_rtype),
+                        None,
+                    )
+                    if isinstance(chosen_spec, dict):
+                        return {
+                            "proposal_id": proposal_id,
+                            "decision": "ground",
+                            "relation_type": top_rtype,
+                            "swap_subject_object": chosen_spec.get("endpoint_mapping") == "object_to_subject",
+                            "relation_name": relation_phrase,
+                            "description": description or evidence,
+                            "grounding_mode": "keyword_shortcut",
+                            "matched_keyword": top_keyword,
+                            "matched_language": lang,
+                            "matched_score": top_score,
+                        }
+
+        return self._experience_bank_ground_open_relation(
+            proposal_id=proposal_id,
+            proposal=proposal,
+            candidate_specs=candidate_specs,
+            lang=lang,
+        )
 
     def _match_repair_rule_window(
         self,
@@ -1745,6 +2035,8 @@ class InformationExtractionAgent:
                 props["grounding_description"] = safe_str(grounded.get("description")).strip()
             if safe_str(grounded.get("matched_keyword")).strip():
                 props["grounding_matched_keyword"] = safe_str(grounded.get("matched_keyword")).strip()
+            if safe_str(grounded.get("matched_source")).strip():
+                props["grounding_matched_source"] = safe_str(grounded.get("matched_source")).strip()
             if safe_str(grounded.get("matched_language")).strip():
                 props["grounding_matched_language"] = safe_str(grounded.get("matched_language")).strip()
             if grounded.get("matched_score") is not None:

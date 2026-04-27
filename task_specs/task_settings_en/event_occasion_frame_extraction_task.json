@@ -1,0 +1,68 @@
+[
+  {
+    "task": "event_occasion_frame_extraction",
+    "task_name": "Event and Occasion Frame Extraction",
+    "task_goal": "Extract atomic Events and Occasions first, and also extract their explicitly linked characters, times, locations, and other related entities so later stages can build relations and ground entities automatically.",
+    "global_constraints": [
+      "Use only information grounded in the text; do not invent content.",
+      "Keep Events atomic; do not collapse multiple distinct actions into one Event.",
+      "An Occasion is an organized activity or social container, not a single action.",
+      "Keep names close to the surface form and original language of the text; do not translate without reason.",
+      "Attached entities should include only name and description; do not assign schema types yet.",
+      "Output JSON only."
+    ],
+    "extraction_rules": [
+      "If the same passage supports both an Occasion and one or more Events inside it, extract both.",
+      "For each Event, include agents / experiencers / patients / locations / times / occasion / related_entities whenever they are clearly supported.",
+      "For each Occasion, include participants / initiators / locations / times / related_entities whenever they are clearly supported.",
+      "If a character or entity is only weak background mention, do not force it onto every frame.",
+      "Keep related_entities only when they have standalone node value; do not output propositional items such as a piece of news, a claim, or the content of one utterance."
+    ],
+    "output_schema": {
+      "events": [
+        {
+          "name": "event name",
+          "description": "event description",
+          "agents": [{"name": "entity name", "description": "short description"}],
+          "experiencers": [],
+          "patients": [],
+          "locations": [],
+          "times": [],
+          "occasion": [],
+          "related_entities": []
+        }
+      ],
+      "occasions": [
+        {
+          "name": "occasion name",
+          "description": "occasion description",
+          "participants": [{"name": "entity name", "description": "short description"}],
+          "initiators": [],
+          "locations": [],
+          "times": [],
+          "related_entities": []
+        }
+      ]
+    },
+    "few_shot": {
+      "examples": [
+        {
+          "events": [
+            {
+              "name": "Doctor informs the family of the critical condition",
+              "description": "A doctor explains outside the ward that the patient's condition has worsened.",
+              "agents": [{"name": "doctor", "description": "The person explaining the medical situation"}],
+              "experiencers": [],
+              "patients": [{"name": "family members", "description": "The people receiving the bad news"}],
+              "locations": [{"name": "hospital corridor outside the ward", "description": "The corridor outside the patient's room"}],
+              "times": [{"name": "late night", "description": "The time period when the event happens"}],
+              "occasion": [],
+              "related_entities": [{"name": "critical condition notice", "description": "A document used to communicate the worsening condition"}]
+            }
+          ],
+          "occasions": []
+        }
+      ]
+    }
+  }
+]

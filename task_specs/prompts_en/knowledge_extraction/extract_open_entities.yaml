@@ -1,0 +1,82 @@
+id: open_entity_extraction
+category: knowledge_extraction
+name: Open Entity Extraction
+description: >
+  Extract non-event, non-occasion entities in open form with name and description only.
+
+task_variables:
+  - name: text
+    type: string
+    required: true
+  - name: known_entities
+    type: string
+    required: false
+  - name: memory_context
+    type: string
+    required: false
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: extraction_rules_block
+    type: string
+    required: false
+  - name: output_fields_block
+    type: string
+    required: true
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  You are performing open entity extraction.
+
+  Task:
+  {task_name}
+
+  Goal:
+  {task_goal}
+
+  Global constraints:
+  {global_constraints}
+
+  Additional rules:
+  {extraction_rules_block}
+
+  Output fields:
+  {output_fields_block}
+
+  Key requirements:
+  - Extract only entities that are neither Event nor Occasion.
+  - Characters are often already covered by Event / Occasion frame slots; only add characters here when the text clearly contains important character entities that the frames did not capture.
+  - Time expressions are usually handled as anchors for Events / Occasions; do not make them the main target here.
+  - Prioritize Character / Location / Object / Concept nodes that are worth existing independently, especially stable characters, stable locations, key objects, and high-value concepts such as organizations, families, marriages, or professions.
+  - Do not output schema types yet.
+  - Preserve surface forms and original language whenever possible; if the text is English, do not translate the names.
+  - Return only entity name and a short text-grounded description.
+  - If an entity is already present in the known entity list, do not repeat it even if you could provide a longer description.
+  - Keep only entities worth becoming graph nodes; names that are merely background examples, incidental lists, or passing mentions with no local narrative value may be omitted.
+  - Do not prioritize everyday generic objects or descriptive phrases such as `book`, `door`, `coat`, `day`, `evening`, `a room where...`, or `the area around...`, unless they play a clear narrative role in the current passage.
+  - Prefer omitting pure directional phrases, descriptive stage-derived locations, or temporary group labels.
+  - If an entity is unlikely to enter the important relation network or recur stably later in the narrative, prefer not to extract it.
+  - Favor recall, but do not invent.
+  - Output a JSON array only. Do not include explanations.
+
+  Examples:
+  {few_shot_samples}
+
+  Input text:
+  {text}
+
+  Known entities (avoid duplicates):
+  {known_entities}
+
+  Optional memory:
+  {memory_context}

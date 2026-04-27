@@ -1,6 +1,7 @@
 import json
 import hashlib
 import math
+from collections import Counter
 from typing import List, Dict, Any, Optional, Literal
 from itertools import chain
 
@@ -9,6 +10,7 @@ import re
 from core.models.data import Document, TextChunk
 from ..utils.config import KAGConfig
 from core.builder.manager.document_manager import DocumentParser
+from core.functions.regular_functions.external_entity_candidates import ExternalEntityCandidateExtractor
 from core.utils.format import correct_json_format, safe_text_for_json
 from core.utils.function_manager import run_concurrent_with_retries
 from core.utils.general_utils import word_len
@@ -37,6 +39,27 @@ class DocumentProcessor:
         self.max_segments = config.document_processing.max_segments
         self.max_content = config.document_processing.max_content_size
         self.max_workers = config.document_processing.max_workers
+        self.prepare_insights_mode = str(
+            getattr(config.document_processing, "prepare_insights_mode", "llm") or "llm"
+        ).strip().lower()
+        self.nlp_summary_max_sentences = max(
+            1, int(getattr(config.document_processing, "nlp_summary_max_sentences", 4) or 4)
+        )
+        self.nlp_metadata_max_keywords = max(
+            1, int(getattr(config.document_processing, "nlp_metadata_max_keywords", 16) or 16)
+        )
+        self.nlp_metadata_max_entities_per_type = max(
+            1, int(getattr(config.document_processing, "nlp_metadata_max_entities_per_type", 24) or 24)
+        )
+        self.metadata_entity_mode = str(
+            getattr(config.document_processing, "metadata_entity_mode", "llm") or "llm"
+        ).strip().lower()
+        if self.metadata_entity_mode not in {"llm", "ner"}:
+            self.metadata_entity_mode = "llm"
+        global_cfg = getattr(config, "global_config", None)
+        self.language = str(
+            getattr(global_cfg, "language", "") or getattr(global_cfg, "locale", "") or "en"
+        ).strip().lower()
 
         # Base recursive splitter
         self.base_splitter = RecursiveCharacterTextSplitter(
@@ -45,10 +68,368 @@ class DocumentProcessor:
 
         # LLM-powered parser utilities
         self.document_parser = DocumentParser(config, llm)
+        self.metadata_entity_extractor: Optional[ExternalEntityCandidateExtractor] = None
+        kg_cfg = getattr(config, "knowledge_graph_builder", None)
+        if self.metadata_entity_mode == "ner":
+            self.metadata_entity_extractor = ExternalEntityCandidateExtractor(
+                config,
+                entity_mode="ner",
+                max_items=self.nlp_metadata_max_entities_per_type * 4,
+                enable_direct_type=True,
+            )
 
     # ------------------------------------------------------------------ #
-    # Sliding Semantic Split (LLM boundary detection with small retries)
+    # Cheap NLP summary + metadata
     # ------------------------------------------------------------------ #
+    _EN_STOPWORDS = {
+        "the", "and", "for", "with", "that", "this", "from", "into", "onto", "there", "their",
+        "they", "them", "then", "than", "are", "was", "were", "been", "being", "have", "has",
+        "had", "not", "but", "you", "your", "his", "her", "she", "him", "our", "out", "all",
+        "can", "could", "would", "should", "will", "just", "over", "under", "after", "before",
+    }
+    _ZH_STOP_CHARS = set("的一是在了和与及或就都而着过把被让向对从到中上下一这那他她它们我你")
+
+    def _is_zh_text(self, text: str) -> bool:
+        if self.language.startswith("zh"):
+            return True
+        zh_count = len(re.findall(r"[\u4e00-\u9fff]", str(text or "")))
+        latin_count = len(re.findall(r"[A-Za-z]", str(text or "")))
+        return zh_count > latin_count
+
+    def _split_summary_sentences(self, text: str) -> List[str]:
+        raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not raw:
+            return []
+        lines = [re.sub(r"\s+", " ", x).strip() for x in raw.splitlines() if x.strip()]
+        out: List[str] = []
+        for line in lines:
+            parts = re.findall(r".+?[。！？!?；;。.]|.+$", line)
+            for part in parts:
+                part = re.sub(r"\s+", " ", part).strip()
+                if part:
+                    out.append(part)
+        return out
+
+    def _keyword_tokens(self, text: str) -> List[str]:
+        raw = str(text or "")
+        if not raw:
+            return []
+        if self._is_zh_text(raw):
+            tokens: List[str] = []
+            tokens.extend(re.findall(r"[A-Za-z][A-Za-z0-9_-]{1,}", raw))
+            for seq in re.findall(r"[\u4e00-\u9fff]{2,}", raw):
+                clean = "".join(ch for ch in seq if ch not in self._ZH_STOP_CHARS)
+                if len(clean) >= 2:
+                    upper = min(5, len(clean))
+                    for n in range(2, upper + 1):
+                        tokens.extend(clean[i : i + n] for i in range(0, len(clean) - n + 1))
+            return [t for t in tokens if 2 <= len(t) <= 24]
+        return [
+            t.lower()
+            for t in re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", raw)
+            if t.lower() not in self._EN_STOPWORDS
+        ]
+
+    def _nlp_summary(self, text: str, *, max_sentences: Optional[int] = None) -> str:
+        sentences = self._split_summary_sentences(text)
+        if not sentences:
+            return ""
+        max_sentences = max(1, int(max_sentences or self.nlp_summary_max_sentences))
+        if len(sentences) <= max_sentences:
+            return " ".join(sentences).strip()
+
+        tokenized = [self._keyword_tokens(s) for s in sentences]
+        freq = Counter(chain.from_iterable(tokenized))
+        scored: List[tuple[float, int, str]] = []
+        for idx, sent in enumerate(sentences):
+            toks = tokenized[idx]
+            if not toks:
+                score = 0.0
+            else:
+                score = sum(math.log(1.0 + freq.get(tok, 0)) for tok in toks) / math.sqrt(len(toks))
+            if idx == 0:
+                score += 0.5
+            if re.search(r"[：:]", sent):
+                score += 0.15
+            scored.append((score, idx, sent))
+
+        selected = sorted(scored, key=lambda x: (-x[0], x[1]))[:max_sentences]
+        selected.sort(key=lambda x: x[1])
+        return " ".join(s for _, _, s in selected).strip()
+
+    def _dedup_strings(self, items: List[str], *, limit: int) -> List[str]:
+        seen = set()
+        out: List[str] = []
+        for item in items:
+            val = re.sub(r"\s+", " ", str(item or "")).strip(" \t\r\n，。；;：:,.()（）[]【】")
+            if not val:
+                continue
+            key = val.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(val)
+            if len(out) >= limit:
+                break
+        return out
+
+    def _model_ner_metadata(self, *, title: str, text: str) -> Dict[str, Any]:
+        extractor = self.metadata_entity_extractor
+        if extractor is None:
+            return {"entities_by_type": {}, "ner_entities": [], "backend": "none", "error": ""}
+
+        payload = extractor.extract(text=f"{title}\n{text}".strip(), known_names=[], scope_rules={})
+        typed_items = payload.get("typed_entities") or []
+        stats = payload.get("stats") or {}
+        entities_by_type: Dict[str, List[str]] = {
+            "Character": [],
+            "Location": [],
+            "Object": [],
+            "Concept": [],
+        }
+        ner_entities: List[Dict[str, Any]] = []
+        for item in typed_items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            etype = str(item.get("type", "")).strip()
+            if not name or etype not in entities_by_type:
+                continue
+            entities_by_type[etype].append(name)
+            row = dict(item)
+            row["source_kind"] = "metadata_ner"
+            row.setdefault("description", f"Detected by metadata NER model as {etype}.")
+            ner_entities.append(row)
+
+        return {
+            "entities_by_type": {
+                key: self._dedup_strings(values, limit=self.nlp_metadata_max_entities_per_type)
+                for key, values in entities_by_type.items()
+            },
+            "ner_entities": ner_entities[: self.nlp_metadata_max_entities_per_type * 4],
+            "backend": str(stats.get("backend") or extractor.backend_name()),
+            "error": str(stats.get("error") or ""),
+        }
+
+    def _inject_model_ner_metadata(self, out: Dict[str, Any], *, title: str, text: str) -> Dict[str, Any]:
+        if self.metadata_entity_mode != "ner":
+            out["metadata_entity_mode"] = "llm"
+            return out
+        model_payload = self._model_ner_metadata(title=title, text=text)
+        model_entities_by_type = model_payload.get("entities_by_type") or {}
+        out.update(
+            {
+                "characters": model_entities_by_type.get("Character", []),
+                "locations": model_entities_by_type.get("Location", []),
+                "objects": model_entities_by_type.get("Object", []),
+                "concepts": model_entities_by_type.get("Concept", []),
+                "ner_entities": list(model_payload.get("ner_entities") or []),
+                "metadata_entity_mode": "ner",
+                "metadata_ner_backend": model_payload.get("backend"),
+            }
+        )
+        if model_payload.get("error"):
+            out["metadata_ner_error"] = str(model_payload.get("error"))[:300]
+        return out
+
+    def _nlp_metadata(self, *, text: str, title: str, extract_summary: bool, extract_metadata: bool) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"prepare_insights_mode": "nlp"}
+        if extract_summary:
+            summary = self._nlp_summary(text, max_sentences=self.nlp_summary_max_sentences)
+            if summary:
+                out["summary"] = summary
+        if not extract_metadata:
+            return out
+
+        token_counts = Counter(self._keyword_tokens(f"{title}\n{text}"))
+        keywords = [
+            token
+            for token, _count in token_counts.most_common(self.nlp_metadata_max_keywords * 3)
+            if not re.fullmatch(r"\d+", token)
+        ][: self.nlp_metadata_max_keywords]
+        source_entities_by_type = {"characters": [], "locations": [], "objects": [], "concepts": []}
+        ner_entities: List[Dict[str, Any]] = []
+        model_payload: Dict[str, Any] = {"backend": "none", "error": ""}
+        if self.metadata_entity_mode == "ner":
+            model_payload = self._model_ner_metadata(title=title, text=text)
+            model_entities_by_type = model_payload.get("entities_by_type") or {}
+            source_entities_by_type = {
+                "characters": model_entities_by_type.get("Character", []),
+                "locations": model_entities_by_type.get("Location", []),
+                "objects": model_entities_by_type.get("Object", []),
+                "concepts": model_entities_by_type.get("Concept", []),
+            }
+            ner_entities = list(model_payload.get("ner_entities") or [])
+
+        out.update(
+            {
+                "keywords": keywords,
+                "characters": source_entities_by_type["characters"],
+                "locations": source_entities_by_type["locations"],
+                "objects": source_entities_by_type["objects"],
+                "concepts": source_entities_by_type["concepts"],
+                "ner_entities": ner_entities,
+                "metadata_entity_mode": self.metadata_entity_mode,
+                "metadata_ner_backend": model_payload.get("backend"),
+                "knowledge_entity_extraction_mode": str(
+                    getattr(getattr(self.config, "knowledge_graph_builder", None), "entity_extraction_mode", "llm") or "llm"
+                ),
+            }
+        )
+        if model_payload.get("error"):
+            out["metadata_ner_error"] = str(model_payload.get("error"))[:300]
+        return out
+
+    # ------------------------------------------------------------------ #
+    # Non-LLM semantic splitter
+    # ------------------------------------------------------------------ #
+    def _semantic_tokens(self, text: str) -> List[str]:
+        text = str(text or "").lower()
+        if not text:
+            return []
+        return re.findall(r"[\u4e00-\u9fff]+|[a-z0-9]+", text)
+
+    def _split_into_semantic_sentences(self, text: str) -> List[str]:
+        raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not raw:
+            return []
+
+        coarse_parts = re.split(r"(?<=[。！？!?；;])\s+|(?<=[.!?;])\s+", raw)
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=max(80, int(self.chunk_size * 0.5)),
+            chunk_overlap=0,
+            length_function=word_len,
+            separators=["\n\n", "\n", "。", "！", "？", "; ", ". ", "! ", "? ", ", ", "，", " ", ""],
+        )
+
+        out: List[str] = []
+        for part in coarse_parts:
+            part = re.sub(r"\s+", " ", str(part or "")).strip()
+            if not part:
+                continue
+            if word_len(part) <= max(40, int(self.chunk_size * 0.5)):
+                out.append(part)
+                continue
+            out.extend([seg.strip() for seg in splitter.split_text(part) if str(seg or "").strip()])
+        return out
+
+    def _boundary_strengths(self, sentences: List[str]) -> List[float]:
+        n = len(sentences)
+        if n <= 1:
+            return []
+
+        tokenized = [self._semantic_tokens(s) for s in sentences]
+        doc_freq: Counter[str] = Counter()
+        for toks in tokenized:
+            for tok in set(toks):
+                doc_freq[tok] += 1
+
+        def _window_vector(start: int, end: int) -> Dict[str, float]:
+            tf: Counter[str] = Counter()
+            for toks in tokenized[start:end]:
+                tf.update(toks)
+            if not tf:
+                return {}
+            vec: Dict[str, float] = {}
+            for tok, freq in tf.items():
+                idf = math.log((1.0 + n) / (1.0 + doc_freq.get(tok, 0))) + 1.0
+                vec[tok] = float(freq) * idf
+            return vec
+
+        def _cosine(a: Dict[str, float], b: Dict[str, float]) -> float:
+            if not a or not b:
+                return 0.0
+            dot = 0.0
+            for tok, val in a.items():
+                dot += val * b.get(tok, 0.0)
+            na = math.sqrt(sum(v * v for v in a.values()))
+            nb = math.sqrt(sum(v * v for v in b.values()))
+            if na <= 1e-9 or nb <= 1e-9:
+                return 0.0
+            return dot / (na * nb)
+
+        strengths: List[float] = []
+        for boundary in range(1, n):
+            left_start = max(0, boundary - 3)
+            right_end = min(n, boundary + 3)
+            left_vec = _window_vector(left_start, boundary)
+            right_vec = _window_vector(boundary, right_end)
+            sim = _cosine(left_vec, right_vec)
+            strengths.append(max(0.0, min(1.0, 1.0 - sim)))
+        return strengths
+
+    def _semantic_pack_sentences(self, sentences: List[str]) -> List[str]:
+        if not sentences:
+            return []
+
+        sentence_words = [max(1, word_len(s)) for s in sentences]
+        total_words = sum(sentence_words)
+        target_words = max(200, int(self.chunk_size))
+        min_words = max(140, int(target_words * 0.65))
+        max_words = max(min_words + 1, int(target_words * 1.30))
+
+        if total_words <= max_words:
+            return [" ".join(sentences).strip()]
+
+        strengths = self._boundary_strengths(sentences)
+        out: List[str] = []
+        start = 0
+        n = len(sentences)
+
+        while start < n:
+            remaining_words = sum(sentence_words[start:])
+            if remaining_words <= max_words:
+                out.append(" ".join(sentences[start:]).strip())
+                break
+
+            best_end: Optional[int] = None
+            best_score = -1e18
+            chunk_words = 0
+            candidate_ends: List[int] = []
+
+            for end in range(start + 1, n):
+                chunk_words += sentence_words[end - 1]
+                if chunk_words < min_words:
+                    continue
+                if chunk_words > max_words:
+                    break
+
+                tail_words = sum(sentence_words[end:])
+                if tail_words and tail_words < min_words and end < n - 1:
+                    continue
+                candidate_ends.append(end)
+
+            if not candidate_ends:
+                chunk_words = 0
+                for end in range(start + 1, n):
+                    chunk_words += sentence_words[end - 1]
+                    if chunk_words >= target_words:
+                        candidate_ends = [end]
+                        break
+                if not candidate_ends:
+                    candidate_ends = [n]
+
+            for end in candidate_ends:
+                words_here = sum(sentence_words[start:end])
+                closeness = 1.0 - min(abs(words_here - target_words) / max(target_words, 1), 1.0)
+                boundary_strength = strengths[end - 1] if end - 1 < len(strengths) else 1.0
+                score = boundary_strength * 1.0 + closeness * 0.35
+                if score > best_score:
+                    best_score = score
+                    best_end = end
+
+            if best_end is None or best_end <= start:
+                best_end = min(n, start + 1)
+
+            out.append(" ".join(sentences[start:best_end]).strip())
+            start = best_end
+
+        if len(out) >= 2 and word_len(out[-1]) < int(min_words * 0.75):
+            out[-2] = f"{out[-2]} {out[-1]}".strip()
+            out.pop()
+
+        return [seg for seg in out if str(seg or "").strip()]
+
     def sliding_semantic_split(
         self,
         segments: List[str],
@@ -57,75 +438,18 @@ class DocumentProcessor:
         per_chunk_backoff: float = 0.75
     ) -> List[str]:
         """
-        Apply LLM-based boundary detection over merged windows to produce
-        discourse-consistent segments, following the paper's "Sliding Semantic Splitting".
+        Non-LLM semantic splitting:
+        1) sentence-complete split
+        2) local lexical-semantic boundary scoring
+        3) pack to target chunk_size with relatively uniform lengths
         """
-        results: List[str] = []
-        carry = ""
-        last_min_length = 200  # 记录最近一次使用的 min_length（目前恒为 200）
-
-        for i, seg in enumerate(segments):
-            # Merge carry with current base chunk to form the candidate window
-            text_input = (carry + seg).strip()
-            total_len = len(text_input)
-
-            # If too short for a meaningful split, flush old carry and keep seg as new carry
-            if total_len < (self.chunk_size + 100) * 0.5:
-                if carry:
-                    results.append(carry)
-                carry = seg
-                continue
-
-            max_segments = self.max_segments - 1 if total_len < self.chunk_size + 100 else self.max_segments
-            # min_length = max(1, int(total_len / self.max_segments))
-            min_length = 200
-            last_min_length = min_length  # 记录这次的阈值，后面处理最后一个 segment 用
-
-            payload = {
-                "text": safe_text_for_json(text_input),
-                "min_length": min_length,
-                "max_segments": max_segments
-            }
-
-            # Use the global concurrent runner to standardize retry/timeout behavior at call sites.
-            # Here, we just implement a local, small retry loop because this is a single-call path.
-            last_err: Optional[Exception] = None
-            for attempt in range(per_chunk_retry + 1):
-                try:
-                    raw = self.document_parser.split_text(json.dumps(payload, ensure_ascii=False))
-                    parsed = json.loads(correct_json_format(raw))
-                    subs = parsed.get("segments", [])
-                    if not isinstance(subs, list) or not subs:
-                        raise ValueError(f"Splitter returned invalid data on chunk {i}: {subs}")
-
-                    # Append all but the last as finalized segments; keep the last as new carry.
-                    results.extend([s for s in subs[:-1] if isinstance(s, str) and s.strip()])
-                    carry = subs[-1] if isinstance(subs[-1], str) else ""
-                    last_err = None
-                    break
-                except Exception as e:
-                    last_err = e
-                    if attempt < per_chunk_retry:
-                        # small linear backoff
-                        import time as _t
-                        _t.sleep(min(per_chunk_backoff * (attempt + 1), 2.0))
-                    else:
-                        # Final failure: surface debug info for diagnosis
-                        print("[CHECK] sliding_semantic_split payload:", payload)
-                        print("[CHECK] splitter raw result:", locals().get("raw", "N/A"))
-                        raise RuntimeError(f"Sliding semantic split failed on chunk {i}: {e}") from e
-
-        # ------ 这里改动：对“最后一个 segment”做 min_length 合并规则 ------
-        if isinstance(carry, str) and carry.strip():
-            tail = carry.strip()
-            if results and word_len(tail) < last_min_length: # 中英文修改
-                # 和前一个块合并
-                # 这里简单用拼接，你如果需要可以加换行或空格
-                results[-1] = (results[-1] or "") + tail
-            else:
-                results.append(tail)
-
-        return results
+        full_text = " ".join(str(seg or "").strip() for seg in segments if str(seg or "").strip()).strip()
+        if not full_text:
+            return []
+        sentences = self._split_into_semantic_sentences(full_text)
+        if not sentences:
+            return [full_text]
+        return self._semantic_pack_sentences(sentences)
 
     # ------------------------------------------------------------------ #
     # Pre-split long raw items by max_content_size
@@ -502,49 +826,63 @@ class DocumentProcessor:
         meta["version"] = version
 
         text = document.get("content", "") or ""
-        text = re.sub(r'\s+', ' ', text).strip()
+        text = str(text).replace("\r\n", "\n").replace("\r", "\n").strip()
 
         # ---- (1) Split once ----
-        if len(text) <= self.chunk_size + 100:
+        if word_len(text) <= self.chunk_size + 100:
             split_docs = [text]
         else:
-            split_docs = self.base_splitter.split_text(text)
             if use_semantic_split:
-                split_docs = self.sliding_semantic_split(split_docs)
+                split_docs = self.sliding_semantic_split([text])
+            else:
+                split_docs = self.base_splitter.split_text(text)
 
-        # ---- (2) Rolling summary -> keep ONLY the final doc-level summary ----
-        doc_summary: str = ""
-        if extract_summary and split_docs:
-            history = ""
-            for desc in split_docs:
-                try:
-                    raw = self.document_parser.summarize_paragraph(desc, summary_max_words, history)
-                    parsed = json.loads(correct_json_format(raw))
-                    s = parsed.get("summary", "")
-                    if not isinstance(s, str):
-                        s = str(s) if s is not None else ""
-                    history = s
-                except Exception:
-                    pass
-            doc_summary = history
-        else:
-            doc_summary = ""
-
-        # ---- (3) Document-level metadata from (Title + doc_summary) ----
+        # ---- (2) Document-level summary + metadata ----
         flat_doc_metadata: Dict[str, Any] = {}
-        if extract_metadata:
+        insights_mode = str(self.prepare_insights_mode or "llm").strip().lower()
+        if insights_mode == "none":
+            insights_mode = "none"
+        elif insights_mode not in {"llm", "nlp"}:
+            insights_mode = "llm"
+
+        if (extract_summary or extract_metadata) and text and insights_mode == "nlp":
+            flat_doc_metadata = self._nlp_metadata(
+                text=text,
+                title=title or subtitle,
+                extract_summary=extract_summary,
+                extract_metadata=extract_metadata,
+            )
+        elif (extract_summary or extract_metadata) and text and insights_mode == "llm":
             try:
-                raw_md = self.document_parser.parse_metadata(
-                    doc_summary, title, subtitle, self.doc_type
+                raw_md = self.document_parser.generate_title_and_metadata(
+                    text=text,
+                    title=title,
+                    subtitle=subtitle,
+                    doc_type=self.doc_type,
                 )
                 parsed_md = json.loads(correct_json_format(raw_md))
                 md = parsed_md.get("metadata", {})
                 if isinstance(md, dict):
                     flat_doc_metadata.update(md)
-                    # put summary at top-level
-                    flat_doc_metadata["summary"] = doc_summary
+                generated_title = str(parsed_md.get("title", "") or "").strip()
+                if generated_title and generated_title != title:
+                    flat_doc_metadata["generated_doc_title"] = generated_title
+                if not extract_summary:
+                    flat_doc_metadata.pop("summary", None)
+                if not extract_metadata:
+                    summary_only = flat_doc_metadata.get("summary", None)
+                    flat_doc_metadata = {}
+                    if summary_only is not None:
+                        flat_doc_metadata["summary"] = summary_only
+                flat_doc_metadata["prepare_insights_mode"] = "llm"
             except Exception:
                 pass
+            if extract_metadata:
+                flat_doc_metadata = self._inject_model_ner_metadata(
+                    flat_doc_metadata,
+                    title=title or subtitle,
+                    text=text,
+                )
 
         # ---- (3.5) Inject timelines into doc-level metadata (always top-level key)
         # ---- (4) Build chunks ----

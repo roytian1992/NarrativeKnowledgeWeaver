@@ -1,0 +1,81 @@
+id: entity_schema_grounding
+category: knowledge_extraction
+name: Entity Schema Grounding
+description: >
+  Ground open-form entities to schema entity types.
+
+task_variables:
+  - name: text
+    type: string
+    required: false
+  - name: open_entities
+    type: string
+    required: true
+  - name: memory_context
+    type: string
+    required: false
+
+static_variables:
+  - name: task_name
+    type: string
+    required: true
+  - name: task_goal
+    type: string
+    required: true
+  - name: global_constraints
+    type: string
+    required: true
+  - name: grounding_rules_block
+    type: string
+    required: false
+  - name: type_definitions
+    type: string
+    required: true
+  - name: output_fields_block
+    type: string
+    required: true
+  - name: few_shot_samples
+    type: string
+    required: false
+
+template: |
+  You are performing grounding from open-form entities to the schema.
+
+  Task:
+  {task_name}
+
+  Goal:
+  {task_goal}
+
+  Global constraints:
+  {global_constraints}
+
+  Additional rules:
+  {grounding_rules_block}
+
+  Available schema types:
+  {type_definitions}
+
+  Output fields:
+  {output_fields_block}
+
+  Key requirements:
+  - Output grounding results only for entities that are worth becoming standalone graph nodes; entries that are too weak, too vague, purely propositional, or purely background examples may be omitted.
+  - The type must be one of Character / Object / Concept / Location / TimePoint.
+  - Also assign scope (`global` or `local`).
+  - Preserve the input surface form whenever possible; do not translate or rewrite names unnecessarily.
+  - For generic everyday objects, pure modifier-like time words, descriptive location phrases, or temporary group labels, prefer omitting rather than forcing a type.
+  - Prioritize stable characters, stable locations, key objects, and high-value concepts such as organizations, families, marriages, and professions.
+  - Output a JSON array only. Do not include explanations.
+
+  Examples:
+  {few_shot_samples}
+
+  Input text:
+  {text}
+
+  Open entities:
+  {open_entities}
+
+  Optional memory:
+  {memory_context}

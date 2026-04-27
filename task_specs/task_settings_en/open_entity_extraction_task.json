@@ -1,0 +1,35 @@
+[
+  {
+    "task": "open_entity_extraction",
+    "task_name": "Open Entity Extraction",
+    "task_goal": "Extract narrative entities that are neither Event nor Occasion. Return only entity name and description first; schema grounding will be done later.",
+    "global_constraints": [
+      "Do not invent entities that are not grounded in the text.",
+      "Do not output schema types.",
+      "Exclude Event and Occasion.",
+      "Keep names close to the surface form and original language of the text; do not translate without reason.",
+      "Output a JSON array only."
+    ],
+    "output_fields": ["name", "description"],
+    "extraction_rules": [
+      "Favor recall, but keep only entities with clear textual support.",
+      "Prioritize stable characters, stable locations, key objects, and high-value concepts such as organizations, families, marriages, professions, or social identities.",
+      "Avoid duplicating already known entities.",
+      "Names that appear only in an incidental list and have no local narrative function in the current passage may be skipped.",
+      "Do not prioritize everyday generic objects, pure time modifiers, descriptive location phrases, or temporary group labels such as book, door, day, evening, a room where..., the area around....",
+      "If an entity is unlikely to enter the key relation network or recur stably later in the narrative, prefer not to extract it."
+    ],
+    "few_shot": {
+      "examples": [
+        {
+          "name": "Alcoholics Anonymous",
+          "description": "An organization or meeting system that supports recovery from alcohol abuse."
+        },
+        {
+          "name": "buried bottle of alcohol",
+          "description": "A bottle hidden under the lawn that may be retrieved later."
+        }
+      ]
+    }
+  }
+]

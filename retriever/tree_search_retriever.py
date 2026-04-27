@@ -662,6 +662,17 @@ class TreeSearchRetrieverBackbone:
         branch_context: str = "",
     ) -> str:
         level_key = _safe_str(level_name).lower()
+        lowered_query = _safe_str(query).lower()
+        immediate_temporal = any(
+            phrase in lowered_query
+            for phrase in [
+                "what happened after",
+                "what happened next",
+                "immediately after",
+                "right after",
+            ]
+        )
+        why_question = lowered_query.startswith("why ") or " why " in f" {lowered_query} "
         if level_key == "storyline":
             selection_focus = (
                 "Pick the broad narrative arc that most likely contains the answer. "
@@ -678,10 +689,22 @@ class TreeSearchRetrieverBackbone:
                 "Prefer explicit answer-bearing actions or interactions over broad summaries."
             )
         else:
-            selection_focus = (
-                "Pick the section that is most likely to contain explicit answer evidence. "
-                "Prefer sections with direct wording, local details, or decisive clues."
-            )
+            if immediate_temporal:
+                selection_focus = (
+                    "Pick the section that contains the anchor event and the first immediate next local step. "
+                    "Prefer the earliest section that names the first new action, actor, or change right after the anchor. "
+                    "Do not prefer a later consequence just because it is more dramatic or more fully explained."
+                )
+            elif why_question:
+                selection_focus = (
+                    "Pick the section that states the direct reason or motive for the asked action or decision. "
+                    "Prefer answer-bearing reasons over broader background setup, mechanism, or aftermath."
+                )
+            else:
+                selection_focus = (
+                    "Pick the section that is most likely to contain explicit answer evidence. "
+                    "Prefer sections with direct wording, local details, or decisive clues."
+                )
         candidate_lines: List[str] = []
         for idx, row in enumerate(rows, 1):
             rid = _safe_str(row.get("id")) or f"{level_name.lower()}_{idx}"
@@ -1379,6 +1402,291 @@ class NarrativeTreeRetriever(TreeSearchRetrieverBackbone):
         rows.sort(key=lambda row: (float(row.get("score", 0.0)), row.get("name", "")), reverse=True)
         return rows[: max(1, int(final_top_k or 8))]
 
+    @staticmethod
+    def _path_context_from_rows(*rows: Optional[Dict[str, Any]]) -> str:
+        bits: List[str] = []
+        for row in rows:
+            if not row:
+                continue
+            name = _safe_str(row.get("name"))
+            desc = _safe_str(row.get("description"))
+            if name:
+                bits.append(name)
+            if desc:
+                bits.append(desc[:260])
+        return "\n".join(bits)
+
+    @staticmethod
+    def _merge_best_rows(rows: List[Dict[str, Any]], *, limit: int) -> List[Dict[str, Any]]:
+        merged: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            rid = _safe_str(row.get("id") or row.get("document_id"))
+            if not rid:
+                continue
+            current = merged.get(rid)
+            if current is None or float(row.get("score", 0.0) or 0.0) > float(current.get("score", 0.0) or 0.0):
+                merged[rid] = dict(row)
+        out = list(merged.values())
+        out.sort(
+            key=lambda row: (
+                float(row.get("path_score", row.get("score", 0.0)) or 0.0),
+                float(row.get("score", 0.0) or 0.0),
+                _safe_str(row.get("name") or row.get("document_id")),
+            ),
+            reverse=True,
+        )
+        return out[: max(1, int(limit or 5))]
+
+    @staticmethod
+    def _score_path(
+        *,
+        storyline: Optional[Dict[str, Any]] = None,
+        episode: Optional[Dict[str, Any]] = None,
+        event: Optional[Dict[str, Any]] = None,
+        document: Optional[Dict[str, Any]] = None,
+    ) -> float:
+        weighted: List[Tuple[float, float]] = []
+        if storyline:
+            weighted.append((0.20, float(storyline.get("score", 0.0) or 0.0)))
+        if episode:
+            weighted.append((0.35, float(episode.get("score", 0.0) or 0.0)))
+        if event:
+            weighted.append((0.25, float(event.get("score", 0.0) or 0.0)))
+        if document:
+            weighted.append((0.20, float(document.get("score", 0.0) or 0.0)))
+        if not weighted:
+            return 0.0
+        denom = sum(weight for weight, _ in weighted) or 1.0
+        return sum(weight * score for weight, score in weighted) / denom
+
+    def _search_with_beam_tree(
+        self,
+        *,
+        query: str,
+        storyline_top_k: int,
+        episode_top_k: int,
+        event_top_k: int,
+        document_top_k: int,
+        llm_filter_threshold: float,
+        max_evidence_length: int,
+    ) -> Dict[str, Any]:
+        storyline_candidate_k = max(8, int(storyline_top_k or 4) * 3)
+        storyline_candidates = self.storyline_index.search(
+            query,
+            top_k=storyline_candidate_k,
+            vector_top_k=max(6, storyline_candidate_k),
+            keyword_top_k=max(4, min(10, storyline_candidate_k)),
+        ) if self.storyline_index.nodes else []
+        storyline_rows = self._tree_search_select_rows(
+            level_name="Storyline",
+            query=query,
+            rows=storyline_candidates,
+            top_k=max(1, int(storyline_top_k or 4)),
+            threshold=float(llm_filter_threshold or 0.35),
+            candidate_limit=storyline_candidate_k,
+        ) if storyline_candidates else []
+
+        fallback_mode = not storyline_rows
+        episode_paths: List[Dict[str, Any]] = []
+        episode_beam_per_storyline = max(
+            2,
+            min(
+                max(3, int(episode_top_k or 5)),
+                math.ceil(max(1, int(episode_top_k or 5)) / max(1, len(storyline_rows))) + 1,
+            ),
+        )
+
+        if fallback_mode:
+            episode_candidate_k = max(8, int(episode_top_k or 5) * 3)
+            episode_candidates = self.episode_index.search(
+                query,
+                top_k=episode_candidate_k,
+                vector_top_k=max(6, episode_candidate_k),
+                keyword_top_k=max(4, min(10, episode_candidate_k)),
+            )
+            selected_episodes = self._tree_search_select_rows(
+                level_name="Episode",
+                query=query,
+                rows=episode_candidates,
+                top_k=max(1, int(episode_top_k or 5)),
+                threshold=float(llm_filter_threshold or 0.35),
+                candidate_limit=episode_candidate_k,
+            ) if episode_candidates else []
+            for episode in selected_episodes:
+                episode = dict(episode)
+                episode["path_score"] = self._score_path(episode=episode)
+                episode_paths.append({"storyline": None, "episode": episode})
+        else:
+            for storyline in storyline_rows:
+                storyline_id = _safe_str(storyline.get("id"))
+                candidate_episode_ids = list(self.storyline_to_episodes.get(storyline_id, []))
+                if not candidate_episode_ids:
+                    continue
+                episode_candidate_k = max(6, episode_beam_per_storyline * 4)
+                episode_candidates = self.episode_index.search(
+                    query,
+                    top_k=episode_candidate_k,
+                    vector_top_k=max(6, episode_candidate_k),
+                    keyword_top_k=max(4, min(8, episode_candidate_k)),
+                    candidate_ids=candidate_episode_ids,
+                )
+                for episode in episode_candidates:
+                    episode.setdefault("storyline_names", [])
+                    episode.setdefault("storyline_ids", [])
+                    story_name = _safe_str(storyline.get("name"))
+                    if story_name and story_name not in episode["storyline_names"]:
+                        episode["storyline_names"].append(story_name)
+                    if storyline_id and storyline_id not in episode["storyline_ids"]:
+                        episode["storyline_ids"].append(storyline_id)
+                    episode["score"] = max(
+                        float(episode.get("score", 0.0) or 0.0),
+                        float(storyline.get("score", 0.0) or 0.0) * 0.72,
+                    )
+                branch_context = self._path_context_from_rows(storyline)
+                selected_episodes = self._tree_search_select_rows(
+                    level_name="Episode",
+                    query=query,
+                    rows=episode_candidates,
+                    top_k=episode_beam_per_storyline,
+                    threshold=float(llm_filter_threshold or 0.35),
+                    branch_context=branch_context,
+                    candidate_limit=episode_candidate_k,
+                ) if episode_candidates else []
+                for episode in selected_episodes:
+                    episode = dict(episode)
+                    episode["path_score"] = self._score_path(storyline=storyline, episode=episode)
+                    episode_paths.append({"storyline": dict(storyline), "episode": episode})
+
+        episode_paths.sort(
+            key=lambda item: float((item.get("episode") or {}).get("path_score", 0.0) or 0.0),
+            reverse=True,
+        )
+        episode_paths = episode_paths[: max(1, int(episode_top_k or 5) * 2)]
+
+        event_paths: List[Dict[str, Any]] = []
+        event_beam_per_episode = max(1, min(3, math.ceil(max(1, int(event_top_k or 8)) / max(1, len(episode_paths))) + 1))
+        for item in episode_paths:
+            storyline = item.get("storyline")
+            episode = item.get("episode")
+            if not episode:
+                continue
+            event_candidates = self._rank_events(
+                query,
+                episode_rows=[episode],
+                final_top_k=max(6, event_beam_per_episode * 4),
+            )
+            branch_context = self._path_context_from_rows(storyline, episode)
+            selected_events = self._tree_search_select_rows(
+                level_name="Event",
+                query=query,
+                rows=event_candidates,
+                top_k=event_beam_per_episode,
+                threshold=float(llm_filter_threshold or 0.35),
+                branch_context=branch_context,
+                candidate_limit=max(6, event_beam_per_episode * 4),
+            ) if event_candidates else []
+            if selected_events:
+                for event in selected_events:
+                    event = dict(event)
+                    event["path_score"] = self._score_path(storyline=storyline, episode=episode, event=event)
+                    event_paths.append({"storyline": storyline, "episode": episode, "event": event})
+            else:
+                event_paths.append({"storyline": storyline, "episode": episode, "event": None})
+
+        event_paths.sort(
+            key=lambda item: self._score_path(
+                storyline=item.get("storyline"),
+                episode=item.get("episode"),
+                event=item.get("event"),
+            ),
+            reverse=True,
+        )
+        event_paths = event_paths[: max(1, int(event_top_k or 8) * 2)]
+
+        document_rows_all: List[Dict[str, Any]] = []
+        evidence_by_doc: Dict[str, Tuple[str, float]] = {}
+        tree_paths: List[Dict[str, Any]] = []
+        for item in event_paths:
+            storyline = item.get("storyline")
+            episode = item.get("episode")
+            event = item.get("event")
+            doc_ids: List[str] = []
+            parent_scores: Dict[str, float] = {}
+            for parent in [event, episode]:
+                if not parent:
+                    continue
+                parent_score = self._score_path(storyline=storyline, episode=episode, event=event)
+                for document_id in _as_list(parent.get("source_documents")):
+                    if document_id not in doc_ids:
+                        doc_ids.append(document_id)
+                    parent_scores[document_id] = max(parent_scores.get(document_id, 0.0), parent_score)
+            if not doc_ids:
+                continue
+            ranked_docs, evidence = self._search_document_evidence(
+                query=query,
+                document_ids=doc_ids,
+                max_length=max_evidence_length,
+                limit=max(2, min(4, int(document_top_k or 6))),
+                parent_scores=parent_scores,
+            )
+            for doc in ranked_docs[: max(1, min(3, int(document_top_k or 6)))]:
+                doc = dict(doc)
+                doc["storyline_id"] = _safe_str((storyline or {}).get("id"))
+                doc["storyline_name"] = _safe_str((storyline or {}).get("name"))
+                doc["episode_id"] = _safe_str((episode or {}).get("id"))
+                doc["episode_name"] = _safe_str((episode or {}).get("name"))
+                doc["event_id"] = _safe_str((event or {}).get("id"))
+                doc["event_name"] = _safe_str((event or {}).get("name"))
+                doc["path_score"] = self._score_path(storyline=storyline, episode=episode, event=event, document=doc)
+                doc["score"] = max(float(doc.get("score", 0.0) or 0.0), float(doc["path_score"]))
+                document_rows_all.append(doc)
+            for document_id, snippet in evidence:
+                path_score = self._score_path(storyline=storyline, episode=episode, event=event)
+                current = evidence_by_doc.get(document_id)
+                if current is None or path_score > current[1]:
+                    evidence_by_doc[document_id] = (snippet, path_score)
+            tree_paths.append(
+                {
+                    "storyline_id": _safe_str((storyline or {}).get("id")),
+                    "storyline_name": _safe_str((storyline or {}).get("name")),
+                    "episode_id": _safe_str((episode or {}).get("id")),
+                    "episode_name": _safe_str((episode or {}).get("name")),
+                    "event_id": _safe_str((event or {}).get("id")),
+                    "event_name": _safe_str((event or {}).get("name")),
+                    "document_ids": doc_ids[: max(1, int(document_top_k or 6))],
+                    "path_score": self._score_path(storyline=storyline, episode=episode, event=event),
+                }
+            )
+
+        storyline_rows = self._merge_best_rows(storyline_rows, limit=storyline_top_k) if storyline_rows else []
+        episode_rows = self._merge_best_rows([item["episode"] for item in episode_paths if item.get("episode")], limit=episode_top_k)
+        event_rows = self._merge_best_rows([item["event"] for item in event_paths if item.get("event")], limit=event_top_k) if event_paths else []
+        document_rows = self._merge_best_rows(document_rows_all, limit=document_top_k) if document_rows_all else []
+        selected_doc_ids = [_safe_str(row.get("document_id")) for row in document_rows if _safe_str(row.get("document_id"))]
+        evidence: List[Tuple[str, str]] = []
+        for document_id in selected_doc_ids:
+            if document_id in evidence_by_doc:
+                evidence.append((document_id, evidence_by_doc[document_id][0]))
+        if not evidence and selected_doc_ids:
+            _, evidence = self._search_document_evidence(
+                query=query,
+                document_ids=selected_doc_ids,
+                max_length=max_evidence_length,
+                limit=max(1, int(document_top_k or 6)),
+                parent_scores={row.get("document_id"): float(row.get("score", 0.0) or 0.0) for row in document_rows},
+            )
+        tree_paths.sort(key=lambda row: float(row.get("path_score", 0.0) or 0.0), reverse=True)
+        return {
+            "fallback_mode": fallback_mode,
+            "storylines": storyline_rows,
+            "episodes": episode_rows,
+            "events": event_rows,
+            "documents": selected_doc_ids[: max(1, int(document_top_k or 6))],
+            "document_rows": document_rows[: max(1, int(document_top_k or 6))],
+            "evidence": evidence[: max(1, int(document_top_k or 6))],
+            "tree_paths": tree_paths[: max(1, int(document_top_k or 6))],
+        }
+
     def _narrative_expand_rows(
         self,
         *,
@@ -1647,108 +1955,35 @@ class NarrativeTreeRetriever(TreeSearchRetrieverBackbone):
         llm_filter_threshold: float = 0.35,
         max_evidence_length: int = 240,
     ) -> Dict[str, Any]:
-        storyline_candidates = self.storyline_index.search(
-            query,
-            top_k=max(1, int(storyline_top_k or 4)),
-            vector_top_k=max(4, int(storyline_top_k or 4) * 2),
-            keyword_top_k=max(3, int(storyline_top_k or 4)),
-        ) if self.storyline_index.nodes else []
-        storyline_rows = self._tree_search_select_rows(
-            level_name="Storyline",
+        if self.tree_search_config.enabled:
+            candidate_k = max(8, int(storyline_top_k or 4) * 3)
+            storyline_candidates = self.storyline_index.search(
+                query,
+                top_k=candidate_k,
+                vector_top_k=max(6, candidate_k),
+                keyword_top_k=max(4, min(10, candidate_k)),
+            ) if self.storyline_index.nodes else []
+            if self._should_use_mcts(candidate_count=len(storyline_candidates)):
+                result = self._search_with_mcts(
+                    query=query,
+                    storyline_candidates=storyline_candidates,
+                    storyline_top_k=storyline_top_k,
+                    episode_top_k=episode_top_k,
+                    event_top_k=event_top_k,
+                    document_top_k=document_top_k,
+                    max_evidence_length=max_evidence_length,
+                )
+                result["search_mode"] = "mcts_tree"
+                return result
+
+        result = self._search_with_beam_tree(
             query=query,
-            rows=storyline_candidates,
-            top_k=max(1, int(storyline_top_k or 4)),
-            threshold=float(llm_filter_threshold or 0.35),
-            candidate_limit=max(8, int(storyline_top_k or 4) * 2),
-        ) if storyline_candidates else []
-
-        fallback_mode = not storyline_rows
-        candidate_episode_ids: Optional[List[str]] = None
-        if not fallback_mode:
-            ids: List[str] = []
-            for storyline in storyline_rows:
-                for episode_id in self.storyline_to_episodes.get(_safe_str(storyline.get("id")), []):
-                    if episode_id not in ids:
-                        ids.append(episode_id)
-            candidate_episode_ids = ids or None
-
-        episode_candidates = self.episode_index.search(
-            query,
-            top_k=max(max(1, int(episode_top_k or 5)) * 2, 8),
-            vector_top_k=max(6, int(episode_top_k or 5) * 2),
-            keyword_top_k=max(4, int(episode_top_k or 5)),
-            candidate_ids=candidate_episode_ids,
+            storyline_top_k=storyline_top_k,
+            episode_top_k=episode_top_k,
+            event_top_k=event_top_k,
+            document_top_k=document_top_k,
+            llm_filter_threshold=llm_filter_threshold,
+            max_evidence_length=max_evidence_length,
         )
-        branch_storylines = ", ".join([_safe_str(row.get("name")) for row in storyline_rows if _safe_str(row.get("name"))])
-        episode_rows = self._tree_search_select_rows(
-            level_name="Episode",
-            query=query,
-            rows=episode_candidates,
-            top_k=max(1, int(episode_top_k or 5)),
-            threshold=float(llm_filter_threshold or 0.35),
-            branch_context=f"Selected storylines: {branch_storylines}" if branch_storylines else "",
-            candidate_limit=max(8, int(episode_top_k or 5) * 2),
-        ) if episode_candidates else []
-
-        storyline_score_map = {row["id"]: float(row.get("score", 0.0) or 0.0) for row in storyline_rows}
-        if not fallback_mode:
-            episode_storyline_names: Dict[str, List[str]] = defaultdict(list)
-            episode_storyline_scores: Dict[str, float] = defaultdict(float)
-            for storyline_id, episode_ids in self.storyline_to_episodes.items():
-                if storyline_id not in storyline_score_map:
-                    continue
-                storyline_name = self.storyline_index.node_map.get(storyline_id).name if self.storyline_index.node_map.get(storyline_id) else storyline_id
-                for episode_id in episode_ids:
-                    episode_storyline_names[episode_id].append(storyline_name)
-                    episode_storyline_scores[episode_id] = max(episode_storyline_scores[episode_id], storyline_score_map[storyline_id])
-            for row in episode_rows:
-                row_id = _safe_str(row.get("id"))
-                if row_id in episode_storyline_names:
-                    row["storyline_names"] = episode_storyline_names[row_id]
-                    row["score"] = max(float(row.get("score", 0.0)), episode_storyline_scores[row_id] * 0.85)
-
-        event_candidates = self._rank_events(
-            query,
-            episode_rows=episode_rows,
-            final_top_k=max(max(1, int(event_top_k or 8)) * 2, 10),
-        )
-        branch_episodes = ", ".join([_safe_str(row.get("name")) for row in episode_rows if _safe_str(row.get("name"))])
-        event_rows = self._tree_search_select_rows(
-            level_name="Event",
-            query=query,
-            rows=event_candidates,
-            top_k=max(1, int(event_top_k or 8)),
-            threshold=float(llm_filter_threshold or 0.35),
-            branch_context=f"Selected episodes: {branch_episodes}" if branch_episodes else "",
-            candidate_limit=max(10, int(event_top_k or 8) * 2),
-        ) if event_candidates else []
-
-        document_ids: List[str] = []
-        parent_scores: Dict[str, float] = {}
-        for row in episode_rows:
-            for document_id in _as_list(row.get("source_documents")):
-                if document_id not in document_ids:
-                    document_ids.append(document_id)
-                parent_scores[document_id] = max(parent_scores.get(document_id, 0.0), float(row.get("score", 0.0) or 0.0))
-        for row in event_rows:
-            for document_id in _as_list(row.get("source_documents")):
-                if document_id not in document_ids:
-                    document_ids.append(document_id)
-                parent_scores[document_id] = max(parent_scores.get(document_id, 0.0), float(row.get("score", 0.0) or 0.0))
-        ranked_docs, evidence = self._search_document_evidence(
-            query=query,
-            document_ids=document_ids,
-            max_length=max_evidence_length,
-            limit=max(3, min(8, int(document_top_k or 6))),
-            parent_scores=parent_scores,
-        )
-
-        return {
-            "fallback_mode": fallback_mode,
-            "storylines": storyline_rows,
-            "episodes": episode_rows,
-            "events": event_rows,
-            "documents": [_safe_str(row.get("document_id")) for row in ranked_docs[: max(1, int(document_top_k or 6))]],
-            "document_rows": ranked_docs,
-            "evidence": evidence,
-        }
+        result["search_mode"] = "beam_tree"
+        return result

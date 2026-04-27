@@ -593,6 +593,91 @@ class EnhancedJSONUtils:
     """Enhanced JSON handling utilities."""
 
     @staticmethod
+    def _coerce_probability(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        try:
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    return None
+                is_percent = text.endswith("%")
+                text = text.rstrip("%").strip()
+                prob = float(text)
+                if is_percent:
+                    prob = prob / 100.0
+            else:
+                prob = float(value)
+        except Exception:
+            return None
+        if prob > 1.0 and prob <= 100.0:
+            prob = prob / 100.0
+        return max(0.0, min(1.0, prob))
+
+    @staticmethod
+    def _coerce_bool_like(value: Any) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"true", "yes", "y", "1", "relevant", "likely", "是", "相关", "有关"}:
+                return True
+            if text in {"false", "no", "n", "0", "irrelevant", "unlikely", "否", "不相关", "无关"}:
+                return False
+        return None
+
+    @staticmethod
+    def _try_local_schema_normalization(
+        parsed: Optional[Any],
+        required_fields: Optional[List[str]],
+        field_validators: Optional[Dict[str, Callable]],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Normalize very small, high-frequency schemas locally before escalating to
+        an LLM repair call. This is intentionally conservative: it only handles
+        the retrieval relevance schema used heavily during QA.
+        """
+        if not isinstance(parsed, dict):
+            return None
+
+        required = set(required_fields or [])
+        if not {"probability", "is_relevant", "reason"}.issubset(required):
+            return None
+
+        normalized = dict(parsed)
+        probability = EnhancedJSONUtils._coerce_probability(normalized.get("probability"))
+        is_relevant = EnhancedJSONUtils._coerce_bool_like(normalized.get("is_relevant"))
+
+        if probability is None and is_relevant is not None:
+            probability = 1.0 if is_relevant else 0.0
+        if is_relevant is None and probability is not None:
+            is_relevant = probability >= 0.5
+
+        normalized["probability"] = 0.0 if probability is None else probability
+        normalized["is_relevant"] = False if is_relevant is None else is_relevant
+        normalized["reason"] = "" if normalized.get("reason") is None else str(normalized.get("reason", ""))
+
+        for field in required:
+            if field not in normalized:
+                return None
+
+        if field_validators:
+            for field, validator in field_validators.items():
+                if field not in normalized:
+                    return None
+                try:
+                    if not validator(normalized[field]):
+                        return None
+                except Exception:
+                    return None
+
+        return normalized
+
+    @staticmethod
     def analyze_json_response(
         content: str,
         required_fields: Optional[List[str]] = None,
@@ -666,6 +751,14 @@ class EnhancedJSONUtils:
         is_valid = issue_type == JSONIssueType.VALID
         if is_valid:
             return parsed, corrected_content
+
+        normalized = EnhancedJSONUtils._try_local_schema_normalization(
+            parsed,
+            required_fields,
+            field_validators,
+        )
+        if normalized is not None:
+            return normalized, json.dumps(normalized, ensure_ascii=False)
 
         # Prefer the locally repaired JSON as the repair basis before escalating to LLM repair.
         current_content = corrected_content or content

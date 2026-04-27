@@ -54,6 +54,8 @@ template: |
   ====================
   Given chain_information (a sequence of episode summaries/descriptions connected by EPISODE_CAUSAL_LINK edges),
   extract a single Storyline card.
+  If chain_information is marked as CHAIN COMMUNITY MODE, it contains multiple highly overlapping chain variants.
+  In that case, merge the variants into exactly ONE broader and distinctive Storyline rather than summarizing each variant separately.
 
   Storyline Output Fields:
   {storyline_output_fields_text}
@@ -64,6 +66,8 @@ template: |
   {storyline_construction_constraints_text}
   - Avoid thematic or emotional analysis. Focus on causal/temporal reasoning structure.
   - key_characters and key_locations must be extracted only from chain_information.
+  - A Storyline must have a clear thread identity. Avoid producing generic variants of the same event cluster.
+  - The impact must state a concrete downstream condition, constraint, risk, or changed relationship rather than vague tension.
 
   ====================
   Writing Guidelines
@@ -96,6 +100,8 @@ template: |
   Prohibited Output Patterns (CRITICAL)
   ====================
   - Do NOT copy phrases like "the chain shows" / "this storyline centers on" / "this constitutes".
+  - Do NOT create a separate implicit storyline for each variant in CHAIN COMMUNITY MODE.
+  - Do NOT use generic names that only restate a character leaving, reacting, or feeling tension unless the thread-level change is clear.
   - Do NOT invent motivations, intentions, or psychological states not supported by chain_information.
   - Do NOT add new events or causal links not implied by the chain.
 

@@ -39,6 +39,7 @@ import copy
 import re
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 from core.utils.config import KAGConfig
 from core.storage.graph_store import GraphStore
@@ -87,7 +88,6 @@ from core.functions.tool_calls import (
     GetCoSectionEntities,  # graph-side helper (not SQL)
 
     # Vector DB tools
-    VDBHierdocsSearchTool,
     VDBDocsSearchTool,
     VDBGetDocsByDocumentIDsTool,
     VDBSentencesSearchTool,
@@ -99,10 +99,11 @@ from core.functions.tool_calls import (
     SearchRelatedContentTool,
     CommunityGraphRAGSearch,
     NarrativeHierarchicalSearch,
+    NarrativeCausalTraceSearch,
+    HybridEvidenceSearch,
     SectionEvidenceSearch,
     ChoiceGroundedEvidenceSearch,
     EntityEventTraceSearch,
-    FactTimelineResolutionSearch,
 )
 from core.functions.tool_calls.tool_metadata import ToolMetadataProvider
 
@@ -128,7 +129,6 @@ TOOL_OUTPUT_CHAR_LIMITS: Dict[str, int] = {
     "section_evidence_search": 2200,
     "choice_grounded_evidence_search": 2400,
     "entity_event_trace_search": 2600,
-    "fact_timeline_resolution_search": 2600,
     "lookup_titles_by_document_ids": 1200,
     "lookup_document_ids_by_title": 1200,
     "search_related_content": 1600,
@@ -136,7 +136,6 @@ TOOL_OUTPUT_CHAR_LIMITS: Dict[str, int] = {
     "vdb_get_docs_by_document_ids": 2200,
     "vdb_search_docs": 2200,
     "vdb_search_sentences": 1800,
-    "vdb_search_hierdocs": 1800,
 }
 DEFAULT_TOOL_OUTPUT_CHAR_LIMIT = 2400
 
@@ -406,7 +405,11 @@ class QuestionAnsweringAgent:
             getattr(config.knowledge_graph_builder, "file_path", "") or "data/knowledge_graph"
         )
         self._base_system_message = system_message or DEFAULT_SYSTEM_MESSAGE
-        self.rag_cfg = rag_cfg or {}
+        self.rag_cfg = dict(rag_cfg or {})
+        self.rag_cfg.setdefault(
+            "artifact_workspace_dir",
+            str(Path(self.knowledge_graph_path).resolve().parent),
+        )
         configured_mode = self._normalize_aggregation_mode(
             aggregation_mode=str(getattr(self.config.global_config, "aggregation_mode", "") or "").strip(),
             legacy_mode=None,
@@ -505,6 +508,7 @@ class QuestionAnsweringAgent:
             document_parser=self.document_parser,
             section_label=str(DOC_TYPE_META.get(self.doc_type, DOC_TYPE_META["general"]).get("section_label", "Document")),
             max_workers=getattr(self.config.document_processing, "max_workers", 8),
+            tree_search_config=getattr(self.config, "tree_search", None),
         )
         self.narrative_tree_retriever = NarrativeTreeRetriever(
             graph_query_utils=self.graph_query_utils,
@@ -512,6 +516,7 @@ class QuestionAnsweringAgent:
             sentence_vector_store=self.sentence_vector_store,
             document_parser=self.document_parser,
             max_workers=getattr(self.config.document_processing, "max_workers", 8),
+            tree_search_config=getattr(self.config, "tree_search", None),
         )
 
         # Optional strategy memory for generic tool-routing patterns.
@@ -1644,6 +1649,19 @@ class QuestionAnsweringAgent:
             "sampling_branch_spec": copy.deepcopy(spec),
         }
 
+    @staticmethod
+    def _looks_like_manual_tool_request(text: str) -> bool:
+        raw = str(text or "").strip()
+        if not raw:
+            return False
+        try:
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                return bool(payload.get("tool_calls") or payload.get("function_call"))
+        except Exception:
+            pass
+        return '"tool_calls"' in raw or '"function_call"' in raw
+
     def _run_single_route(
         self,
         *,
@@ -1727,13 +1745,21 @@ class QuestionAnsweringAgent:
 
             tool_uses = self.extract_tool_uses(responses)
             final_text = self.extract_final_text(responses)
+            final_text_is_tool_request = self._looks_like_manual_tool_request(final_text)
             if require_tool_use:
-                if tool_uses:
+                if tool_uses and not final_text_is_tool_request:
+                    return responses
+                if tool_uses and final_text_is_tool_request and stage_idx < (len(tool_subsets) - 1):
+                    continue
+                if tool_uses and final_text_is_tool_request:
                     return responses
                 if stage_idx == (len(tool_subsets) - 1):
                     return self._compose_missing_tool_use_response(lang=lang)
                 continue
-            if tool_uses or final_text.strip() or stage_idx == (len(tool_subsets) - 1):
+            if (
+                (tool_uses or final_text.strip())
+                and not final_text_is_tool_request
+            ) or stage_idx == (len(tool_subsets) - 1):
                 return responses
         if last_error is not None:
             raise last_error
@@ -2608,11 +2634,6 @@ class QuestionAnsweringAgent:
             VDBDocsSearchTool(self.document_vector_store),
             VDBGetDocsByDocumentIDsTool(self.document_vector_store),
             VDBSentencesSearchTool(self.sentence_vector_store),
-            VDBHierdocsSearchTool(
-                document_vector_store=self.document_vector_store,
-                sentence_vector_store=self.sentence_vector_store,
-                reranker=reranker,
-            ),
             SectionEvidenceSearch(
                 self.graph_query_utils,
                 self.document_vector_store,
@@ -2643,17 +2664,34 @@ class QuestionAnsweringAgent:
                 interaction_db_path=self.db_path or "",
                 doc_type=self.doc_type,
             ),
-            FactTimelineResolutionSearch(
+            NarrativeCausalTraceSearch(
                 self.graph_query_utils,
                 self.document_vector_store,
                 self.document_parser,
                 sentence_vector_store=self.sentence_vector_store,
+                embedding_config=emb_cfg,
                 max_workers=getattr(self.config.document_processing, "max_workers", 8),
-                section_retriever=self.section_tree_retriever,
                 narrative_retriever=self.narrative_tree_retriever,
+                llm=self.retriever_llm,
             ),
         ]
-        tools.extend(self._build_native_tools(doc_path=doc_path))
+        native_tools = self._build_native_tools(doc_path=doc_path)
+        bm25_tool = next((tool for tool in native_tools if getattr(tool, "name", "") == "bm25_search_docs"), None)
+        tools.append(
+            HybridEvidenceSearch(
+                self.graph_query_utils,
+                self.document_vector_store,
+                self.document_parser,
+                sentence_vector_store=self.sentence_vector_store,
+                doc_type=self.doc_type,
+                embedding_config=emb_cfg,
+                max_workers=getattr(self.config.document_processing, "max_workers", 8),
+                section_retriever=self.section_tree_retriever,
+                bm25_tool=bm25_tool,
+                llm=self.retriever_llm,
+            )
+        )
+        tools.extend(native_tools)
         return tools
 
     def _build_native_tools(self, *, doc_path: Optional[str]) -> List[Any]:

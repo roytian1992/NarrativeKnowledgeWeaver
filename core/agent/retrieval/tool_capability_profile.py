@@ -87,6 +87,16 @@ CAPABILITY_KEYWORDS: Dict[str, List[str]] = {
         "locates relevant sections",
         "localization",
     ],
+    "structural_ranking": [
+        "deterministically rank",
+        "centrality",
+        "pagerank",
+        "degree",
+        "betweenness",
+        "top-k ranking",
+        "most central",
+        "narratively key",
+    ],
     "followup_refinement": [
         "follow-up",
         "after another tool",
@@ -102,6 +112,7 @@ CAPABILITY_PRIORITY: List[str] = [
     "option_comparison",
     "narrative_aggregation",
     "chronology_reasoning",
+    "structural_ranking",
     "localization",
     "passage_evidence",
     "sentence_retrieval",
@@ -120,6 +131,7 @@ CAPABILITY_LABELS: Dict[str, str] = {
     "option_comparison": "option comparison",
     "narrative_aggregation": "narrative aggregation",
     "chronology_reasoning": "chronology reasoning",
+    "structural_ranking": "deterministic graph ranking",
     "localization": "section / document localization",
     "followup_refinement": "follow-up refinement",
 }
@@ -159,6 +171,8 @@ def infer_capabilities(
         out.append("narrative_aggregation")
     if "timeline" in lowered_name and "chronology_reasoning" not in out:
         out.append("chronology_reasoning")
+    if ("centrality" in lowered_name or "top_k" in lowered_name) and "structural_ranking" not in out:
+        out.append("structural_ranking")
     if "sentence" in lowered_name and "sentence_retrieval" not in out:
         out.append("sentence_retrieval")
     if "bm25" in lowered_name and "lexical_match" not in out:
@@ -188,6 +202,8 @@ def family_from_capabilities(capabilities: List[str], *, fallback_family: str) -
         return "entity_relation"
     if {"narrative_aggregation", "chronology_reasoning"} & caps:
         return "narrative_reasoning"
+    if {"structural_ranking"} & caps:
+        return "structural_lookup"
     if {"passage_evidence", "sentence_retrieval", "document_fetch", "lexical_match", "option_comparison"} & caps:
         return "local_evidence"
     if {"localization", "followup_refinement"} & caps:

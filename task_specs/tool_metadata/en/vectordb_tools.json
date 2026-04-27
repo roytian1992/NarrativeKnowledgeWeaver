@@ -1,7 +1,7 @@
 {
   "vdb_search_docs": {
     "name": "vdb_search_docs",
-    "description": "Document-level semantic retrieval from the vector store. Use for broad topical recall when you need a few candidate passages or documents related to the question. Good for coarse exploration, but usually weaker than `vdb_search_hierdocs` or `vdb_search_sentences` for precise QA evidence.",
+    "description": "Document-level semantic retrieval from the vector store. Use for broad topical recall when you need a few candidate passages or documents related to the question. For stronger local evidence, prefer `hybrid_evidence_search` or `vdb_search_sentences`.",
     "parameters": [
       {
         "name": "query",
@@ -29,27 +29,9 @@
       }
     ]
   },
-  "vdb_search_hierdocs": {
-    "name": "vdb_search_hierdocs",
-    "description": "Parent-child semantic retrieval: recall relevant sentences, aggregate them to parent passages/documents, then rerank. Use it when wording may be paraphrased, when several answer options are semantically close, or when you need broader context around matched evidence. It is usually better for broad semantic grounding than for resolving whose opinion or relationship is being discussed.",
-    "parameters": [
-      {
-        "name": "query",
-        "type": "string",
-        "description": "Semantic search query describing the evidence you need.",
-        "required": true
-      },
-      {
-        "name": "limit",
-        "type": "integer",
-        "description": "Maximum number of final parent-level hits to return. Default 20.",
-        "required": false
-      }
-    ]
-  },
   "vdb_search_sentences": {
     "name": "vdb_search_sentences",
-    "description": "Sentence-level semantic retrieval for fine-grained evidence. Strong when the answer depends on a specific sentence, paraphrased statement, short fact, reason, attitude, implication, or other local detail and the exact wording is unknown. Do not rely on it alone when the question hinges on whose opinion, relationship, or claim is meant; pair it with lexical or section-grounded retrieval in those cases.",
+    "description": "Sentence-level semantic retrieval for fine-grained evidence. Strong when the answer depends on a specific sentence, paraphrased statement, short fact, reason, attitude, implication, or other local detail and the exact wording is unknown. It is weaker when used alone for immediate before/after questions, because top hits can mix the anchor event with later downstream consequences from nearby sentences. In those cases, prefer or pair it with a scene- or section-grounded retrieval path.",
     "parameters": [
       {
         "name": "query",

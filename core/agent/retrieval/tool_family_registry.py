@@ -35,7 +35,7 @@ TOOL_FAMILY_CAPABILITY_CARDS: Dict[str, str] = {
         "Use for named entity lookup, relation grounding, interaction tracing, and graph-anchored evidence."
     ),
     "structural_lookup": (
-        "Use for section/document localization and resolving document ids or titles before deeper retrieval."
+        "Use for section/document localization, resolving document ids or titles, and deterministic graph-structure rankings."
     ),
     "exploratory": (
         "Use only when direct evidence, narrative aggregation, and entity grounding are insufficient."
@@ -48,14 +48,14 @@ TOOL_FAMILY_MEMBERS: Dict[str, List[str]] = {
         "section_evidence_search",
         "vdb_search_sentences",
         "vdb_get_docs_by_document_ids",
-        "vdb_search_hierdocs",
         "vdb_search_docs",
         "choice_grounded_evidence_search",
+        "hybrid_evidence_search",
     ],
     "narrative_reasoning": [
         "narrative_hierarchical_search",
+        "narrative_causal_trace_search",
         "entity_event_trace_search",
-        "fact_timeline_resolution_search",
     ],
     "entity_relation": [
         "retrieve_entity_by_name",
@@ -67,6 +67,7 @@ TOOL_FAMILY_MEMBERS: Dict[str, List[str]] = {
         "get_interactions_by_document_ids",
     ],
     "structural_lookup": [
+        "top_k_by_centrality",
         "search_sections",
         "lookup_titles_by_document_ids",
         "lookup_document_ids_by_title",
@@ -76,7 +77,6 @@ TOOL_FAMILY_MEMBERS: Dict[str, List[str]] = {
         "get_common_neighbors",
         "find_paths_between_nodes",
         "get_k_hop_subgraph",
-        "top_k_by_centrality",
         "get_co_section_entities",
         "query_similar_facts",
         "search_communities",

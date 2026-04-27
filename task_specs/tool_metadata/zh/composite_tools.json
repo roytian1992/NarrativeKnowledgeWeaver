@@ -67,7 +67,7 @@
   },
   "narrative_hierarchical_search": {
     "name": "narrative_hierarchical_search",
-    "description": "按 Storyline -> Episode -> Event / source_documents 的叙事层级检索证据，适合回答剧情主线、阶段推进、跨章节因果和关键事件关联问题。",
+    "description": "按 Storyline -> Episode -> Event -> source_documents 的多路径叙事树检索证据。它会保留多个 Storyline 起点，并分别展开 Episode/Event 路径后再合并证据，适合回答剧情主线、阶段推进、跨章节因果和关键事件关联问题。",
     "parameters": [
       {
         "name": "query",
@@ -157,6 +157,54 @@
         "name": "related_entity_limit",
         "type": "integer",
         "description": "每种实体类型最多展示多少个章节关联实体，默认 3。",
+        "required": false
+      }
+    ]
+  },
+  "hybrid_evidence_search": {
+    "name": "hybrid_evidence_search",
+    "description": "混合本地证据检索：把 BM25、章节证据、句子向量、文档向量和原文 document 展开合并成一个证据面板。适合需要同时结合关键词匹配和语义召回的问题。它支持直接事实、局部动作、动机、触发因素、前序事件、反应和 near-miss 对比，但作为通用证据工具使用，不依赖关键词硬触发。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "需要检索证据的自然语言问题或查询。",
+        "required": true
+      },
+      {
+        "name": "top_k",
+        "type": "integer",
+        "description": "每路检索保留多少条候选，默认 5。",
+        "required": false
+      },
+      {
+        "name": "max_candidates",
+        "type": "integer",
+        "description": "最多返回多少个候选证据片段，默认 20。",
+        "required": false
+      },
+      {
+        "name": "max_candidate_chars",
+        "type": "integer",
+        "description": "每个候选证据片段最大字符数，默认 1800。",
+        "required": false
+      },
+      {
+        "name": "use_llm_plan",
+        "type": "bool",
+        "description": "是否先用 LLM 生成简短检索计划，默认 true。",
+        "required": false
+      },
+      {
+        "name": "use_llm_judge",
+        "type": "bool",
+        "description": "是否让工具内部对候选证据做判断和摘要，默认 false。",
+        "required": false
+      },
+      {
+        "name": "use_related_content",
+        "type": "bool",
+        "description": "是否从召回文档中额外抽取 related_content，默认 false。",
         "required": false
       }
     ]

@@ -1,0 +1,42 @@
+# Experiment Log 20260421
+
+## STAGE Task 2 Hybrid RAG Formal40 Llama-3.1-8B Rerun
+
+- logged_at: 2026-04-21 +0800
+- status: running
+- started_at: 2026-04-21 20:33:51 +0800
+- method: `hybrid_rag_plain`
+- model: `Meta-Llama-3.1-8B`
+- source_release_type: `formal40 manifest`
+- source_release_path: `/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeKnowledgeWeaver_langgraph/experiments/stage/runs/stage_task2_en30_zh10_r5_w32_20260415/manifest.json`
+- source_release_count: `40 movies / 1245 questions`
+- output_run_dir: `/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeWeaver/experiments/stage/runs/stage_task2_manifest40_hybridrag_plain_c300_o50_llama31_8b_r5_20260421`
+- script_used: `/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeWeaver/experiments/stage/run_stage_task2_hybrid_rag_benchmark.py`
+- launch_wrapper: `/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeWeaver/experiments/stage/run_stage_task2_manifest40_hybridrag_plain_c300_o50_llama31_8b_20260421.sh`
+- config_used: `/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeWeaver/configs/config_openai_quality_stable_llama31_8b.yaml`
+- process:
+  - tmux_session: `stage_task2_hybridrag_llama31_8b_r5_20260421`
+  - shell_pid: `4107528`
+  - runner_pid: `4107536`
+  - run_log: `/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeWeaver/experiments/stage/runs/stage_task2_manifest40_hybridrag_plain_c300_o50_llama31_8b_r5_20260421/run.log`
+- answer_workers: `8`
+- repeats: `5`
+- chunk_size: `300`
+- chunk_overlap: `50`
+- dense_top_k: `8`
+- bm25_top_k: `8`
+- final_top_k: `8`
+- workspace_asset_root: `/vepfs-mlp2/c20250513/241404044/users/roytian/NarrativeWeaver/experiments/stage/assets/article_workspaces_hybridrag_plain_c300_o50`
+- future_novelty_cleanup: `not applicable`
+- supplementation: `not applicable`
+- exact_files_to_write:
+  - `run.log`
+  - `manifest.json`
+  - `experiment.md`
+  - `reports/progress.json`
+  - `reports/summary.json`
+  - `reports/summary.md`
+  - `reports/*.json`
+- known_caveats:
+  - reuses the existing retrieval workspace root because chunking and retrieval settings match the trusted Qwen/Llama-70B baseline
+  - the generation endpoint is the local vLLM server on `http://127.0.0.1:8003/v1`

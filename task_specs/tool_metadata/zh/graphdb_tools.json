@@ -24,14 +24,14 @@
       {
         "name": "resolve_source_documents",
         "type": "bool",
-        "description": "是否把 source_documents 去重映射成可读的场次/章节标题，默认 False。",
+        "description": "是否把 source_documents 去重映射成可读的场次/章节标题，默认 True。",
         "required": false
       }
     ]
   },
   "retrieve_entity_by_name": {
     "name": "retrieve_entity_by_name",
-    "description": "按指定实体类型执行混合实体检索，同时结合名称/别名模糊匹配与语义向量匹配，并对结果去重重排。可选把 source_documents 去重映射成可读的场次/章节标题。",
+    "description": "按指定实体类型执行混合实体检索，同时结合名称/别名模糊匹配与语义向量匹配，并对结果去重重排。默认把 source_documents 去重映射成可读的场次/章节标题。",
     "parameters": [
       {
         "name": "query",
@@ -54,7 +54,7 @@
       {
         "name": "resolve_source_documents",
         "type": "bool",
-        "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题，默认 False。",
+        "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题，默认 True。",
         "required": false
       }
     ]
@@ -72,7 +72,7 @@
       {
         "name": "include_document_ids",
         "type": "bool",
-        "description": "是否同时显示每个场次/章节对应的 document_id，默认 False。",
+        "description": "是否同时显示每个场次/章节对应的 document_id，默认 True。",
         "required": false
       }
     ]
@@ -546,12 +546,12 @@
   },
   "top_k_by_centrality": {
     "name": "top_k_by_centrality",
-    "description": "按中心度指标返回 Top-K 节点排名（已写回到节点属性的中心度）。支持的指标：pagerank/pr、degree/deg、betweenness/btw。可选按节点标签过滤（如 ['Plot','Event']）。特别适合回答谁最重要、谁最核心、哪些角色最关键这类角色重要性问题。",
+    "description": "基于已写回的中心度指标，确定性返回图节点 Top-K 排名。遇到“谁/哪些角色或实体最中心、最主要、最重要、最关键、最有影响力”这类问题时，优先使用本工具，而不是 retrieve_entity_by_name。比如“3个最核心角色”应调用 metric='pagerank' 或 metric='degree', top_k=3, node_labels=['Character']，然后严格根据返回排名作答。",
     "parameters": [
       {
         "name": "metric",
         "type": "string",
-        "description": "中心度指标：pagerank、degree、betweenness三选一。",
+        "description": "中心度指标：pagerank、degree、betweenness 三选一。整体叙事中心性优先用 pagerank，直接图连接度用 degree。",
         "required": true
       },
       {
@@ -563,7 +563,7 @@
       {
         "name": "node_labels",
         "type": "array",
-        "description": "可选的节点标签过滤（如 ['Episode', 'Scene']）；不传表示全图。",
+        "description": "可选节点标签过滤。中心角色问题使用 ['Character']。",
         "required": false
       }
     ]

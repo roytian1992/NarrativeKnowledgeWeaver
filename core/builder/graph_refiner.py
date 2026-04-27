@@ -18,6 +18,79 @@ from core.utils.format import correct_json_format
 from core.utils.general_utils import safe_str, load_json, word_len, truncate_by_word_len
 import re
 
+_CHARACTER_PRONOUN_PREFIXES = (
+    "he ",
+    "she ",
+    "his ",
+    "her ",
+    "their ",
+    "them ",
+    "they ",
+    "him ",
+    "our ",
+    "my ",
+    "your ",
+    "this ",
+    "that ",
+    "these ",
+    "those ",
+    "another ",
+    "other ",
+    "a ",
+    "an ",
+    "the ",
+    "some ",
+    "several ",
+    "one ",
+    "two ",
+)
+_CHARACTER_TITLE_WORDS = {
+    "mr",
+    "mrs",
+    "miss",
+    "ms",
+    "dr",
+    "sir",
+    "lady",
+    "captain",
+    "capt",
+    "prof",
+    "professor",
+}
+_CHARACTER_ROLE_WORDS = {
+    "mother",
+    "father",
+    "husband",
+    "wife",
+    "daughter",
+    "son",
+    "brother",
+    "sister",
+    "friend",
+    "lawyer",
+    "reporter",
+    "valet",
+    "butler",
+    "guest",
+    "guests",
+    "group",
+    "gang",
+    "bartender",
+    "boy",
+    "girl",
+    "man",
+    "woman",
+    "women",
+    "men",
+    "others",
+    "copy",
+    "reader",
+    "readers",
+    "committee",
+    "couple",
+}
+_DISAMBIG_EXCLUDED_ENTITY_TYPES = {"Event", "Occasion"}
+
 # =========================
 # Basic Utils
 # =========================
@@ -163,6 +236,176 @@ def _normalize_decision(s: Any) -> str:
     if not isinstance(s, str):
         return ""
     return s.strip().lower()
+
+
+def _normalize_space(text: Any) -> str:
+    return " ".join(str(text or "").strip().split())
+
+
+def _has_non_ascii(text: str) -> bool:
+    return any(ord(ch) > 127 for ch in text or "")
+
+
+def _clean_character_token(token: str) -> str:
+    return re.sub(r"^[^A-Za-z\u4e00-\u9fff]+|[^A-Za-z\u4e00-\u9fff]+$", "", str(token or "").strip()).lower()
+
+
+def _character_tokens(name: Any) -> List[str]:
+    return [tok for tok in (_clean_character_token(x) for x in str(name or "").split()) if tok]
+
+
+def _is_character_possessive_role_mention(name: Any) -> bool:
+    raw = _normalize_space(name)
+    if not raw:
+        return False
+    norm = raw.lower()
+    if "'s " in norm or " of " in norm:
+        toks = set(_character_tokens(norm))
+        if toks & _CHARACTER_ROLE_WORDS:
+            return True
+    if "的" in raw:
+        zh_role_markers = ("丈夫", "妻子", "母亲", "父亲", "女儿", "儿子", "朋友", "律师", "记者", "管家")
+        if any(marker in raw for marker in zh_role_markers):
+            return True
+    return False
+
+
+def _is_generic_character_name(name: Any) -> bool:
+    raw = _normalize_space(name)
+    if not raw:
+        return True
+    norm = raw.lower()
+    if norm in _CHARACTER_ROLE_WORDS:
+        return True
+    if norm.startswith(_CHARACTER_PRONOUN_PREFIXES):
+        return True
+    if _is_character_possessive_role_mention(raw):
+        return True
+    generic_phrases = {
+        "a couple",
+        "boy",
+        "girl",
+        "man",
+        "woman",
+        "young man",
+        "young woman",
+        "lady",
+        "guest",
+        "guests",
+        "crowd",
+        "people",
+        "reporter",
+        "reporters",
+        "bartender",
+        "valet",
+        "another reporter",
+        "other girl",
+        "her husband",
+        "his wife",
+        "their lawyer friend",
+    }
+    if norm in generic_phrases:
+        return True
+    if any(marker in norm for marker in (" a man", " a woman", "young man", "young woman", " in the group")):
+        return True
+    return False
+
+
+def _looks_named_character(name: Any) -> bool:
+    raw = _normalize_space(name)
+    if not raw or _is_generic_character_name(raw):
+        return False
+    if _has_non_ascii(raw):
+        return not any(marker in raw for marker in ("某", "一个", "一些", "他的", "她的", "他们的"))
+    if raw.lower().startswith(_CHARACTER_PRONOUN_PREFIXES):
+        return False
+    words = raw.split()
+    if not words:
+        return False
+    sig_tokens = [tok for tok in _character_tokens(raw) if tok not in _CHARACTER_TITLE_WORDS and tok != "s"]
+    if not sig_tokens:
+        return False
+    if len(sig_tokens) == 1 and sig_tokens[0] in _CHARACTER_ROLE_WORDS:
+        return False
+    non_title_words = [w for w in words if _clean_character_token(w) not in _CHARACTER_TITLE_WORDS]
+    if not non_title_words:
+        return False
+    if len(non_title_words) == 1:
+        word = non_title_words[0]
+        return bool(word[:1].isupper() or word.isupper())
+    return any(word[:1].isupper() or word.isupper() for word in non_title_words)
+
+
+def _build_character_name_signature(name: Any) -> Dict[str, Any]:
+    raw = _normalize_space(name)
+    tokens = [tok for tok in _character_tokens(raw) if tok not in _CHARACTER_TITLE_WORDS and tok != "s"]
+    return {
+        "raw_name": raw,
+        "named": _looks_named_character(raw),
+        "tokens": tokens,
+        "token_set": set(tokens),
+        "first": tokens[0] if tokens else "",
+        "last": tokens[-1] if tokens else "",
+        "normalized_compact": "".join(tokens),
+        "has_title": any(_clean_character_token(word) in _CHARACTER_TITLE_WORDS for word in raw.split()),
+        "single_token": len(tokens) == 1,
+    }
+
+
+def _prefix_like(a: str, b: str, *, min_len: int = 4) -> bool:
+    a = str(a or "").strip().lower()
+    b = str(b or "").strip().lower()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if len(a) >= min_len and b.startswith(a):
+        return True
+    if len(b) >= min_len and a.startswith(b):
+        return True
+    return False
+
+
+def _is_explicit_character_alias(alias: Any, canonical_name: Any) -> bool:
+    alias_sig = _build_character_name_signature(alias)
+    canonical_sig = _build_character_name_signature(canonical_name)
+    if not alias_sig["named"] or not canonical_sig["named"]:
+        return False
+
+    alias_tokens = list(alias_sig["tokens"])
+    canonical_tokens = list(canonical_sig["tokens"])
+    if not alias_tokens or not canonical_tokens:
+        return False
+
+    alias_set = set(alias_tokens)
+    canonical_set = set(canonical_tokens)
+    if alias_set & _CHARACTER_ROLE_WORDS:
+        return False
+    if canonical_set & _CHARACTER_ROLE_WORDS:
+        return False
+
+    if alias_set.issubset(canonical_set) or canonical_set.issubset(alias_set):
+        return True
+
+    alias_first = str(alias_sig["first"])
+    alias_last = str(alias_sig["last"])
+    canonical_first = str(canonical_sig["first"])
+    canonical_last = str(canonical_sig["last"])
+
+    if _prefix_like(alias_first, canonical_first):
+        return True
+
+    if alias_sig["single_token"] and alias_first in {canonical_first, canonical_last}:
+        return True
+    if canonical_sig["single_token"] and canonical_first in {alias_first, alias_last}:
+        return True
+
+    if alias_sig["has_title"] and alias_last and _prefix_like(alias_last, canonical_last):
+        return True
+    if canonical_sig["has_title"] and canonical_last and _prefix_like(canonical_last, alias_last):
+        return True
+
+    return False
 
 # =========================
 # Similarity & clustering utilities
@@ -659,8 +902,8 @@ class GraphRefiner:
         return None
 
     def _lexical_postpass_enabled_types(self) -> Set[str]:
-        # Keep the lexical post-pass conservative in the first version.
-        return {"Object", "Concept"}
+        # Character needs a stricter lexical path for full-name / partial-name consolidation.
+        return {"Character", "Object", "Concept"}
 
     def _current_language(self) -> str:
         for attr in ("global_config", "global_"):
@@ -706,7 +949,7 @@ class GraphRefiner:
         text = text.strip().upper()
         text = re.sub(r"[\s·•\-_]+", "", text)
         text = re.sub(r"[()（）\\[\\]{}<>《》“”\"'`]", "", text)
-        text = re.sub(r"[，,。！？!?：:；;/\\\\]", "", text)
+        text = re.sub(r"[，,。.!！？?：:；;/\\\\]", "", text)
         return text
 
     def _strip_lexical_suffixes(self, normalized_name: str) -> str:
@@ -753,6 +996,9 @@ class GraphRefiner:
             "core_name": core_name,
             "anchors": self._extract_lexical_anchors(normalized_name),
         }
+
+    def _build_character_signature(self, name: Any) -> Dict[str, Any]:
+        return _build_character_name_signature(name)
 
     @staticmethod
     def _extract_model_identifiers(name: Any) -> Set[str]:
@@ -867,6 +1113,71 @@ class GraphRefiner:
         }
 
     @staticmethod
+    def _compute_character_pair_features(sig_a: Dict[str, Any], sig_b: Dict[str, Any]) -> Dict[str, Any]:
+        tokens_a = list(sig_a.get("tokens") or [])
+        tokens_b = list(sig_b.get("tokens") or [])
+        set_a = set(tokens_a)
+        set_b = set(tokens_b)
+        first_a = safe_str(sig_a.get("first")).strip().lower()
+        first_b = safe_str(sig_b.get("first")).strip().lower()
+        last_a = safe_str(sig_a.get("last")).strip().lower()
+        last_b = safe_str(sig_b.get("last")).strip().lower()
+        subset_match = bool(set_a and set_b and (set_a.issubset(set_b) or set_b.issubset(set_a)))
+        shared_tokens = sorted(set_a & set_b)
+        single_to_first_last = bool(
+            (sig_a.get("single_token") and first_a and first_a in {first_b, last_b})
+            or (sig_b.get("single_token") and first_b and first_b in {first_a, last_a})
+        )
+        return {
+            "named_a": bool(sig_a.get("named")),
+            "named_b": bool(sig_b.get("named")),
+            "tokens_a": tokens_a,
+            "tokens_b": tokens_b,
+            "shared_tokens": shared_tokens,
+            "subset_match": subset_match,
+            "same_first": bool(first_a and first_a == first_b),
+            "same_last": bool(last_a and last_a == last_b),
+            "first_prefix": _prefix_like(first_a, first_b),
+            "last_prefix": _prefix_like(last_a, last_b),
+            "single_to_first_last": single_to_first_last,
+            "single_a": bool(sig_a.get("single_token")),
+            "single_b": bool(sig_b.get("single_token")),
+            "has_title_a": bool(sig_a.get("has_title")),
+            "has_title_b": bool(sig_b.get("has_title")),
+        }
+
+    @staticmethod
+    def _character_pair_is_candidate(features: Dict[str, Any]) -> Tuple[bool, str]:
+        if not isinstance(features, dict):
+            return False, "invalid_features"
+        if not features.get("named_a") or not features.get("named_b"):
+            return False, "non_named_character"
+        shared_tokens = list(features.get("shared_tokens") or [])
+        if features.get("subset_match"):
+            return True, "subset_match"
+        if features.get("single_to_first_last"):
+            return True, "single_to_first_last"
+        if features.get("same_last") and (
+            features.get("single_a")
+            or features.get("single_b")
+            or features.get("has_title_a")
+            or features.get("has_title_b")
+        ):
+            return True, "same_last_name"
+        if features.get("same_first") and (
+            features.get("single_a")
+            or features.get("single_b")
+            or features.get("has_title_a")
+            or features.get("has_title_b")
+        ):
+            return True, "same_first_name"
+        if features.get("first_prefix") and len(shared_tokens) >= 1:
+            return True, "first_prefix"
+        if features.get("last_prefix") and (features.get("has_title_a") or features.get("has_title_b")):
+            return True, "last_prefix_with_title"
+        return False, "no_rule_matched"
+
+    @staticmethod
     def _lexical_pair_is_candidate(features: Dict[str, Any]) -> Tuple[bool, str]:
         if not isinstance(features, dict):
             return False, "invalid_features"
@@ -881,6 +1192,176 @@ class GraphRefiner:
         return False, "no_rule_matched"
 
     @staticmethod
+    def _prefer_canonical_name(name_a: str, name_b: str, sig_a: Dict[str, Any], sig_b: Dict[str, Any]) -> str:
+        def _score(name: str, sig: Dict[str, Any]) -> Tuple[int, int, int, str]:
+            tokens = list(sig.get("tokens") or [])
+            has_title = bool(sig.get("has_title"))
+            return (len(tokens), 0 if has_title else 1, len(safe_str(name)), safe_str(name))
+
+        return name_a if _score(name_a, sig_a) >= _score(name_b, sig_b) else name_b
+
+    def _build_rule_based_rename_map(
+        self,
+        type2items: Dict[str, Dict[str, Dict[str, Any]]],
+        rename_map: Dict[str, str],
+    ) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
+        """
+        High-confidence, no-LLM consolidation before lexical post-pass.
+
+        Rules are intentionally conservative:
+        - Character: only named entities; partial first/last names are merged only
+          when they point to exactly one fuller canonical name.
+        - Object/Concept: only normalized exact-name matches, e.g. punctuation/case variants.
+        """
+        direct_map: Dict[str, str] = {}
+        audits: List[Dict[str, Any]] = []
+        renamed_aliases = set(rename_map.keys())
+
+        def _add_candidate(alias: str, canonical: str, reason: str, tp: str) -> None:
+            alias = safe_str(alias).strip()
+            canonical = safe_str(canonical).strip()
+            if not alias or not canonical or alias == canonical:
+                return
+            if alias in renamed_aliases:
+                return
+            blocked, block_reason = self._should_block_model_merge(alias, canonical)
+            if blocked:
+                audits.append(
+                    {
+                        "kind": "rule_based_merge_reject",
+                        "timestamp": time.time(),
+                        "type": tp,
+                        "alias": alias,
+                        "canonical": canonical,
+                        "reason": block_reason,
+                    }
+                )
+                return
+            direct_map.setdefault(alias, canonical)
+            if direct_map.get(alias) != canonical:
+                direct_map[alias] = ""
+                audits.append(
+                    {
+                        "kind": "rule_based_merge_reject",
+                        "timestamp": time.time(),
+                        "type": tp,
+                        "alias": alias,
+                        "canonical": canonical,
+                        "reason": "multiple_candidate_canonicals",
+                    }
+                )
+                return
+            audits.append(
+                {
+                    "kind": "rule_based_merge_candidate",
+                    "timestamp": time.time(),
+                    "type": tp,
+                    "alias": alias,
+                    "canonical": canonical,
+                    "reason": reason,
+                }
+            )
+
+        for tp, by_name in (type2items or {}).items():
+            active_names = [nm for nm in by_name.keys() if nm not in renamed_aliases]
+            if len(active_names) < 2:
+                continue
+
+            if tp == "Character":
+                active_names = [nm for nm in active_names if _looks_named_character(nm)]
+                if len(active_names) < 2 or len(active_names) > 256:
+                    if len(active_names) > 256:
+                        audits.append(
+                            {
+                                "kind": "rule_based_merge_skip",
+                                "timestamp": time.time(),
+                                "type": tp,
+                                "reason": "too_many_character_candidates",
+                                "candidate_size": len(active_names),
+                            }
+                        )
+                    continue
+
+                sig_by_name = {nm: self._build_character_signature(nm) for nm in active_names}
+                alias_candidates: Dict[str, Set[str]] = defaultdict(set)
+                alias_reasons: Dict[Tuple[str, str], str] = {}
+
+                for name_a, name_b in combinations(sorted(active_names), 2):
+                    sig_a = sig_by_name[name_a]
+                    sig_b = sig_by_name[name_b]
+                    features = self._compute_character_pair_features(sig_a, sig_b)
+                    is_candidate, trigger = self._character_pair_is_candidate(features)
+                    if not is_candidate:
+                        continue
+
+                    canonical = self._prefer_canonical_name(name_a, name_b, sig_a, sig_b)
+                    alias = name_b if canonical == name_a else name_a
+                    canonical_sig = sig_by_name[canonical]
+                    alias_sig = sig_by_name[alias]
+                    if len(canonical_sig.get("tokens") or []) <= len(alias_sig.get("tokens") or []):
+                        continue
+
+                    alias_candidates[alias].add(canonical)
+                    alias_reasons[(alias, canonical)] = trigger
+
+                for alias, canonicals in sorted(alias_candidates.items()):
+                    if len(canonicals) != 1:
+                        audits.append(
+                            {
+                                "kind": "rule_based_merge_reject",
+                                "timestamp": time.time(),
+                                "type": tp,
+                                "alias": alias,
+                                "candidates": sorted(canonicals),
+                                "reason": "ambiguous_partial_name",
+                            }
+                        )
+                        continue
+                    canonical = next(iter(canonicals))
+                    _add_candidate(alias, canonical, alias_reasons.get((alias, canonical), "character_partial_name"), tp)
+                continue
+
+            if tp not in {"Object", "Concept"}:
+                continue
+
+            buckets: Dict[str, List[str]] = defaultdict(list)
+            for nm in active_names:
+                normalized = self._normalize_name_for_lexical(nm)
+                if normalized:
+                    buckets[normalized].append(nm)
+
+            for normalized, names in sorted(buckets.items()):
+                uniq_names = sorted(set(names))
+                if len(uniq_names) < 2 or len(uniq_names) > 16:
+                    continue
+
+                def _non_character_canonical_score(name: str) -> Tuple[int, int, int, str]:
+                    info = by_name.get(name) or {}
+                    doc_count = len(list(info.get("document_ids") or []))
+                    punctuation_count = len(re.findall(r"[^A-Za-z0-9\u4e00-\u9fff]", safe_str(name)))
+                    return (doc_count, -punctuation_count, len(safe_str(name)), safe_str(name))
+
+                canonical = max(uniq_names, key=_non_character_canonical_score)
+                for alias in uniq_names:
+                    if alias != canonical:
+                        _add_candidate(alias, canonical, f"normalized_exact:{normalized}", tp)
+
+        clean_map = {alias: canonical for alias, canonical in direct_map.items() if alias and canonical and alias != canonical}
+        if clean_map:
+            audits.append(
+                {
+                    "kind": "rule_based_merge_summary",
+                    "timestamp": time.time(),
+                    "rename_map_size": len(clean_map),
+                    "examples": [
+                        {"alias": alias, "canonical": canonical}
+                        for alias, canonical in list(sorted(clean_map.items()))[:50]
+                    ],
+                }
+            )
+        return clean_map, audits
+
+    @staticmethod
     def _render_lexical_feature_line(features: Dict[str, Any]) -> str:
         return (
             f"exact_match={bool(features.get('exact_match'))}, "
@@ -891,6 +1372,20 @@ class GraphRefiner:
             f"lcs_ratio={float(features.get('lcs_ratio', 0.0)):.3f}, "
             f"char_jaccard={float(features.get('char_jaccard', 0.0)):.3f}, "
             f"extra_length={int(features.get('extra_length', 0) or 0)}"
+        )
+
+    @staticmethod
+    def _render_character_feature_line(features: Dict[str, Any]) -> str:
+        return (
+            f"subset_match={bool(features.get('subset_match'))}, "
+            f"single_to_first_last={bool(features.get('single_to_first_last'))}, "
+            f"single_a={bool(features.get('single_a'))}, "
+            f"single_b={bool(features.get('single_b'))}, "
+            f"same_first={bool(features.get('same_first'))}, "
+            f"same_last={bool(features.get('same_last'))}, "
+            f"first_prefix={bool(features.get('first_prefix'))}, "
+            f"last_prefix={bool(features.get('last_prefix'))}, "
+            f"shared_tokens={list(features.get('shared_tokens') or [])}"
         )
 
     def _compress_rename_map(self, rename_map: Dict[str, str]) -> Dict[str, str]:
@@ -932,77 +1427,116 @@ class GraphRefiner:
             if tp not in eligible_types:
                 continue
             active_names = [nm for nm in by_name.keys() if nm not in renamed_aliases]
+            if tp == "Character":
+                active_names = [nm for nm in active_names if _looks_named_character(nm)]
             if len(active_names) < 2:
                 continue
 
             info_by_name: Dict[str, Dict[str, Any]] = {}
             for nm in active_names:
                 info = dict(by_name.get(nm) or {})
-                info["lexical_signature"] = self._build_lexical_signature(nm)
+                if tp == "Character":
+                    info["lexical_signature"] = self._build_character_signature(nm)
+                else:
+                    info["lexical_signature"] = self._build_lexical_signature(nm)
                 info_by_name[nm] = info
 
-            buckets: Dict[Tuple[str, str], List[str]] = defaultdict(list)
-            for nm, info in info_by_name.items():
-                sig = info.get("lexical_signature") or {}
-                normalized = safe_str(sig.get("normalized_name")).strip()
-                core = safe_str(sig.get("core_name")).strip()
-                if normalized:
-                    buckets[("normalized", normalized)].append(nm)
-                if core:
-                    buckets[("core", core)].append(nm)
-                for anchor in sig.get("anchors") or []:
-                    if anchor:
-                        buckets[("anchor", anchor)].append(nm)
-
             pair_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
-            for (bucket_kind, bucket_key), names in buckets.items():
-                uniq_names: List[str] = []
-                seen_names: Set[str] = set()
-                for nm in names:
-                    if nm not in seen_names:
-                        seen_names.add(nm)
-                        uniq_names.append(nm)
-
-                if len(uniq_names) < 2:
-                    continue
-
-                if len(uniq_names) > 32:
+            if tp == "Character":
+                if len(active_names) > 128:
                     audits.append(
                         {
-                            "kind": "lexical_bucket_skip",
+                            "kind": "lexical_group_skip",
                             "timestamp": time.time(),
                             "type": tp,
-                            "bucket_kind": bucket_kind,
-                            "bucket_key": bucket_key,
-                            "bucket_size": len(uniq_names),
-                            "reason": "bucket_too_large",
+                            "group": active_names[:128],
+                            "reason": "too_many_character_candidates",
+                            "candidate_size": len(active_names),
                         }
                     )
                     continue
 
-                for name_a, name_b in combinations(sorted(uniq_names), 2):
+                for name_a, name_b in combinations(sorted(active_names), 2):
                     pair_key = tuple(sorted((name_a, name_b)))
-                    features = self._compute_lexical_pair_features(
+                    features = self._compute_character_pair_features(
                         info_by_name[name_a]["lexical_signature"],
                         info_by_name[name_b]["lexical_signature"],
                     )
-                    is_candidate, trigger = self._lexical_pair_is_candidate(features)
+                    is_candidate, trigger = self._character_pair_is_candidate(features)
                     if not is_candidate:
                         continue
+                    pair_map[pair_key] = {
+                        "kind": "lexical_candidate_pair",
+                        "timestamp": time.time(),
+                        "type": tp,
+                        "name_a": pair_key[0],
+                        "name_b": pair_key[1],
+                        "trigger": trigger,
+                        "bucket_hits": ["character_name_rules"],
+                        "features": features,
+                    }
+            else:
+                buckets: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+                for nm, info in info_by_name.items():
+                    sig = info.get("lexical_signature") or {}
+                    normalized = safe_str(sig.get("normalized_name")).strip()
+                    core = safe_str(sig.get("core_name")).strip()
+                    if normalized:
+                        buckets[("normalized", normalized)].append(nm)
+                    if core:
+                        buckets[("core", core)].append(nm)
+                    for anchor in sig.get("anchors") or []:
+                        if anchor:
+                            buckets[("anchor", anchor)].append(nm)
 
-                    if pair_key not in pair_map:
-                        pair_map[pair_key] = {
-                            "kind": "lexical_candidate_pair",
-                            "timestamp": time.time(),
-                            "type": tp,
-                            "name_a": pair_key[0],
-                            "name_b": pair_key[1],
-                            "trigger": trigger,
-                            "bucket_hits": [f"{bucket_kind}:{bucket_key}"],
-                            "features": features,
-                        }
-                    else:
-                        pair_map[pair_key]["bucket_hits"].append(f"{bucket_kind}:{bucket_key}")
+                for (bucket_kind, bucket_key), names in buckets.items():
+                    uniq_names: List[str] = []
+                    seen_names: Set[str] = set()
+                    for nm in names:
+                        if nm not in seen_names:
+                            seen_names.add(nm)
+                            uniq_names.append(nm)
+
+                    if len(uniq_names) < 2:
+                        continue
+
+                    if len(uniq_names) > 32:
+                        audits.append(
+                            {
+                                "kind": "lexical_bucket_skip",
+                                "timestamp": time.time(),
+                                "type": tp,
+                                "bucket_kind": bucket_kind,
+                                "bucket_key": bucket_key,
+                                "bucket_size": len(uniq_names),
+                                "reason": "bucket_too_large",
+                            }
+                        )
+                        continue
+
+                    for name_a, name_b in combinations(sorted(uniq_names), 2):
+                        pair_key = tuple(sorted((name_a, name_b)))
+                        features = self._compute_lexical_pair_features(
+                            info_by_name[name_a]["lexical_signature"],
+                            info_by_name[name_b]["lexical_signature"],
+                        )
+                        is_candidate, trigger = self._lexical_pair_is_candidate(features)
+                        if not is_candidate:
+                            continue
+
+                        if pair_key not in pair_map:
+                            pair_map[pair_key] = {
+                                "kind": "lexical_candidate_pair",
+                                "timestamp": time.time(),
+                                "type": tp,
+                                "name_a": pair_key[0],
+                                "name_b": pair_key[1],
+                                "trigger": trigger,
+                                "bucket_hits": [f"{bucket_kind}:{bucket_key}"],
+                                "features": features,
+                            }
+                        else:
+                            pair_map[pair_key]["bucket_hits"].append(f"{bucket_kind}:{bucket_key}")
 
             audits.extend(pair_map.values())
             if not pair_map:
@@ -1777,6 +2311,19 @@ class GraphRefiner:
                     continue
 
                 tp = ent.get("type")
+                nm = safe_str(ent.get("name")).strip()
+
+                if tp == "Character":
+                    aliases = ent.get("aliases") or []
+                    if not isinstance(aliases, list):
+                        aliases = []
+                    if _looks_named_character(nm):
+                        ent["aliases"] = [alias for alias in aliases if _is_explicit_character_alias(alias, nm)]
+                    else:
+                        ent["aliases"] = []
+                        if nm:
+                            _set_scope(ent, "local")
+                            continue
 
                 # normalize existing
                 sc = self._norm_scope(ent.get("scope"))
@@ -1949,6 +2496,7 @@ class GraphRefiner:
         - Apply rename_map to entities and relations (and write aliases onto canonical entity)
 
         Hard constraints:
+        - Event/Occasion entities do NOT participate
         - exclude_induced: induced-category entity types do NOT participate
         - require_scope_global: only global-scoped entities participate
         - rename_map application respects the same constraints
@@ -2014,6 +2562,8 @@ class GraphRefiner:
                 return False
 
             tp = _norm_type(ent.get("type"))
+            if tp in _DISAMBIG_EXCLUDED_ENTITY_TYPES:
+                return False
             if exclude_induced and _is_induced_type(tp):
                 return False
 
@@ -2023,7 +2573,11 @@ class GraphRefiner:
                     return False
 
             nm = ent.get("name")
-            return isinstance(nm, str) and bool(nm.strip())
+            if not isinstance(nm, str) or not nm.strip():
+                return False
+            if tp == "Character" and not _looks_named_character(nm):
+                return False
+            return True
 
         # -------------------------
         # audits meta
@@ -2037,8 +2591,10 @@ class GraphRefiner:
                 "entities_total": 0,
                 "relations_total": 0,
                 "entities_considered": 0,
+                "entities_skipped_disambig_type": 0,
                 "entities_skipped_induced": 0,
                 "entities_skipped_scope": 0,
+                "entities_skipped_character_generic": 0,
             },
         }
 
@@ -2080,6 +2636,10 @@ class GraphRefiner:
                 tp = _norm_type(ent.get("type"))
                 ent["type"] = tp  # normalize in-place
 
+                if tp in _DISAMBIG_EXCLUDED_ENTITY_TYPES:
+                    audit_meta["stats"]["entities_skipped_disambig_type"] += 1
+                    continue
+
                 if exclude_induced and _is_induced_type(tp):
                     audit_meta["stats"]["entities_skipped_induced"] += 1
                     continue
@@ -2089,6 +2649,10 @@ class GraphRefiner:
                     if sc != "global":
                         audit_meta["stats"]["entities_skipped_scope"] += 1
                         continue
+
+                if tp == "Character" and not _looks_named_character(nm):
+                    audit_meta["stats"]["entities_skipped_character_generic"] += 1
+                    continue
 
                 audit_meta["stats"]["entities_considered"] += 1
                 key2ents[(nm, tp)].append(ent)
@@ -2184,7 +2748,28 @@ class GraphRefiner:
             }
 
         # -------------------------
-        # 5) compute embeddings
+        # 5) high-confidence rule pass before embedding/cluster
+        # -------------------------
+        rename_map: Dict[str, str] = {}
+        direct_rename_map, direct_merge_audits = self._build_rule_based_rename_map(type2items, rename_map)
+        audits.extend(direct_merge_audits)
+        if direct_rename_map:
+            rename_map.update(direct_rename_map)
+            audits.append(
+                {
+                    "kind": "rule_based_merge_apply",
+                    "timestamp": time.time(),
+                    "stage": "pre_embedding_direct",
+                    "rename_map_size": len(direct_rename_map),
+                    "applied_pairs": list(sorted(direct_rename_map.items()))[:200],
+                }
+            )
+            for by_name in type2items.values():
+                for alias in list(direct_rename_map.keys()):
+                    by_name.pop(alias, None)
+
+        # -------------------------
+        # 6) compute embeddings
         # -------------------------
         embed_stats = {"by_type": {}}
         for tp, by_name in type2items.items():
@@ -2197,7 +2782,7 @@ class GraphRefiner:
         audits.append({"kind": "embedding", "timestamp": time.time(), "stats": embed_stats})
 
         # -------------------------
-        # 6) detect clusters
+        # 7) detect clusters
         # -------------------------
         all_candidates: List[List[Dict[str, Any]]] = []
         cluster_audits: List[Dict[str, Any]] = []
@@ -2239,10 +2824,13 @@ class GraphRefiner:
         audits.extend(cluster_audits)
 
         # -------------------------
-        # 7) LLM merge -> rename_map
+        # 8) LLM merge -> rename_map
         # -------------------------
         def _render_merge_group_payload(group: List[Dict[str, Any]], *, include_lexical: bool = False) -> str:
             parts: List[str] = []
+            group_type = ""
+            if group and isinstance(group[0], dict):
+                group_type = safe_str(group[0].get("type")).strip()
             for i, e in enumerate(group):
                 parts.append(f"Entity {i + 1} name: {e.get('name')}")
                 parts.append(f" - Description: {e.get('summary','')}")
@@ -2261,13 +2849,21 @@ class GraphRefiner:
                 parts.append("")
                 parts.append("[Lexical pair evidence]")
                 for left, right in combinations(group, 2):
-                    features = self._compute_lexical_pair_features(
-                        left.get("lexical_signature") or self._build_lexical_signature(left.get("name")),
-                        right.get("lexical_signature") or self._build_lexical_signature(right.get("name")),
-                    )
+                    if group_type == "Character":
+                        features = self._compute_character_pair_features(
+                            left.get("lexical_signature") or self._build_character_signature(left.get("name")),
+                            right.get("lexical_signature") or self._build_character_signature(right.get("name")),
+                        )
+                        feature_line = self._render_character_feature_line(features)
+                    else:
+                        features = self._compute_lexical_pair_features(
+                            left.get("lexical_signature") or self._build_lexical_signature(left.get("name")),
+                            right.get("lexical_signature") or self._build_lexical_signature(right.get("name")),
+                        )
+                        feature_line = self._render_lexical_feature_line(features)
                     parts.append(
                         f"- {left.get('name')} <-> {right.get('name')}: "
-                        + self._render_lexical_feature_line(features)
+                        + feature_line
                     )
             return "\n".join(parts)
 
@@ -2330,6 +2926,11 @@ class GraphRefiner:
                         conflicts.append((alias, canonical, block_reason))
                         continue
 
+                    if safe_str(audit_item.get("type")).strip() == "Character":
+                        if not _is_explicit_character_alias(alias, canonical):
+                            conflicts.append((alias, canonical, "character_alias_rule_rejected"))
+                            continue
+
                     existing = safe_str(rename_map.get(alias, "")).strip()
                     if existing and existing != canonical:
                         existing_resolved = self._compress_rename_map({**rename_map, alias: existing}).get(alias, existing)
@@ -2353,7 +2954,6 @@ class GraphRefiner:
                     }
                 )
 
-        rename_map: Dict[str, str] = {}
         merge_group_audits: List[Dict[str, Any]] = []
 
         if all_candidates:
@@ -2408,7 +3008,7 @@ class GraphRefiner:
         audits.extend(merge_group_audits)
 
         # -------------------------
-        # 7.5) lexical post-pass on unresolved names
+        # 8.5) lexical post-pass on unresolved names
         # -------------------------
         lexical_candidate_groups, lexical_candidate_audits = self._build_lexical_candidate_groups(type2items, rename_map)
         audits.extend(lexical_candidate_audits)
@@ -2507,6 +3107,12 @@ class GraphRefiner:
                         name2ent[nm0.strip()] = ent
                     if "aliases" not in ent or not isinstance(ent.get("aliases"), list):
                         ent["aliases"] = []
+                    elif safe_str(ent.get("type")).strip() == "Character":
+                        ent["aliases"] = [
+                            alias
+                            for alias in ent["aliases"]
+                            if _is_explicit_character_alias(alias, nm0)
+                        ]
 
                 # 8.1 rename entities + write aliases to canonical entity
                 for ent in ents:
@@ -2536,7 +3142,11 @@ class GraphRefiner:
                             if "aliases" not in canonical_ent or not isinstance(canonical_ent.get("aliases"), list):
                                 canonical_ent["aliases"] = []
 
-                            if old_nm != new_nm and old_nm not in canonical_ent["aliases"]:
+                            can_write_alias = True
+                            if safe_str(canonical_ent.get("type")).strip() == "Character":
+                                can_write_alias = _is_explicit_character_alias(old_nm, new_nm)
+
+                            if can_write_alias and old_nm != new_nm and old_nm not in canonical_ent["aliases"]:
                                 canonical_ent["aliases"].append(old_nm)
                                 apply_audit["stats"]["aliases_written"] += 1
                                 if len(apply_audit["examples"]["aliases"]) < 50:
@@ -2651,7 +3261,6 @@ class GraphRefiner:
             out,
             enable_llm=enable_scope_refine_llm,
             per_task_timeout=scope_timeout,
-            tie_breaker="global",
         )
 
         if verbose:
@@ -2660,7 +3269,7 @@ class GraphRefiner:
         out = self.run_entity_disambiguation(
             out,
             require_scope_global=True,
-            exclude_induced=False,
+            exclude_induced=True,
             per_task_timeout_summary=disambig_timeout_summary,
             per_task_timeout_merge=disambig_timeout_merge,
             dump_maps=True,

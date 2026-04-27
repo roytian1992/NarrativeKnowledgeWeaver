@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Dict, Optional, List
 import json
+import os
 import yaml
 
 
@@ -90,6 +91,15 @@ def _get(d: Dict[str, Any], key: str, default: Any = None) -> Any:
     return d.get(key, default)
 
 
+def _resolve_env_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if raw.startswith("${") and raw.endswith("}") and len(raw) > 3:
+        return os.environ.get(raw[2:-1], "")
+    return os.path.expandvars(value)
+
+
 def _resolve_language_paths(language: str, task_specs_root: str) -> Dict[str, str]:
     loc = str(language or "").strip().lower()
     root = str(task_specs_root or "").strip() or "./task_specs"
@@ -153,12 +163,17 @@ class GlobalConfig:
 
 @dataclass
 class DocumentProcessingConfig:
-    chunk_size: int = 600
+    chunk_size: int = 800
     chunk_overlap: int = 0
     max_workers: int = 64
     max_segments: int = 3
     max_content_size: int = 2000
     store_vector_chunks: bool = True
+    prepare_insights_mode: str = "llm"  # llm | nlp | none
+    metadata_entity_mode: str = "llm"  # llm | ner
+    nlp_summary_max_sentences: int = 4
+    nlp_metadata_max_keywords: int = 16
+    nlp_metadata_max_entities_per_type: int = 24
     sentence_chunk_size: int = 200
     sentence_chunk_overlap: int = 50
     bm25_chunk_size: int = 250
@@ -178,14 +193,19 @@ class KnowledgeGraphBuilderConfig:
     property_context_max_total_words: int = 2400
     property_context_dedupe_descriptions: bool = True
     interaction_min_entity_candidates: int = 2
-    fast_external_entity_backend: str = "none"  # none | auto | qwen | gliner | uie
-    fast_external_entity_model_name: str = ""
-    fast_external_entity_device: str = "auto"  # auto | cpu | cuda | cuda:N
-    fast_external_entity_threshold: float = 0.55
-    fast_external_entity_high_confidence_threshold: float = 0.82
-    fast_external_entity_max_items: int = 24
-    fast_external_entity_skip_llm_min_typed: int = 3
-    fast_external_entity_enable_direct_type: bool = True
+    entity_extraction_mode: str = "llm"  # llm | ner
+    ner_model_name: str = ""
+    ner_device: str = "auto"  # auto | cpu | cuda | cuda:N
+    ner_threshold: float = 0.55
+    ner_high_confidence_threshold: float = 0.82
+    ner_max_items: int = 24
+    ner_skip_llm_min_typed: int = 3
+    ner_enable_direct_type: bool = True
+    ner_auxiliary_only: bool = True
+    ner_skip_open_entity_llm: bool = False
+    ner_allow_download: bool = False
+    fast_relation_window_target_words: int = 850
+    fast_relation_window_max_words: int = 1000
 
 
 @dataclass
@@ -203,7 +223,9 @@ class LLMConfig:
     provider: str = "openai"
     model_name: str = "Qwen3-235B"
     api_key: Optional[str] = None
+    api_key_env: str = ""
     base_url: Optional[str] = None
+    thinking_type: str = ""  # DeepSeek-compatible: enabled | disabled
     temperature: float = 0.0
     max_tokens: int = 8192
     timeout: int = 60
@@ -291,7 +313,7 @@ class NarrativeGraphBuilderConfig:
     episode_relation_anchor_weights: Dict[str, float] = field(
         default_factory=lambda: {
             "related_event_ids": 3.0,
-            "related_occasion_ids": 2.0,
+            "related_occasion_ids": 3.0,
             "related_character_ids": 0.75,
             "related_location_ids": 0.35,
             "related_time_ids": 0.25,
@@ -299,9 +321,21 @@ class NarrativeGraphBuilderConfig:
     )
     episode_relation_max_primary_bucket_size: int = 24
     episode_relation_max_context_bucket_size: int = 12
+    episode_relation_include_local_window_candidates: bool = False
+    episode_relation_local_window_size: int = 2
+    episode_relation_local_window_weight: float = 0.75
+    episode_relation_local_window_similarity_threshold: float = 0.30
     episode_relation_context_requires_primary_pair: bool = True
-    episode_relation_topk_per_episode: int = 96
-    episode_relation_min_weighted_score: float = 0.0
+    episode_relation_context_only_similarity_threshold: float = 0.65
+    episode_relation_context_only_min_weighted_score: float = 1.5
+    episode_relation_context_only_require_character: bool = True
+    episode_relation_topk_per_episode: int = 24
+    episode_relation_min_weighted_score: float = 1.0
+    episode_relation_candidate_selection_mode: str = "threshold"  # threshold | causal_balanced
+    episode_relation_candidate_budget_total: int = 0
+    episode_relation_candidate_primary_budget: int = 180
+    episode_relation_enable_direction_sanity_check: bool = True
+    episode_relation_direction_sanity_check_types: List[str] = field(default_factory=lambda: ["causes"])
     causal_graph: CausalGraphConfig = field(default_factory=CausalGraphConfig)
     cycle_break: CycleBreakConfig = field(default_factory=CycleBreakConfig)
     chain_extraction: ChainExtractionConfig = field(default_factory=ChainExtractionConfig)
@@ -535,6 +569,11 @@ class KAGConfig:
             _update_dc_from_dict(cfg.router_llm, data["router_llm"])
         if "memory_llm" in data:
             _update_dc_from_dict(cfg.memory_llm, data["memory_llm"])
+        for llm_cfg in (cfg.llm, cfg.retriever_llm, cfg.router_llm, cfg.memory_llm):
+            if getattr(llm_cfg, "api_key_env", ""):
+                llm_cfg.api_key = os.environ.get(str(llm_cfg.api_key_env), llm_cfg.api_key or "")
+            else:
+                llm_cfg.api_key = _resolve_env_value(llm_cfg.api_key)
 
         # embedding
         # allow backward compat keys: embedding / graph_embedding / vectordb_embedding
@@ -653,6 +692,10 @@ class KAGConfig:
 
         if self.global_config.aggregation_mode not in {"narrative", "community", "full"}:
             print("[KAGConfig] Warning: global.aggregation_mode should be one of {narrative,community,full}.")
+        if self.document_processing.metadata_entity_mode not in {"llm", "ner"}:
+            print("[KAGConfig] Warning: document_processing.metadata_entity_mode should be one of {llm,ner}.")
+        if self.knowledge_graph_builder.entity_extraction_mode not in {"llm", "ner"}:
+            print("[KAGConfig] Warning: knowledge_graph_builder.entity_extraction_mode should be one of {llm,ner}.")
 
         # lightweight sanity for type_weight
         tw = self.narrative_graph_builder.causal_graph.type_weight

@@ -1,0 +1,42 @@
+[
+  {
+    "task": "entity_schema_grounding",
+    "task_name": "Entity Schema Grounding",
+    "task_goal": "Classify open entities into exactly one of Character / Object / Concept / Location / TimePoint, and assign an appropriate scope.",
+    "global_constraints": [
+      "Output only entities that are suitable as standalone graph nodes; weak background items, purely propositional items, or entries not worth a node may be omitted.",
+      "type must be one of Character / Object / Concept / Location / TimePoint.",
+      "Decide using the input text, entity name, and description; do not invent content.",
+      "Output a JSON array only."
+    ],
+    "output_fields": ["name", "description", "type", "scope"],
+    "grounding_rules": [
+      "Use the input text first to determine the entity's true semantic role in the current passage, then assign the type.",
+      "Use Character for a concrete individual person-like participant.",
+      "Use Location for a concrete physical place.",
+      "Use TimePoint for a time expression.",
+      "Use Object for a physical item.",
+      "Use Concept for an organization, institution, group, abstract framework, or social structure.",
+      "Use scope = global for entities that are stable across scenes; use local for scene-bound expressions.",
+      "If an item is fundamentally a piece of news, a claim, a one-off utterance content, or a vague list item, prefer omitting it instead of forcing a type.",
+      "If an item is only a generic everyday object, a pure time modifier, a descriptive location phrase, or a temporary group label, prefer omitting it.",
+      "Prefer stable characters, stable locations, key objects, and high-value concepts such as organizations, families, marriages, or professions."
+    ],
+    "few_shot": {
+      "examples": [
+        {
+          "name": "Dewey",
+          "description": "One of the main characters in the story.",
+          "type": "Character",
+          "scope": "global"
+        },
+        {
+          "name": "the next morning",
+          "description": "A temporal anchor relative to the current scene.",
+          "type": "TimePoint",
+          "scope": "local"
+        }
+      ]
+    }
+  }
+]

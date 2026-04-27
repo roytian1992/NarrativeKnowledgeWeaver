@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 
 QUESTION_TYPE_KEYWORDS: Dict[str, List[str]] = {
     "exact_fact": ["what was", "what is", "who is", "where", "when", "which", "name of"],
-    "attitude_or_state": ["attitude", "feel", "thinks", "think about", "internal dilemma", "why does", "why is", "seem"],
-    "implication_or_inference": ["imply", "implied", "most likely", "warning", "suggest", "significance", "why", "dilemma"],
+    "attitude_or_state": ["attitude", "feel", "thinks", "think about", "internal dilemma", "seem"],
+    "implication_or_inference": ["imply", "implied", "most likely", "warning", "suggest", "significance", "dilemma"],
     "relationship": ["relationship", "feel about", "opinion about", "between"],
     "chronology": ["before", "after", "timeline", "first", "second", "year", "age", "how long"],
     "section_localization": ["which section", "which scene", "which chapter", "where in the story", "section"],
@@ -310,6 +310,9 @@ class RetrievalToolRouter:
             "narrative_aggregation": "narrative_aggregation",
             "chronology reasoning": "chronology_reasoning",
             "chronology_reasoning": "chronology_reasoning",
+            "deterministic graph ranking": "structural_ranking",
+            "structural ranking": "structural_ranking",
+            "structural_ranking": "structural_ranking",
             "section / document localization": "localization",
             "localization": "localization",
             "follow-up refinement": "followup_refinement",
@@ -421,7 +424,10 @@ class RetrievalToolRouter:
                 '  "candidate_branches": [',
                 '    {"branch_id": "branch_name", "intent": "short text", "tools": ["tool_a", "tool_b"], "score": 0.0}',
                 "  ],",
-                '  "escalation_tools": ["tool_x", "tool_y"]',
+                '  "escalation_tools": ["tool_x", "tool_y"],',
+                '  "tool_query_hints": [',
+                '    {"tool": "retrieve_entity_by_name", "query": "entity or constraint anchor", "params": {"entity_type": "Character", "resolve_source_documents": true}, "purpose": "why this query helps"}',
+                "  ]",
                 '}',
                 "",
                 "Rules:",
@@ -431,6 +437,9 @@ class RetrievalToolRouter:
                 "- Each branch should usually contain 2-5 tools.",
                 "- Branches should represent meaningfully different retrieval routes.",
                 "- score should be between 0 and 1 and reflect expected usefulness.",
+                "- tool_query_hints are optional structured query-expansion hints for the downstream agent.",
+                "- For scene-list or section-localization questions, include entity anchors and semantic constraints separately when useful, e.g. one hint for a Character and one for a Concept/Occasion/Location.",
+                "- When using retrieve_entity_by_name for scene grounding, set resolve_source_documents=true unless there is a strong reason not to.",
                 "",
                 f"Question:\n{normalized_query}",
                 "",
@@ -504,7 +513,7 @@ class RetrievalToolRouter:
                 for branch in candidate_branches
             )
             if not has_narrative:
-                fallback_tools = [name for name in ["section_evidence_search", "narrative_hierarchical_search", "entity_event_trace_search"] if name in valid_tools]
+                fallback_tools = [name for name in ["section_evidence_search", "hybrid_evidence_search", "narrative_causal_trace_search", "narrative_hierarchical_search", "entity_event_trace_search"] if name in valid_tools]
                 if fallback_tools:
                     candidate_branches.append(
                         {
@@ -521,15 +530,34 @@ class RetrievalToolRouter:
                 if len(shared_core_tools) >= 2:
                     break
         if not escalation_tools:
-            for name in ["vdb_get_docs_by_document_ids", "narrative_hierarchical_search", "entity_event_trace_search", "fact_timeline_resolution_search"]:
+            for name in ["vdb_get_docs_by_document_ids", "hybrid_evidence_search", "narrative_causal_trace_search", "narrative_hierarchical_search", "entity_event_trace_search"]:
                 if name in valid_tools and name not in escalation_tools:
                     escalation_tools.append(name)
+        tool_query_hints: List[Dict[str, Any]] = []
+        raw_hints = payload.get("tool_query_hints") if isinstance(payload.get("tool_query_hints"), list) else []
+        for item in raw_hints[:8]:
+            if not isinstance(item, dict):
+                continue
+            tool_name = str(item.get("tool", "") or item.get("tool_name", "") or "").strip()
+            hint_query = str(item.get("query", "") or "").strip()
+            if not tool_name or tool_name not in valid_tools or not hint_query:
+                continue
+            params = item.get("params") if isinstance(item.get("params"), dict) else {}
+            tool_query_hints.append(
+                {
+                    "tool": tool_name,
+                    "query": hint_query,
+                    "params": dict(params),
+                    "purpose": str(item.get("purpose", "") or "").strip(),
+                }
+            )
         return {
             "question_type": str(payload.get("question_type", "") or self._question_type_hint(query)).strip() or "unknown",
             "evidence_need": str(payload.get("evidence_need", "") or "mixed").strip() or "mixed",
             "shared_core_tools": shared_core_tools[:3],
             "candidate_branches": candidate_branches[:4],
             "escalation_tools": escalation_tools[:4],
+            "tool_query_hints": tool_query_hints,
             "router_mode": "llm",
         }
 
@@ -629,17 +657,18 @@ class RetrievalToolRouter:
         # a narrative path visible for most multiple-choice questions.
         if answer_shape == "mcq_option":
             add("section_evidence_search")
+            add("hybrid_evidence_search")
+            add("narrative_causal_trace_search")
             add("narrative_hierarchical_search")
             add("bm25_search_docs")
         else:
-            add("section_evidence_search", "bm25_search_docs")
+            add("section_evidence_search", "hybrid_evidence_search", "bm25_search_docs")
 
         if question_type in {"attitude_or_state", "implication_or_inference", "chronology"}:
-            add("narrative_hierarchical_search", "entity_event_trace_search")
+            add("narrative_causal_trace_search", "narrative_hierarchical_search", "entity_event_trace_search")
         if evidence_need in {"local_plus_narrative", "chronology"}:
+            add("narrative_causal_trace_search")
             add("narrative_hierarchical_search")
-        if question_type == "chronology" or evidence_need == "chronology":
-            add("fact_timeline_resolution_search")
 
         add("vdb_search_sentences")
 
@@ -672,14 +701,12 @@ class RetrievalToolRouter:
             add("choice_grounded_evidence_search")
 
         if question_type in {"attitude_or_state", "implication_or_inference"} or evidence_need == "local_plus_narrative":
-            add("entity_event_trace_search", "narrative_hierarchical_search")
-        if question_type == "chronology" or evidence_need == "chronology":
-            add("fact_timeline_resolution_search")
+            add("hybrid_evidence_search", "narrative_causal_trace_search", "entity_event_trace_search", "narrative_hierarchical_search")
 
         if has_entity_anchor:
             add("get_entity_sections")
 
-        add("search_related_content", "vdb_search_hierdocs")
+        add("search_related_content", "hybrid_evidence_search")
         return priority
 
     def _augment_stable_initial_tools(
@@ -870,12 +897,10 @@ class RetrievalToolRouter:
             add(name)
 
         if question_type in {"attitude_or_state", "implication_or_inference"} or evidence_need == "local_plus_narrative":
-            for name in ["narrative_hierarchical_search", "entity_event_trace_search"]:
+            for name in ["hybrid_evidence_search", "narrative_causal_trace_search", "narrative_hierarchical_search", "entity_event_trace_search"]:
                 if len(escalation) >= limit:
                     break
                 add(name)
-        if question_type == "chronology" or evidence_need == "chronology" or "chronology_reasoning" in desired:
-            add("fact_timeline_resolution_search")
 
         for family in ["entity_relation", "narrative_reasoning", "structural_lookup", "local_evidence"]:
             family_missing = all(
@@ -1049,7 +1074,7 @@ class RetrievalToolRouter:
         if question_type in {"attitude_or_state", "implication_or_inference"}:
             if all(self._family_for_tool(name) != "narrative_reasoning" for name in initial_tools):
                 initial_tools = unique_names(
-                    [*initial_tools, "narrative_hierarchical_search"],
+                    [*initial_tools, "narrative_causal_trace_search", "narrative_hierarchical_search"],
                     valid=valid_tools,
                     limit=self.initial_tool_limit,
                 )
@@ -1081,6 +1106,24 @@ class RetrievalToolRouter:
             )
             if len(fallback_parallel) >= 2:
                 parallel_tools.append(fallback_parallel)
+        tool_query_hints: List[Dict[str, Any]] = []
+        raw_hints = payload.get("tool_query_hints") if isinstance(payload.get("tool_query_hints"), list) else []
+        for item in raw_hints[:8]:
+            if not isinstance(item, dict):
+                continue
+            tool_name = str(item.get("tool", "") or item.get("tool_name", "") or "").strip()
+            hint_query = str(item.get("query", "") or "").strip()
+            if not tool_name or tool_name not in valid_tools or not hint_query:
+                continue
+            params = item.get("params") if isinstance(item.get("params"), dict) else {}
+            tool_query_hints.append(
+                {
+                    "tool": tool_name,
+                    "query": hint_query,
+                    "params": dict(params),
+                    "purpose": str(item.get("purpose", "") or "").strip(),
+                }
+            )
         return {
             "router_mode": "stable",
             "question_type": question_type,
@@ -1091,6 +1134,7 @@ class RetrievalToolRouter:
             "initial_tools": initial_tools,
             "escalation_tools": escalation_tools,
             "parallel_tools": parallel_tools[:2],
+            "tool_query_hints": tool_query_hints,
             "must_compare_options": bool(payload.get("must_compare_options", answer_shape == "mcq_option")),
             "reason": str(payload.get("reason", "") or "").strip(),
             "deterministic_parse": parse,
@@ -1105,7 +1149,16 @@ class RetrievalToolRouter:
     ) -> List[str]:
         valid_names = set(valid or [])
         cleaned = self._sanitize_first_round_tools(list(names or []), valid=valid_names)
-        backstops = [name for name in ["bm25_search_docs", "vdb_search_sentences"] if name in valid_names]
+        backstops = [
+            name
+            for name in [
+                "bm25_search_docs",
+                "vdb_search_sentences",
+                "section_evidence_search",
+                "retrieve_entity_by_name",
+            ]
+            if name in valid_names
+        ]
         if not backstops:
             return unique_names(cleaned, valid=valid_names, limit=limit)
 
@@ -1113,7 +1166,11 @@ class RetrievalToolRouter:
         # than treating them as model-selected tools. If the round is full, keep
         # the earlier model choices and reserve trailing slots for the backstops.
         cleaned = [name for name in cleaned if name not in set(backstops)]
-        if limit > 0 and len(cleaned) >= limit:
+        # If the router deliberately selected a deterministic graph-structure
+        # tool, keep that narrow plan instead of diluting it with generic probes.
+        if "top_k_by_centrality" in cleaned:
+            return unique_names(cleaned, valid=valid_names, limit=limit)
+        if limit > 0:
             reserve = min(len(backstops), max(1, int(limit)))
             cleaned = cleaned[: max(0, int(limit) - reserve)]
         cleaned.extend(backstops)
@@ -1143,7 +1200,7 @@ class RetrievalToolRouter:
                 not name
                 or name not in valid_names
                 or name in blocked
-                or tool_stage(name) == "internal_only"
+                or tool_stage(name) in {"internal_only", "exploratory"}
                 or name in cleaned
             ):
                 continue
@@ -1381,9 +1438,8 @@ class RetrievalToolRouter:
         if is_mcq and has_entity_anchor and question_type in {"exact_fact", "relationship"}:
             add("get_entity_sections")
         if need_narrative:
+            add("narrative_causal_trace_search")
             add("narrative_hierarchical_search")
-        if question_type == "chronology" or evidence_need == "chronology":
-            add("fact_timeline_resolution_search")
         if mcq_profile.get("needs_choice_tool_initial"):
             add("choice_grounded_evidence_search")
         elif is_mcq and question_type == "section_localization":
@@ -1443,7 +1499,6 @@ class RetrievalToolRouter:
             stage1_names.append(normalized)
 
         for preferred in [
-            "fact_timeline_resolution_search",
             "choice_grounded_evidence_search" if mcq_profile.get("needs_choice_tool_stage1") else "",
             "entity_event_trace_search",
             "vdb_get_docs_by_document_ids",
@@ -1645,13 +1700,16 @@ class RetrievalToolRouter:
                 names = names[: max(1, int(limit))]
             return [registry[name] for name in names if name in registry]
 
+        # Shared core tools are planner-declared common probes. Run them first
+        # instead of letting a sampled branch bypass them.
+        stage0_seed = shared_core if shared_core else selected_tools
         stage0_names = self._ensure_first_round_bm25(
-            selected_tools if selected_tools else shared_core,
+            stage0_seed,
             valid=registry.keys(),
             limit=5,
         )
         stage0 = [registry[name] for name in stage0_names if name in registry]
-        stage1 = merge_names([getattr(t, "name", "") for t in stage0], [*shared_core, *escalation], limit=10)
+        stage1 = merge_names([getattr(t, "name", "") for t in stage0], [*selected_tools, *shared_core, *escalation], limit=10)
         stage2 = merge_names([getattr(t, "name", "") for t in stage1], all_branch_tools, limit=14)
         full = merge_names([getattr(t, "name", "") for t in stage2], list(registry.keys()), limit=None)
 

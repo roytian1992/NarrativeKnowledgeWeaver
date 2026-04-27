@@ -201,11 +201,12 @@ class PropertyExtractionAgent:
         entity_schema: Optional[List[Dict[str, Any]]] = None,
         general_semantic_type: str = "Concept",
         # selection
-        scope: str = "global",
+        scope: Optional[str] = "global",
         metric: str = "total_degree",
         threshold: float = 2.0,
         num_top: Optional[int] = None,
         node_type: Optional[str] = None,
+        exclude_node_types: Optional[Set[str]] = None,
         exclude_relation_types: Optional[Set[str]] = None,
         include_relation_types: Optional[Set[str]] = None,
         # chunking
@@ -239,6 +240,8 @@ class PropertyExtractionAgent:
 
         if exclude_relation_types is None:
             exclude_relation_types = set()
+        if exclude_node_types is None:
+            exclude_node_types = {"Event"}
 
         # 1) schema-derived hints (optional, kept for future prompt conditioning)
         type2properties: Dict[str, Any] = {}
@@ -301,6 +304,8 @@ class PropertyExtractionAgent:
                 G, nid, general_semantic_type=general_semantic_type
             )
             if not name:
+                continue
+            if exclude_node_types and entity_type in exclude_node_types:
                 continue
             if scope and node_scope and node_scope != scope:
                 continue

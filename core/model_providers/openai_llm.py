@@ -32,6 +32,7 @@ class OpenAILLM(ChatOpenAI):
     """仅接收 cfg 的 LLM 封装（<think> 清洗）"""
 
     _client: OpenAI = PrivateAttr()
+    _extra_body: Optional[Dict[str, Any]] = PrivateAttr(default=None)
 
     # ---------- init ----------
     def __init__(self, cfg, *, llm_profile: str = "llm", llm_config=None, **kwargs):
@@ -39,6 +40,11 @@ class OpenAILLM(ChatOpenAI):
             llm_cfg = cfg.get_llm_profile(llm_profile)
         else:
             llm_cfg = llm_config or cfg.llm
+
+        extra_body: Optional[Dict[str, Any]] = None
+        thinking_type = str(getattr(llm_cfg, "thinking_type", "") or "").strip().lower()
+        if thinking_type in {"enabled", "disabled"}:
+            extra_body = {"thinking": {"type": thinking_type}}
 
         # 1) 初始化 ChatOpenAI（父类）
         super().__init__(
@@ -49,6 +55,7 @@ class OpenAILLM(ChatOpenAI):
             max_tokens=llm_cfg.max_tokens,
             **kwargs,
         )
+        self._extra_body = extra_body
 
         # 2) 原生 OpenAI client（给 run() 用）
         self._client = OpenAI(
@@ -65,6 +72,8 @@ class OpenAILLM(ChatOpenAI):
         **kwargs,
     ):
         # 真正请求
+        if self._extra_body and "extra_body" not in kwargs:
+            kwargs["extra_body"] = self._extra_body
         gens = super()._generate(messages=messages, stop=stop, run_manager=run_manager, **kwargs)
 
         # 去掉 <think> 标签（兼容偶发残留）
