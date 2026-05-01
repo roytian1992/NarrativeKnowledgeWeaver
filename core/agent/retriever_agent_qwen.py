@@ -2267,7 +2267,10 @@ class QuestionAnsweringAgent:
         ]
 
     def _build_runtime_system_message(self, *, memory_ctx: Dict[str, Any]) -> str:
+        hint = str(memory_ctx.get("routing_hint", "") or "").strip()
         if bool(getattr(self, "qwen_native_tool_routing_only", False)):
+            if hint:
+                return f"{self._current_system_message}\n\n{hint}".strip()
             return self._current_system_message.strip()
         if not bool(getattr(self, "runtime_routing_note_enabled", False)):
             return self._current_system_message.strip()
@@ -2277,7 +2280,6 @@ class QuestionAnsweringAgent:
             "Prefer BM25 keyword search to verify sensitive factual details such as appearances, model numbers, years, ages, and timelines. "
             "For scene-level evidence or fine-grained factual details, use `section_evidence_search` as a fallback."
         )
-        hint = str(memory_ctx.get("routing_hint", "") or "").strip()
         if hint:
             routing_note = routing_note + "\n\n" + hint
         return f"{self._current_system_message}\n\n{routing_note}".strip()

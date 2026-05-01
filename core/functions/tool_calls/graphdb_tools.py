@@ -1082,13 +1082,15 @@ class EntityRetrieverName(BaseTool):
         "同时结合名称/别名模糊匹配与语义向量匹配，并对结果去重重排。"
         "当 entity_type 无效或未提供时回退为 'Entity'；"
         "当 query 为空字符串时返回该类型下的实体列表。"
-        "默认把 source_documents 去重映射成可读的场次/章节标题。"
+        "默认把 source_documents 去重映射成可读的场次/章节标题和 document_id。"
+        "适合作为 Scene Grounding 和实体出现位置问题的首选工具；"
+        "对于“哪些场景同时出现 X 和 Y”类问题，应分别查询实体并比较返回的 scene_details。"
     )
     parameters = [
         {"name": "query", "type": "string", "description": "实体名称、别名或自然语言描述；可为空以列出该类型实体。", "required": True},
         {"name": "entity_type", "type": "string", "description": "目标实体类型；若无效将安全回退为 'Entity'。", "required": False},
         {"name": "top_k", "type": "number", "description": "返回结果数量上限，默认 8。", "required": False},
-        {"name": "resolve_source_documents", "type": "bool", "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题，默认 True。", "required": False},
+        {"name": "resolve_source_documents", "type": "bool", "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题和 document_id；Scene Grounding 问题默认保持 True。", "required": False},
     ]
 
     def __init__(self, graph_query_utils, embedding_config):
@@ -1426,15 +1428,15 @@ class TopKByCentrality(BaseTool):
         "Deterministically rank graph nodes by stored centrality metrics. "
         "Use this instead of entity-name lookup for questions such as who are the most central, "
         "main, important, prominent, or key characters/entities. "
-        "For 'top N central characters', call metric='pagerank' or 'degree', top_k=N, "
+        "For 'top N central/important characters', prefer metric='degree', top_k=N, "
         "node_labels=['Character']."
     )
     parameters = [
         {
             "name": "metric",
             "type": "string",
-            "description": "Centrality metric: pagerank, degree, or betweenness. Prefer pagerank for overall narrative centrality and degree for direct graph connectivity.",
-            "required": True,
+            "description": "Centrality metric: degree, pagerank, or betweenness. Default degree. Prefer degree for most important/central character questions; use pagerank only when explicitly asking for PageRank-like influence.",
+            "required": False,
         },
         {
             "name": "top_k",
@@ -1456,14 +1458,14 @@ class TopKByCentrality(BaseTool):
     def call(self, params: str, **kwargs) -> str:
         logger.info("🔎 top_k_by_centrality")
         data = json.loads(params) if isinstance(params, str) else dict(params or {})
-        metric_in = (data.get("metric") or "").strip().lower()
+        metric_in = (data.get("metric") or "degree").strip().lower()
         metric_map = {
             "pagerank": "pagerank", "pr": "pagerank",
             "degree": "degree", "deg": "degree",
             "betweenness": "betweenness", "btw": "betweenness",
         }
         if metric_in not in metric_map:
-            raise ValueError("metric 仅支持：pagerank/pr、degree/deg、betweenness/btw（不支持 closeness）")
+            raise ValueError("metric 仅支持：degree/deg、pagerank/pr、betweenness/btw（不支持 closeness）")
 
         metric = metric_map[metric_in]
         top_k_raw = data.get("top_k", 50)

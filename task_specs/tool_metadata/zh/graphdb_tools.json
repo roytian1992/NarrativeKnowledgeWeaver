@@ -31,7 +31,7 @@
   },
   "retrieve_entity_by_name": {
     "name": "retrieve_entity_by_name",
-    "description": "按指定实体类型执行混合实体检索，同时结合名称/别名模糊匹配与语义向量匹配，并对结果去重重排。默认把 source_documents 去重映射成可读的场次/章节标题。",
+    "description": "按指定实体类型执行混合实体检索，同时结合名称/别名模糊匹配与语义向量匹配，并对结果去重重排。用于识别、消歧或定位部分名称、别名、模糊描述中的实体。resolve_source_documents=true 时，输出会包含每个命中实体来自哪些可读的场次/章节标题和 document_id，所以它是 Scene Grounding 问题的强首选工具，例如“哪些场景出现 X”、“X 在哪里出现”、“哪些场景同时出现 X 和 Y”。遇到实体共现场景题时，应分别查询每个实体，再比较或验证返回的 scene_details，然后再考虑宽泛文本检索。",
     "parameters": [
       {
         "name": "query",
@@ -54,7 +54,7 @@
       {
         "name": "resolve_source_documents",
         "type": "bool",
-        "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题，默认 True。",
+        "description": "是否把实体的 source_documents 去重映射成可读的场次/章节标题和 document_id。Scene Grounding 和实体出现位置题应保持 True，默认 True。",
         "required": false
       }
     ]
@@ -546,13 +546,13 @@
   },
   "top_k_by_centrality": {
     "name": "top_k_by_centrality",
-    "description": "基于已写回的中心度指标，确定性返回图节点 Top-K 排名。遇到“谁/哪些角色或实体最中心、最主要、最重要、最关键、最有影响力”这类问题时，优先使用本工具，而不是 retrieve_entity_by_name。比如“3个最核心角色”应调用 metric='pagerank' 或 metric='degree', top_k=3, node_labels=['Character']，然后严格根据返回排名作答。",
+    "description": "基于已写回的中心度指标，确定性返回图节点 Top-K 排名。遇到“谁/哪些角色或实体最中心、最主要、最重要、最关键、最有影响力”这类问题时，优先使用本工具，而不是 retrieve_entity_by_name。比如“3个最核心/最重要角色”默认优先调用 metric='degree', top_k=3, node_labels=['Character']，然后严格根据返回排名作答。重要角色问题通常用 degree 更合适，因为它反映直接叙事图连接度。",
     "parameters": [
       {
         "name": "metric",
         "type": "string",
-        "description": "中心度指标：pagerank、degree、betweenness 三选一。整体叙事中心性优先用 pagerank，直接图连接度用 degree。",
-        "required": true
+        "description": "中心度指标：degree、pagerank、betweenness 三选一。默认 degree。最重要/最中心角色问题优先用 degree；只有明确需要 PageRank 式影响力时才用 pagerank。",
+        "required": false
       },
       {
         "name": "top_k",
